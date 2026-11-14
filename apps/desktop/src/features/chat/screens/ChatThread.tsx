@@ -73,7 +73,7 @@ export function ChatThread({ chatId, draft }: { chatId: string; draft?: string }
     const sentMention = mention;
     setMention(null);
     const ctx = mentionContext(parts, seen, projects);
-    // An SDLC skill typed here starts a feature: this chat moves into it and Workflow follows it.
+    // Only /using-bspace-sdlc typed here starts a feature: this chat moves into it and Workflow follows it.
     let job: { projectId: string; title: string } | undefined;
     const typed = parts.find((p) => p.type === 'text');
     const name = typed?.type === 'text' ? sdlcStart(typed.text) : null;

@@ -9,7 +9,7 @@ use tauri::State;
 
 #[tauri::command]
 pub(crate) fn list_projects(state: State<'_, AppState>) -> CmdResult<Vec<Project>> {
-    state.db.list_projects().map_err(err)
+    state.db.list_visible_projects().map_err(err)
 }
 
 #[tauri::command]

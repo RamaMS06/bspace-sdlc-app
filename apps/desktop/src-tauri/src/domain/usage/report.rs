@@ -111,14 +111,7 @@ pub(crate) async fn collect(data: &Path, home: &Path) -> Result<Vec<AgentUsage>,
             }
             let mut usage = match &token {
                 None => super::usage_from_response(401, "", now),
-                Some(t) => match super::fetch_claude_usage(t).await {
-                    Ok(u) => u,
-                    Err(m) => {
-                        let mut u = super::usage_from_response(0, "", now);
-                        u.message = Some(m);
-                        u
-                    }
-                },
+                Some(t) => claude_usage(t, &dir).await,
             };
             usage.account = match (token.is_some(), crate::domain::claude_account::program()) {
                 (true, Ok(claude)) => crate::domain::claude_account::status(&claude, &dir).await.email,
@@ -129,4 +122,29 @@ pub(crate) async fn collect(data: &Path, home: &Path) -> Result<Vec<AgentUsage>,
         }
     }
     Ok(out)
+}
+
+/// One account's Claude usage. A 401 on a sign-in that is still good means the saved access token
+/// expired (only Claude Code renews it): Claude Code refreshes it, the token is read again and the
+/// request is made once more, so a signed-in account never reads as "sign in" for that reason.
+async fn claude_usage(token: &str, dir: &Path) -> AgentUsage {
+    let once = |t: String| async move {
+        super::fetch_claude_usage(&t).await.unwrap_or_else(|m| {
+            let mut u = super::usage_from_response(0, "", chrono::Utc::now());
+            u.message = Some(m);
+            u
+        })
+    };
+    let first = once(token.to_string()).await;
+    if first.status != UsageStatus::SignedOut {
+        return first;
+    }
+    let Ok(claude) = crate::domain::claude_account::program() else { return first };
+    crate::domain::claude_account::refresh_token(&claude, dir).await;
+    let d = dir.to_path_buf();
+    let fresh = tauri::async_runtime::spawn_blocking(move || super::read_claude_token(&RealExec, &d)).await.ok().flatten();
+    match fresh {
+        Some(t) if t != token => once(t).await,
+        _ => first,
+    }
 }

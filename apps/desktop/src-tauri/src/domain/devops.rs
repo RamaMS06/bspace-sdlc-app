@@ -87,7 +87,18 @@ pub async fn az_sign_in(az: &std::path::Path) -> Result<String, String> {
 #[serde(rename_all = "camelCase")]
 pub struct DevopsStatus {
     pub signed_in: bool,
+    /// The signed-in account is an admin (see `domain::admin`): it can edit the SDLC plugin.
+    pub admin: bool,
     pub profile: Option<DevopsProfile>,
+}
+
+impl DevopsStatus {
+    pub fn signed_in(profile: DevopsProfile) -> Self {
+        Self { signed_in: true, admin: super::admin::is_admin(&profile), profile: Some(profile) }
+    }
+    pub fn signed_out() -> Self {
+        Self { signed_in: false, admin: false, profile: None }
+    }
 }
 
 /// `buma`, `https://dev.azure.com/buma/…` and `https://buma.visualstudio.com/…` are all the `buma`
@@ -182,13 +193,33 @@ async fn saved(keys: &ApiKeys) -> Result<Option<Saved>, String> {
 
 async fn save(keys: &ApiKeys, saved: &Saved) -> Result<DevopsStatus, String> {
     keys.set_account(ACCOUNT, serde_json::to_string(saved).map_err(|e| e.to_string())?).await?;
-    Ok(DevopsStatus { signed_in: true, profile: Some(saved.profile.clone()) })
+    Ok(DevopsStatus::signed_in(saved.profile.clone()))
+}
+
+/// The signed-in profile and the `Authorization` header to call Azure DevOps with (a PAT is Basic; a
+/// Microsoft sign-in asks the Azure CLI for a fresh token). The secret never leaves Rust.
+pub(crate) async fn authorization(keys: &ApiKeys) -> Result<(DevopsProfile, String), String> {
+    let saved = saved(keys).await?.ok_or("Sign in to Azure DevOps first")?;
+    let header = match saved.method {
+        Method::Pat => basic_auth(&saved.pat),
+        Method::AzureCli => {
+            let az = tauri::async_runtime::spawn_blocking(|| {
+                crate::infra::exec::refresh_shell_path();
+                crate::infra::exec::Exec::which(&crate::infra::exec::RealExec, "az")
+            })
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("The Azure CLI isn't installed, so the Microsoft sign-in can't be used. Sign in again with a personal access token.")?;
+            let token = az_token(&az).await.ok_or("Your Microsoft sign-in expired. Sign in to Azure DevOps again.")?;
+            format!("Bearer {token}")
+        }
+    };
+    Ok((saved.profile, header))
 }
 
 /// Who is signed in, from the keychain (no network: it works offline).
 pub(crate) async fn status(keys: &ApiKeys) -> Result<DevopsStatus, String> {
-    let profile = saved(keys).await?.map(|s| s.profile);
-    Ok(DevopsStatus { signed_in: profile.is_some(), profile })
+    Ok(saved(keys).await?.map(|s| DevopsStatus::signed_in(s.profile)).unwrap_or_else(DevopsStatus::signed_out))
 }
 
 /// Checks the token against the organization, then saves both. The token stays in Rust.
@@ -222,11 +253,23 @@ pub(crate) async fn sign_in_with_microsoft(keys: &ApiKeys, org: &str) -> Result<
 
 pub(crate) async fn sign_out(keys: &ApiKeys) -> Result<DevopsStatus, String> {
     keys.delete_account(ACCOUNT).await?;
-    Ok(DevopsStatus { signed_in: false, profile: None })
+    Ok(DevopsStatus::signed_out())
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_status_says_whether_the_account_is_an_admin() {
+        let profile = |email: Option<&str>| DevopsProfile { org: "buma".into(), id: "u".into(), display_name: "R".into(), email: email.map(str::to_string) };
+        assert!(DevopsStatus::signed_in(profile(Some("p-rama.msugiyanto@bukitmakmur.com"))).admin);
+        assert!(!DevopsStatus::signed_in(profile(Some("someone@bukitmakmur.com"))).admin);
+        assert!(!DevopsStatus::signed_in(profile(None)).admin);
+        let out = DevopsStatus::signed_out();
+        assert!(!out.signed_in && !out.admin && out.profile.is_none());
+        // The flag reaches the webview as `admin`.
+        assert_eq!(serde_json::to_value(DevopsStatus::signed_in(profile(Some("p-rama.msugiyanto@bukitmakmur.com")))).unwrap()["admin"], true);
+    }
+
     use super::*;
 
     #[test]

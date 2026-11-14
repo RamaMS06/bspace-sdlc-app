@@ -67,7 +67,7 @@ const missingFigma = [
   tool('node', 'Node.js', true, true),
   tool('git', 'Git', true, true),
   tool('python', 'Python 3', true, true),
-  tool('figma-mcp', 'Figma MCP', true, false),
+  tool('figma-mcp', 'Figma MCP', false, false),
   tool('figma', 'Figma', false, true),
   tool('flutter', 'Flutter SDK', false, false),
   tool('word', 'Microsoft Word', false, true),
@@ -104,17 +104,18 @@ describe('Requirements', () => {
     vi.mocked(ipc.updateSettings).mockResolvedValue({ ...settings, onboarded: true });
   });
 
-  it('blocks continuing while Figma MCP is missing', async () => {
+  it('lets you continue while Figma MCP is missing: it is only recommended', async () => {
     render(<Requirements />);
     expect(await screen.findByText(/shows you every command your agent asks to run, and nothing it asks about runs until you allow/)).toBeInTheDocument();
-    expect(await screen.findByText('Install Figma MCP to continue')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Continue/ })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Install Figma MCP' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Continue/ })).toBeEnabled());
+    expect(screen.queryByText(/to continue/)).toBeNull();
   });
 
-  it('installs through the agent, asks permission, and unlocks start after done', async () => {
+  it('installs through the agent, asks permission, and stays continuable after done', async () => {
     const user = userEvent.setup();
     render(<Requirements />);
-    await screen.findByText('Install Figma MCP to continue');
+    await screen.findByRole('button', { name: 'Install Figma MCP' });
 
     await user.click(screen.getByRole('button', { name: 'Install Figma MCP' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
@@ -131,7 +132,7 @@ describe('Requirements', () => {
     expect(ipc.agentRespondPermission).toHaveBeenCalledWith('r1', 'once');
 
     vi.mocked(ipc.checkTools).mockResolvedValue(
-      missingFigma.map((t) => (t.id === 'figma-mcp' ? tool('figma-mcp', 'Figma MCP', true, true) : t)),
+      missingFigma.map((t) => (t.id === 'figma-mcp' ? tool('figma-mcp', 'Figma MCP', false, true) : t)),
     );
     await emitUpdate({ kind: 'done', stopReason: 'end_turn' });
     await waitFor(() =>
@@ -156,6 +157,7 @@ describe('Requirements', () => {
     );
     render(<Requirements />);
     expect(await screen.findByText('Install Node.js 20 or newer, then press Check again')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Continue/ })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Install Node.js' }));
     expect(openUrl).toHaveBeenCalledWith('https://nodejs.org/en/download');
     expect(ipc.agentStart).not.toHaveBeenCalled();

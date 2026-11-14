@@ -12,7 +12,7 @@ import { FileTree } from '@/features/chat/components/workspace/FileTree';
 import { Workspace } from '@/features/chat/components/workspace/Workspace';
 import { ScrollToBottom } from '@/features/chat/components/ScrollToBottom';
 import { TurnRail } from '@/features/chat/components/TurnRail';
-import { StepBar, FeaturePipeline } from '@/features/sdlc';
+import { StepBar, FeaturePipeline, STEP_OF_STAGE, useFeatureState } from '@/features/sdlc';
 import { getChat, listProjects } from '@/shared/lib/ipc';
 import { projectSendOptions } from '@/features/chat/lib/openProject';
 import { useApp } from '@/shared/state/app';
@@ -39,6 +39,9 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
   const question = useChat((s) => headQuestion(s, chatId));
   const fitted = useFittedLayout(true);
   const projectsVersion = useApp((s) => s.projectsVersion);
+  // Where the feature really is comes from the files in its folder, not from its saved status.
+  const featureState = useFeatureState(project?.id);
+  const stepOf = (st: typeof featureState) => (st ? STEP_OF_STAGE[Math.min(st.current, STEP_OF_STAGE.length - 1)] : 0);
   const seenVersion = useRef(projectsVersion);
   const filesOpen = useLayout((s) => s.filesOpen);
   const tabs = useProjectTabs(project?.id ?? '');
@@ -122,7 +125,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
         </div>
         {project && (
           <div className="@container/steps ml-auto flex min-w-0 flex-1 justify-end overflow-hidden">
-            <StepBar status={project.status} />
+            <StepBar status={project.status} step={stepOf(featureState)} />
           </div>
         )}
         {!project && <span className="ml-auto" />}

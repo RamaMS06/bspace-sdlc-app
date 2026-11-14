@@ -6,9 +6,15 @@ import type { AgentId, ModelChoice } from '@bspace-sdlc-app/shared';
  * Why an agent was left: its limit or quota ran out, its sign-in failed, it stopped answering, or the
  * account can't use the model (Codex with a ChatGPT account and an API-only model, say).
  */
-export type FailoverReason = 'limit' | 'auth' | 'down' | 'model';
+export type FailoverReason = 'limit' | 'auth' | 'down' | 'model' | 'outdated';
 
-const MODEL = /model_not_found|model[^.]{0,80}is not supported|not supported when using|unsupported model|unknown model|invalid model|model[^.]{0,40}(?:does not exist|not found|not available|isn't available)|no access to (?:the )?model|requires a newer version of codex/i;
+/**
+ * The agent adapter is older than the models the account has: "requires a newer version of Codex",
+ * or the adapter doesn't know the model at all. No model of that agent will do, so the agent itself rests.
+ */
+const OUTDATED = /requires a newer version|upgrade to the latest (?:app|cli)|model metadata for .{1,60} not found/i;
+
+const MODEL = /model_not_found|model[^.]{0,80}is not supported|not supported when using|unsupported model|unknown model|invalid model|model[^.]{0,40}(?:does not exist|not found|not available|isn't available)|no access to (?:the )?model/i;
 
 const LIMIT = /usage limit|rate[ _-]?limit|\b429\b|\b529\b|quota|overloaded|too many requests|limit reached|limit exceeded|credit|insufficient|out of tokens|billing|exhausted/i;
 const AUTH = /\bauth|sign[ -]?in|log[ -]?in|-32000|\b401\b|unauthori[sz]ed|expired token|invalid api key/i;
@@ -17,7 +23,8 @@ const DOWN = /exited|crash|ENOENT|not found|timed? ?out|no response|stopped unex
 /** What kind of failure an agent's error is, or null when moving to another agent would not help. */
 export function failoverReason(message: string | null | undefined): FailoverReason | null {
   const m = message ?? '';
-  // Checked first: "not supported" is about the model, not the account's limit.
+  // Checked first: an outdated adapter is about every model of the agent, "not supported" about one model.
+  if (OUTDATED.test(m)) return 'outdated';
   if (MODEL.test(m)) return 'model';
   if (LIMIT.test(m)) return 'limit';
   if (AUTH.test(m)) return 'auth';
@@ -26,7 +33,7 @@ export function failoverReason(message: string | null | undefined): FailoverReas
 }
 
 /** How long a step is skipped after it failed: a used-up limit lasts longest. */
-export const COOLDOWN_MS: Record<FailoverReason, number> = { limit: 60 * 60_000, auth: 30 * 60_000, down: 5 * 60_000, model: 0 };
+export const COOLDOWN_MS: Record<FailoverReason, number> = { limit: 60 * 60_000, auth: 30 * 60_000, down: 5 * 60_000, model: 0, outdated: 12 * 60 * 60_000 };
 
 /** `codex` on the default account, `codex@<account id>` on another: whose models an account can use. */
 export const accountOf = (agent: AgentId, account?: string | null) => (account && account !== 'default' ? `${agent}@${account}` : agent);
@@ -130,6 +137,10 @@ interface FailoverState {
   setChain(chain: AgentId[]): void;
   setModels(agent: AgentId, models: string[]): void;
   addExtra(agent: AgentId, model: string): void;
+  /** Agent → until when it rests as a whole (its adapter is too old for the account's models). */
+  agentRest: Record<string, number>;
+  /** Rests every step of an agent, in every combo: nothing lands on it until it is tried again. */
+  restAgent(agent: AgentId, reason?: FailoverReason, now?: number): void;
   /** Rests a failed step for the reason's cooldown. */
   rest(step: Step, reason: FailoverReason, now?: number): void;
   /** Lets a step (or every step of an agent) be tried again now. */
@@ -140,6 +151,13 @@ interface FailoverState {
   next(from: Step, now?: number, pick?: string): Step | null;
   /** Until when a step rests (0: it doesn't). */
   restingUntil(step: Step, now?: number): number;
+}
+
+/** The saved state without what was learned about Codex when its adapter refused every model. */
+export function forgetCodex(o: Partial<FailoverState>): Partial<FailoverState> {
+  const isCodex = (key: string) => key === 'codex' || key.startsWith('codex@') || key.startsWith('codex/');
+  const without = <T,>(m: Record<string, T> | undefined) => Object.fromEntries(Object.entries(m ?? {}).filter(([k]) => !isCodex(k))) as Record<string, T>;
+  return { ...o, agentRest: without(o.agentRest), incompatible: without(o.incompatible), cooldown: without(o.cooldown) };
 }
 
 export const DEFAULT_CHAIN: AgentId[] = ['claude', 'codex', 'gemini', 'opencode'];
@@ -205,10 +223,14 @@ export const useFailover = create<FailoverState>()(
       setChain: (chain) => set({ chain: [...new Set(chain)] }),
       setModels: (agent, models) => set((s) => ({ models: { ...s.models, [agent]: [...new Set(models)] } })),
       addExtra: (agent, model) => set((s) => ({ extra: { ...s.extra, [agent]: [...new Set([...(s.extra[agent] ?? []), model])] } })),
+      agentRest: {},
+      restAgent: (agent, reason = 'outdated', now = Date.now()) => set((s) => ({ agentRest: { ...s.agentRest, [agent]: now + COOLDOWN_MS[reason] } })),
       rest: (step, reason, now = Date.now()) => set((s) => ({ cooldown: { ...s.cooldown, [stepKey(step)]: now + COOLDOWN_MS[reason] } })),
       wake: (key) =>
         set((s) => ({
           cooldown: Object.fromEntries(Object.entries(s.cooldown).filter(([k]) => k !== key && !k.startsWith(`${key}/`) && !k.startsWith(`${key}@`))),
+          // An agent's key is its id: trying the agent again also lifts its rest as a whole.
+          agentRest: Object.fromEntries(Object.entries(s.agentRest).filter(([a]) => a !== key)),
         })),
       steps: (pick) => {
         const { accounts, ready, incompatible } = get();
@@ -227,7 +249,7 @@ export const useFailover = create<FailoverState>()(
           });
       },
       restingUntil(step, now = Date.now()) {
-        const until = get().cooldown[stepKey(step)] ?? 0;
+        const until = Math.max(get().cooldown[stepKey(step)] ?? 0, get().agentRest[step.agent] ?? 0);
         return until > now ? until : 0;
       },
       next(from, now = Date.now(), pick) {
@@ -241,13 +263,14 @@ export const useFailover = create<FailoverState>()(
     }),
     {
       name: 'buma.failover',
-      version: 3,
+      version: 4,
       partialize: (s) => ({
         on: s.on,
         chain: s.chain,
         models: s.models,
         extra: s.extra,
         cooldown: s.cooldown,
+        agentRest: s.agentRest,
         incompatible: s.incompatible,
         combos: s.combos,
         defaultCombo: s.defaultCombo,
@@ -255,12 +278,16 @@ export const useFailover = create<FailoverState>()(
         ready: s.ready,
       }),
       // Before combos there was one route (agents in order, each through its models): it becomes "Default".
+      // Before version 4 Codex ran through an old adapter that refused every model of the account: what
+      // that taught the app (Codex resting, its models hidden) is forgotten, since it now runs through
+      // Codex's own app-server (`bridges/codex-app-server.mjs`).
       migrate: (old, version): never => {
-        const o = (old ?? {}) as Partial<FailoverState>;
+        let o = (old ?? {}) as Partial<FailoverState>;
         if (version < 3 && o.chain?.length) {
           const steps = o.chain.flatMap((agent): Step[] => (o.models?.[agent]?.length ? o.models[agent]!.map((model) => ({ agent, model })) : [{ agent, model: null }]));
-          return { ...o, combos: [{ id: DEFAULT_COMBO_ID, name: 'Default', steps }], defaultCombo: DEFAULT_COMBO_ID, chatPick: {} } as never;
+          o = { ...o, combos: [{ id: DEFAULT_COMBO_ID, name: 'Default', steps }], defaultCombo: DEFAULT_COMBO_ID, chatPick: {} };
         }
+        if (version < 4) o = forgetCodex(o);
         // Missing fields fall back to the store's own defaults when merged.
         return o as never;
       },

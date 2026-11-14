@@ -204,14 +204,32 @@ describe('MessageList auto-scroll', () => {
 
   it('stays put while scrolled up', () => {
     const { spy, view, box } = setup();
+    // At the end first, then the reader scrolls up.
+    box.scrollTop = 1500;
+    fireEvent.scroll(box);
     box.scrollTop = 200;
     fireEvent.scroll(box);
     view.rerender(<Harness messages={grown} tops={{}} />);
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it('keeps following when new content grows the list (the end moves away without the reader scrolling up)', () => {
+    const { spy, view, box } = setup();
+    box.scrollTop = 1500; // at the end
+    fireEvent.scroll(box);
+    // A tall block lands: the list is now far longer, and the scroll that follows it is still above the new end.
+    Object.defineProperty(box, 'scrollHeight', { configurable: true, value: 3200 });
+    box.scrollTop = 1600;
+    fireEvent.scroll(box);
+    spy.mockClear();
+    view.rerender(<Harness messages={grown} tops={{}} />);
+    expect(spy).toHaveBeenCalled();
+  });
+
   it('goes to the bottom when the user just sent a message', () => {
     const { spy, view, box } = setup();
+    box.scrollTop = 1500;
+    fireEvent.scroll(box);
     box.scrollTop = 200;
     fireEvent.scroll(box);
     view.rerender(<Harness messages={[...grown, user('10', 'new')]} tops={{}} />);

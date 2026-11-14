@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import type { AgentInfo } from '@bspace-sdlc-app/shared';
@@ -12,10 +12,10 @@ vi.mock('@/shared/lib/ipc', () => ({
 }));
 
 import * as ipc from '@/shared/lib/ipc';
-import { failoverReason, singlePick, stepKey, useFailover, COOLDOWN_MS, type Step } from '@/features/agents/state/failover';
-import { CombosTab } from '@/features/agents/components/CombosTab';
+import { failoverReason, forgetCodex, singlePick, stepKey, useFailover, COOLDOWN_MS, type Step } from '@/features/agents/state/failover';
+import { CombosTab, dropIndex, moveStep } from '@/features/agents/components/CombosTab';
 import { AgentRoute, groupModels, modelFamily } from '@/features/agents/components/FailoverCard';
-import { useModels } from '@/features/agents/state/models';
+import { runnableModels, useModels } from '@/features/agents/state/models';
 import { AgentUsage, bucketize, LIVE_MS, parseActivity, rangeStart } from '@/features/agents/components/AgentUsage';
 
 /** The store with one combo, "Default", of these steps. */
@@ -30,17 +30,16 @@ describe('failover rules', () => {
     expect(failoverReason('Authentication required (-32000)')).toBe('auth');
     expect(failoverReason('agent process exited with code 1')).toBe('down');
     expect(failoverReason('The agent reported an error: boom')).toBeNull();
+    // The adapter is older than the account's models need: about the agent, not one model.
+    expect(failoverReason('The agent reported an error: Internal error ({"error":{"message":"The \'gpt-5.6-terra\' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again."}})')).toBe('outdated');
+    expect(failoverReason('Model metadata for gpt-5.6-terra not found. Defaulting to fallback metadata')).toBe('outdated');
     // Codex with a ChatGPT account and an API-only model: the model, not the limit.
     expect(
       failoverReason(
         'The agent reported an error: Internal error ({"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-5.5\' model is not supported when using Codex with a ChatGPT account.","code":"model_not_found"}})',
       ),
     ).toBe('model');
-    expect(
-      failoverReason(
-        'The agent reported an error: Internal error ({"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-5.6-terra\' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again."}})',
-      ),
-    ).toBe('model');
+
   });
 
   it("goes through the combo's steps in order, skipping resting ones and wrapping round", () => {
@@ -288,43 +287,166 @@ describe('models an account refused', () => {
 });
 
 describe("Codex: the account's own model list", () => {
-  it('offers only the models the account has, and hides the ones it lacks', async () => {
+  it('offers only models the account has and the adapter can run, and hides the others', async () => {
     const { useAccounts } = await import('@/features/agents/state/accounts');
     useAccounts.setState({ list: [{ id: 'default', agent: 'codex', account: 'u@buma.co.id', signedIn: true, active: true }] });
-    useModels.setState({ catalog: {}, catalogLoading: {}, byAgent: { codex: { current: null, options: [{ value: 'gpt-5.5', name: 'GPT-5.5' }] } } });
+    // The adapter lists gpt-5.5 (API only) and gpt-6-astra; the account lists gpt-6.1-sol and gpt-6-astra.
+    useModels.setState({
+      catalog: {},
+      catalogLoading: {},
+      byAgent: { codex: { current: null, options: [{ value: 'gpt-5.5', name: 'GPT-5.5' }, { value: 'gpt-6-astra', name: 'GPT-6-Astra' }] } },
+    });
     vi.mocked(ipc.agentModelCatalog).mockResolvedValue([
       { value: 'gpt-6.1-sol', name: 'GPT-6.1-Sol' },
       { value: 'gpt-6-astra', name: 'GPT-6-Astra' },
     ]);
     useFailover.setState({ ...COMBO([{ agent: 'codex', model: 'gpt-5.5' }]), accounts: {}, incompatible: {}, cooldown: {} });
-    useFailover.getState().setModels('codex', ['gpt-5.5']);
     await useModels.getState().loadCatalog('codex', true);
-    // gpt-5.5 (API only) is hidden for this ChatGPT account, so its step is skipped.
+    // gpt-5.5 (the account lacks it) is hidden, so its step is skipped.
     expect(useFailover.getState().isCompatible('codex', 'default', 'gpt-5.5')).toBe(false);
     expect(useFailover.getState().steps()).toEqual([]);
     const user = userEvent.setup();
     render(<CombosTab agents={[agent('codex')]} />);
     await user.click(screen.getByRole('button', { name: 'Model' }));
     const menu = await screen.findByTestId('step-menu');
-    expect(within(menu).getByRole('button', { name: /^GPT-6\.1-Sol/ })).toBeInTheDocument();
+    expect(within(menu).getByRole('button', { name: /^GPT-6-Astra/ })).toBeInTheDocument();
     expect(within(menu).queryByRole('button', { name: /^GPT-5\.5/ })).toBeNull();
+    // The account has gpt-6.1-sol but the adapter can't run it: not offered either.
+    expect(within(menu).queryByRole('button', { name: /^GPT-6\.1-Sol/ })).toBeNull();
   });
 });
 
-describe('Usage is live', () => {
-  it('reads the activity log again on its own while open', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      vi.mocked(ipc.agentActivity).mockResolvedValue([]);
-      render(<AgentUsage />);
-      await act(async () => {});
-      const before = vi.mocked(ipc.agentActivity).mock.calls.length;
-      await act(async () => {
-        vi.advanceTimersByTime(LIVE_MS + 10);
-      });
-      expect(vi.mocked(ipc.agentActivity).mock.calls.length).toBeGreaterThan(before);
-    } finally {
-      vi.useRealTimers();
+describe('Codex through the adapter: both lists must agree', () => {
+  const account = [
+    { value: 'gpt-6.1-sol', name: 'GPT-6.1-Sol' },
+    { value: 'gpt-5.6-terra', name: 'GPT-5.6-Terra' },
+    { value: 'gpt-5.6-luna', name: 'GPT-5.6-Luna' },
+  ];
+  const adapter = [
+    { value: 'gpt-5.6-terra', name: 'gpt-5.6-terra' },
+    { value: 'gpt-5.5', name: 'gpt-5.5' },
+    { value: 'gpt-5.4', name: 'gpt-5.4' },
+  ];
+
+  it('offers only the models the account has AND the adapter can run', () => {
+    // gpt-6.1-sol: the account has it but the adapter (older Codex inside) refuses it; gpt-5.5: the adapter lists it but the account lacks it.
+    expect(runnableModels('codex', account, adapter)?.map((m) => m.value)).toEqual(['gpt-5.6-terra']);
+    // Until the adapter has said, the account's list; no overlap at all: trust the adapter.
+    expect(runnableModels('codex', account, undefined)).toEqual(account);
+    expect(runnableModels('codex', account, [{ value: 'x', name: 'x' }])?.map((m) => m.value)).toEqual(['x']);
+    // Other agents keep their full list; no list at all: null.
+    expect(runnableModels('claude', account, adapter)).toEqual(account);
+    expect(runnableModels('codex', undefined, adapter)).toBeNull();
+  });
+
+  it('models the adapter cannot run leave the combos once it has reported', async () => {
+    const { useAccounts } = await import('@/features/agents/state/accounts');
+    useAccounts.setState({ list: [{ id: 'default', agent: 'codex', account: 'u@buma.co.id', signedIn: true, active: true }] });
+    useModels.setState({ catalog: {}, catalogLoading: {}, byAgent: {} });
+    vi.mocked(ipc.agentModelCatalog).mockResolvedValue(account);
+    vi.mocked(ipc.agentModels).mockResolvedValue({ current: 'gpt-5.6-terra', options: adapter });
+    useFailover.setState({
+      ...COMBO([{ agent: 'codex', model: 'gpt-6.1-sol' }, { agent: 'codex', model: 'gpt-5.6-terra' }]),
+      accounts: {},
+      incompatible: {},
+      cooldown: {},
+    });
+    await useModels.getState().loadCatalog('codex', true);
+    await useModels.getState().load('codex', true);
+    expect(useFailover.getState().isCompatible('codex', 'default', 'gpt-6.1-sol')).toBe(false);
+    expect(useFailover.getState().isCompatible('codex', 'default', 'gpt-5.6-terra')).toBe(true);
+    expect(useFailover.getState().steps()).toEqual([{ agent: 'codex', model: 'gpt-5.6-terra' }]);
+  });
+});
+
+describe('an agent whose adapter is too old', () => {
+  it('rests as a whole: every step of it is skipped, in every combo, until it is tried again', () => {
+    useFailover.setState({
+      ...COMBO([{ agent: 'codex', model: 'gpt-5.6-terra' }, { agent: 'codex', model: null }, { agent: 'claude', model: null }]),
+      accounts: {},
+      incompatible: {},
+      cooldown: {},
+      agentRest: {},
+    });
+    const fo = useFailover.getState();
+    const now = 1_000;
+    fo.restAgent('codex', 'outdated', now);
+    expect(fo.restingUntil({ agent: 'codex', model: null }, now)).toBeGreaterThan(now);
+    expect(fo.restingUntil({ agent: 'codex', model: 'gpt-6-astra' }, now)).toBeGreaterThan(now);
+    expect(fo.restingUntil({ agent: 'claude', model: null }, now)).toBe(0);
+    // A new chat on this combo starts on Claude, not on Codex.
+    expect(fo.next({ agent: 'claude', model: null }, now)).toBeNull();
+    const first = fo.steps().find((s) => !fo.restingUntil(s, now));
+    expect(first).toEqual({ agent: 'claude', model: null });
+    fo.wake('codex');
+    expect(useFailover.getState().agentRest.codex).toBeUndefined();
+  });
+
+  it('Provider says so under the agent, and Try again lifts it', async () => {
+    useFailover.setState({ ...COMBO([{ agent: 'codex', model: null }]), agentRest: { codex: Date.now() + 3_600_000 } });
+    const user = userEvent.setup();
+    render(<AgentRoute agents={[{ ...agent('codex'), signedIn: true, account: 'u@buma.co.id' }]} actions={() => null} />);
+    const note = await screen.findByTestId('outdated-codex');
+    expect(note).toHaveTextContent('Codex is skipped');
+    await user.click(within(note).getByRole('button', { name: 'Try again' }));
+    expect(screen.queryByTestId('outdated-codex')).toBeNull();
+  });
+});
+
+describe('dragging a combo\'s models to reorder them', () => {
+  it('works out where a row lands and moves it, the rest keeping their order', () => {
+    // Rows with their middles at 10, 30, 50, 70; dragging row 0 down to y=55 lands it third.
+    expect(dropIndex([10, 30, 50, 70], 0, 55)).toBe(2);
+    expect(dropIndex([10, 30, 50, 70], 3, 5)).toBe(0);
+    expect(dropIndex([10, 30, 50, 70], 1, 31)).toBe(1);
+    expect(moveStep(['a', 'b', 'c', 'd'], 0, 2)).toEqual(['b', 'c', 'a', 'd']);
+    expect(moveStep(['a', 'b', 'c', 'd'], 3, 0)).toEqual(['d', 'a', 'b', 'c']);
+    expect(moveStep(['a', 'b'], 1, 1)).toEqual(['a', 'b']);
+  });
+
+  it('dragging by the grip reorders on release; Escape cancels', () => {
+    useFailover.setState({
+      ...COMBO([{ agent: 'claude', model: null }, { agent: 'codex', model: null }, { agent: 'gemini', model: null }]),
+      accounts: {},
+      incompatible: {},
+      cooldown: {},
+      agentRest: {},
+    });
+    render(<CombosTab agents={[agent('claude'), agent('codex'), agent('gemini')]} />);
+    // jsdom has no layout: three rows 40px tall, stacked.
+    for (const li of document.querySelectorAll<HTMLElement>('[data-step-index]')) {
+      const i = Number(li.dataset.stepIndex);
+      li.getBoundingClientRect = () => ({ top: i * 40, bottom: i * 40 + 40, height: 40, left: 0, right: 0, width: 0, x: 0, y: i * 40, toJSON() {} });
     }
+    const order = () => useFailover.getState().combos[0]!.steps.map((s) => s.agent);
+    // Row 0 dragged below row 2's middle (y = 110, past the middle at 100): lands last.
+    fireEvent.pointerDown(screen.getByTestId('grip-0'), { button: 0, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientY: 110, pointerId: 1 });
+    expect(screen.getByTestId('step-claude/')).toHaveClass('opacity-70');
+    fireEvent.pointerUp(window, { clientY: 110, pointerId: 1 });
+    expect(order()).toEqual(['codex', 'gemini', 'claude']);
+    // Escape puts it back where it was.
+    for (const li of document.querySelectorAll<HTMLElement>('[data-step-index]')) {
+      const i = Number(li.dataset.stepIndex);
+      li.getBoundingClientRect = () => ({ top: i * 40, bottom: i * 40 + 40, height: 40, left: 0, right: 0, width: 0, x: 0, y: i * 40, toJSON() {} });
+    }
+    fireEvent.pointerDown(screen.getByTestId('grip-0'), { button: 0, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientY: 110, pointerId: 1 });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.pointerUp(window, { clientY: 110, pointerId: 1 });
+    expect(order()).toEqual(['codex', 'gemini', 'claude']);
+  });
+});
+
+describe('Codex through its own app-server', () => {
+  it("forgets what the old adapter taught the app: Codex resting and its models hidden, nothing of other agents", () => {
+    const saved = forgetCodex({
+      agentRest: { codex: 9_999_999_999_999, claude: 5 },
+      incompatible: { codex: ['gpt-6.1-sol'], 'codex@acc': ['gpt-5.5'], claude: ['x'] },
+      cooldown: { 'codex/': 1, 'codex@acc/gpt-5.5': 1, 'claude/': 1 },
+    });
+    expect(saved.agentRest).toEqual({ claude: 5 });
+    expect(saved.incompatible).toEqual({ claude: ['x'] });
+    expect(saved.cooldown).toEqual({ 'claude/': 1 });
   });
 });

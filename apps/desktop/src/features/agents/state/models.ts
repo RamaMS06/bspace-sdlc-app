@@ -65,11 +65,38 @@ let listening = false;
 
 const CATALOG_KEY = 'buma.modelCatalog';
 /**
- * Agents whose full list is exactly what the signed-in account may run (Codex: the list Codex fetched
- * for that account). For them the agent's own session list (which may name API-only models) is not
- * offered, and route models missing from it are dropped.
+ * Agents whose full list is what the signed-in account may run through the agent adapter (Codex). Two
+ * lists have to agree: the account's own (what Codex fetched for it, `models_cache.json`) and the
+ * adapter's (what `codex-acp` itself can start: its bundled Codex is often older than the Codex app,
+ * so it refuses newer models even when the account has them). Only models on both lists are offered.
  */
 export const EXACT_LIST: AgentId[] = ['codex'];
+
+/**
+ * The models to offer for an agent: for the exact-list agents the account's list narrowed to what the
+ * adapter can run (or just the account's list until the adapter has said); for the rest the full list.
+ * `null`: no full list is known, so the agent's own list and the known ones are used.
+ */
+export function runnableModels(agent: AgentId, catalog: ModelChoice[] | undefined, reported: ModelChoice[] | undefined): ModelChoice[] | null {
+  if (!catalog?.length) return null;
+  if (!EXACT_LIST.includes(agent) || !reported?.length) return catalog;
+  const adapter = new Set(reported.map((m) => m.value));
+  const both = catalog.filter((m) => adapter.has(m.value));
+  // No overlap at all means the lists can't be compared: trust the adapter, which is what runs.
+  return both.length ? both : reported;
+}
+
+/** Hides the route's models that this account can't run through the adapter, for the exact-list agents. */
+function pruneRoute(agent: AgentId, catalog: ModelChoice[] | undefined, reported: ModelChoice[] | undefined) {
+  if (!EXACT_LIST.includes(agent)) return;
+  const list = runnableModels(agent, catalog, reported);
+  if (!list) return;
+  const fo = useFailover.getState();
+  const account = useAccounts.getState().activeOf(agent);
+  const have = new Set(list.map((m) => m.value));
+  const inCombos = new Set(fo.combos.flatMap((c) => c.steps.filter((x) => x.agent === agent && x.model).map((x) => x.model!)));
+  for (const m of [...(fo.models[agent] ?? []), ...inCombos]) if (!have.has(m)) fo.markIncompatible(agent, account, m);
+}
 /** Agents whose full list was read in this app run. */
 const catalogRead = new Set<AgentId>();
 function loadCatalogCache(): Partial<Record<AgentId, ModelChoice[]>> {
@@ -93,13 +120,7 @@ export const useModels = create<ModelsState>((set, get) => ({
     set((s) => ({ catalogLoading: { ...s.catalogLoading, [agent]: true } }));
     try {
       const list = await agentModelCatalog(agent);
-      if (list?.length && EXACT_LIST.includes(agent)) {
-        // Models on the route this account doesn't have can't run: hide them for it.
-        const fo = useFailover.getState();
-        const account = useAccounts.getState().activeOf(agent);
-        const have = new Set(list.map((m) => m.value));
-        for (const m of fo.models[agent] ?? []) if (!have.has(m)) fo.markIncompatible(agent, account, m);
-      }
+      if (list?.length) pruneRoute(agent, list, get().byAgent[agent]?.options);
       if (list?.length)
         set((s) => {
           const catalog = { ...s.catalog, [agent]: list };
@@ -149,6 +170,8 @@ export const useModels = create<ModelsState>((set, get) => ({
         if (byAgent !== s.byAgent) saveCache(byAgent);
         return { byAgent };
       });
+      // The adapter has said what it can run: models of the route that it can't leave the combos.
+      if (info?.options.length) pruneRoute(agent, get().catalog[agent], info.options);
     } catch (e) {
       set((s) => ({ failed: { ...s.failed, [agent]: e instanceof Error ? e.message : String(e) } }));
     } finally {

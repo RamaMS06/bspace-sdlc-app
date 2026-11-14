@@ -3,6 +3,7 @@
 
 pub mod acp;
 pub(crate) mod accounts;
+pub(crate) mod admin;
 pub(crate) mod activity;
 pub(crate) mod agents;
 pub(crate) mod ai_proxy;
@@ -16,6 +17,7 @@ pub(crate) mod files;
 pub(crate) mod model_catalog;
 pub(crate) mod plugins;
 pub(crate) mod projects;
+pub(crate) mod share;
 pub(crate) mod skills;
 pub(crate) mod trace;
 pub(crate) mod usage;

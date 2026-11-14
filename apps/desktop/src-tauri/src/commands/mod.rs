@@ -14,6 +14,7 @@ pub(crate) mod jobs;
 pub(crate) mod plugins;
 pub(crate) mod projects;
 pub(crate) mod settings;
+pub(crate) mod share;
 pub(crate) mod skills;
 pub(crate) mod system;
 pub(crate) mod usage;

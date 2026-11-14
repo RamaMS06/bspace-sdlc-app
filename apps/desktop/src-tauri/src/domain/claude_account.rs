@@ -96,6 +96,14 @@ pub async fn status(claude: &Path, config_dir: &Path) -> ClaudeAccount {
     }
 }
 
+/// Lets Claude Code refresh its own access token for this folder. The saved access token lasts a few
+/// hours and only Claude Code renews it (with the refresh token, writing the new pair back to the
+/// Keychain), so a sign-in that is fine can still read as expired here. `/usage` is a local command: it
+/// asks no model, costs no tokens, and renews the token as a side effect. Best effort.
+pub async fn refresh_token(claude: &Path, config_dir: &Path) {
+    let _ = tokio::time::timeout(Duration::from_secs(45), claude_command(claude, config_dir, &["-p", "/usage"]).output()).await;
+}
+
 /// Signs out of Claude in Buma (the user's own Claude Code sign-in is untouched).
 pub async fn sign_out(claude: &Path, config_dir: &Path) -> ClaudeAccount {
     let _ = tokio::time::timeout(

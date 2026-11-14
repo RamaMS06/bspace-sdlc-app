@@ -289,8 +289,17 @@ async function userSkills(): Promise<string> {
 }
 
 export const useChat = create<ChatState>((set, get) => {
-  const append = (chatId: string, m: ChatMessage) =>
+  const append = (chatId: string, m: ChatMessage) => {
+    // The agent's message is only stored when its turn ends, but a turn can hold several of them (the
+    // user answers a question, or a note lands, in the middle of it). Anything else landing after an
+    // unsaved agent message closes it: it is stored now, before the new message, or it would be lost
+    // when the chat is reloaded (only what is stored comes back).
+    if (m.role !== 'agent') {
+      const before = (get().messages[chatId] ?? []).at(-1);
+      if (before && before.role === 'agent' && isLocal(before)) void persist(chatId, before);
+    }
     set((s) => ({ messages: { ...s.messages, [chatId]: [...(s.messages[chatId] ?? []), m] } }));
+  };
 
   /** The agent's message in the chat's latest turn: the last one after the last user message. */
   const turnMessage = (chatId: string): ChatMessage | undefined => {
@@ -309,22 +318,30 @@ export const useChat = create<ChatState>((set, get) => {
       return { messages: { ...s.messages, [chatId]: list } };
     });
 
+  /** The last store of each chat: stores happen one after another, so messages are kept in the order they were shown. */
+  const saving = new Map<string, Promise<void>>();
+
   /** Persist a local message and swap in the stored one. Best effort. */
-  const persist = async (chatId: string, m: ChatMessage) => {
-    if (isScratchChat(chatId)) return;
-    try {
-      const saved = await addMessage(chatId, m.role, m.parts);
-      if (!saved) return;
-      clientKeys.set(saved.id, m.id);
-      set((s) => ({
-        messages: {
-          ...s.messages,
-          [chatId]: (s.messages[chatId] ?? []).map((x) => (x.id === m.id ? { ...saved } : x)),
-        },
-      }));
-    } catch {
-      /* keep the local copy */
-    }
+  const persist = (chatId: string, m: ChatMessage): Promise<void> => {
+    if (isScratchChat(chatId)) return Promise.resolve();
+    const run = async () => {
+      try {
+        const saved = await addMessage(chatId, m.role, m.parts);
+        if (!saved) return;
+        clientKeys.set(saved.id, m.id);
+        set((s) => ({
+          messages: {
+            ...s.messages,
+            [chatId]: (s.messages[chatId] ?? []).map((x) => (x.id === m.id ? { ...saved } : x)),
+          },
+        }));
+      } catch {
+        /* keep the local copy */
+      }
+    };
+    const next = (saving.get(chatId) ?? Promise.resolve()).then(run, run);
+    saving.set(chatId, next);
+    return next;
   };
 
   /** The turn is over: answer whatever is still queued with null and clear the queue. */
@@ -459,6 +476,11 @@ export const useChat = create<ChatState>((set, get) => {
     const agent = chatAgent.get(chatId);
     const last = lastPrompt.get(chatId);
     if (!reason || !agent || isScratchChat(chatId)) return;
+    if (reason === 'outdated' && (!fo.on || !last)) {
+      fo.restAgent(agent);
+      await get().appendSystem(chatId, stored('chat.failoverOutdated', { from: AGENT_NAMES[agent] }));
+      return;
+    }
     if (reason === 'model' && (!fo.on || !last)) {
       // No failover to make: still hide the model for this account, so it isn't tried again.
       const model = useApp.getState().settings?.agentModels?.[agent] ?? null;
@@ -477,6 +499,10 @@ export const useChat = create<ChatState>((set, get) => {
       if (from.model) fo.markIncompatible(agent, from.account, from.model);
       const settings = await setAgentModel(agent, null, null).catch(() => null);
       if (settings) useApp.getState().setSettings(settings);
+    } else if (reason === 'outdated') {
+      // The agent's adapter is older than the account's models need: no model of it works, so the whole
+      // agent rests (new chats skip it too) instead of failing again on the next message.
+      fo.restAgent(agent);
     } else fo.rest(from, reason);
     const hops = failoverHops.get(chatId) ?? 0;
     // Failover stays inside the chat's own combo.
@@ -510,7 +536,7 @@ export const useChat = create<ChatState>((set, get) => {
     } catch {
       return;
     }
-    await get().appendSystem(chatId, stored(`chat.failover.${reason}`, { from: stepName(from), to: stepName(to) }));
+    await get().appendSystem(chatId, stored(`chat.failover.${reason}`, { from: reason === 'outdated' ? AGENT_NAMES[agent] : stepName(from), to: stepName(to) }));
     await get().send(chatId, last.parts, { ...last.opts, agentId: to.agent, fromQueue: true, resend: true, keepAttachments: true });
   };
 

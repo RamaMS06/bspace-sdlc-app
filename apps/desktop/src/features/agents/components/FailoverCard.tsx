@@ -6,7 +6,7 @@ import { AgentLogo } from '@/shared/ui/AgentLogo';
 import { Button } from '@/shared/ui/Button';
 import { AGENT_NAMES } from '@/shared/lib/agents';
 import { accountOf, KNOWN_MODELS, useFailover } from '@/features/agents/state/failover';
-import { EXACT_LIST, useModels } from '@/features/agents/state/models';
+import { EXACT_LIST, runnableModels, useModels } from '@/features/agents/state/models';
 import { useClaudeAccount } from '@/features/agents/state/claudeAccount';
 import { useConnections } from '@/features/agents/state/connections';
 import { accountKey, DEFAULT_ACCOUNT, MULTI_ACCOUNT, useAccounts } from '@/features/agents/state/accounts';
@@ -26,9 +26,10 @@ export function useModelChoices(agent: AgentId): ModelChoice[] {
   // Models the agent's active account refused ("not supported with this account") are not offered.
   const refused = useFailover((s) => s.incompatible[accountOf(agent, useAccounts.getState().activeOf(agent))]);
   const seen = new Set<string>([...(refused ?? [])]);
-  // Codex: only the account's own list, never the session's (which names API-only models).
-  const own = catalog?.length && EXACT_LIST.includes(agent) ? [] : (reported ?? []);
-  return [...(catalog ?? []), ...own, ...(catalog?.length ? [] : (KNOWN_MODELS[agent] ?? [])), ...(extra ?? []).map((value) => ({ value, name: value }))].filter(
+  // The full list (Codex: the account's, narrowed to what the adapter can run), else the agent's own.
+  const full = runnableModels(agent, catalog, reported);
+  const own = full && EXACT_LIST.includes(agent) ? [] : (reported ?? []);
+  return [...(full ?? []), ...own, ...(full ? [] : (KNOWN_MODELS[agent] ?? [])), ...(extra ?? []).map((value) => ({ value, name: value }))].filter(
     (m) => m.value !== 'default' && !seen.has(m.value) && !!seen.add(m.value),
   );
 }
@@ -169,6 +170,24 @@ function AccountChips({ a, connectedText }: { a: AgentInfo; connectedText: strin
 }
 
 /**
+ * Said under an agent that rests as a whole because its adapter is older than the account's models need
+ * (Codex: its ACP adapter bundles an old Codex): chats skip it, and "Try again" lifts the rest.
+ */
+function OutdatedNote({ agent }: { agent: AgentInfo }) {
+  const { t } = useTranslation();
+  const until = useFailover((s) => s.agentRest[agent.id] ?? 0);
+  if (until <= Date.now()) return null;
+  return (
+    <div data-testid={`outdated-${agent.id}`} role="note" className="mt-buma-xs flex flex-wrap items-center gap-buma-xs rounded-md bg-warning-soft px-buma-xs py-buma-2xs text-[12px] text-foreground">
+      <span className="min-w-0 flex-1">{t('settings.route.outdatedNote', { name: AGENT_NAMES[agent.id] })}</span>
+      <button type="button" onClick={() => useFailover.getState().wake(agent.id)} className="cursor-pointer border-0 bg-transparent p-0 text-[12px] font-medium text-primary-text hover:underline">
+        {t('settings.route.tryAgain')}
+      </button>
+    </div>
+  );
+}
+
+/**
  * Agents › Provider: the AI platforms on this computer and who is signed in to each (several accounts
  * for Claude, Codex and opencode), with a "+" on every row to connect or add an account. Which models
  * chats use, and in what order, is set in Agents › Combo.
@@ -215,6 +234,7 @@ export function AgentRoute({ agents, actions }: { agents: AgentInfo[]; actions(a
               {/* Accounts line up under the name (logo 20 + gap 12). */}
               <div className="min-w-0 pl-8">
                 <AccountChips a={a} connectedText={connectedText} />
+                <OutdatedNote agent={a} />
               </div>
             </li>
           );

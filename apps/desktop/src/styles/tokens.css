@@ -312,3 +312,11 @@
 @media (prefers-reduced-motion: reduce) {
   .b-loader__dots::after { animation: none; content: '...'; }
 }
+
+/* Chat code blocks coloured by Shiki for both themes (see highlightFence). */
+.code-tokens span {
+  color: var(--shiki-light);
+}
+.dark .code-tokens:not(.light *) span {
+  color: var(--shiki-dark);
+}

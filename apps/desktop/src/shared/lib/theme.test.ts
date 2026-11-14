@@ -32,11 +32,18 @@ describe('theme', () => {
     expect(themeChoice()).toBe('light');
   });
 
-  it('stays light while onboarding forces it, then goes back to the choice', () => {
-    setTheme('dark');
+  it('starts light while onboarding when the user has not chosen, and keeps a choice made with the switch', () => {
+    setTheme('system');
     forceLight(true);
     expect(isDark()).toBe(false);
-    forceLight(false);
+    // The switch on the onboarding screens makes an explicit choice, which holds there and after.
+    toggleTheme();
+    expect(themeChoice()).toBe('dark');
     expect(isDark()).toBe(true);
+    toggleTheme();
+    expect(isDark()).toBe(false);
+    forceLight(false);
+    expect(themeChoice()).toBe('light');
+    expect(isDark()).toBe(false);
   });
 });

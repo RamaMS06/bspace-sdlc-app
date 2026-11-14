@@ -75,6 +75,12 @@ describe('brief', () => {
     expect(b).toMatch(/never write an Approved-by line/);
   });
 
+  it('uses the skills for work on the feature, and gives a message about anything else a normal answer', () => {
+    const b = buildProjectBrief(p);
+    expect(b).toMatch(/when the user works on this feature or types a skill/);
+    expect(b).toMatch(/nothing to do with the feature gets a normal answer; do not start a workflow or a skill/);
+  });
+
   it('has nothing about videos', () => {
     const b = buildProjectBrief(p);
     expect(b).not.toMatch(/video|render|hyperframes|remotion/i);

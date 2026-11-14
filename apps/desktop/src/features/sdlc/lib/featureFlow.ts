@@ -1,5 +1,5 @@
 import type { Project } from '@bspace-sdlc-app/shared';
-import { BUILTIN_SKILLS, buildProjectBrief } from '@bspace-sdlc-app/skills';
+import { buildProjectBrief } from '@bspace-sdlc-app/skills';
 import { track } from '@/shared/lib/analytics';
 import { createProject } from '@/shared/lib/ipc';
 import { useApp } from '@/shared/state/app';
@@ -13,12 +13,16 @@ export async function createFeature(title: string): Promise<Project> {
   return project;
 }
 
+/** The one skill that starts a workflow. Every other skill runs in the chat it is typed in. */
+export const WORKFLOW_SKILL = 'using-bspace-sdlc';
+
 /**
- * A message that starts with a bundled SDLC skill (`/using-bspace-sdlc ...`, `/blueprint-ftsd ...`) starts
- * a feature. Returns the words after the skill (the feature's name), or null for any other message.
+ * Only a message that starts with `/using-bspace-sdlc` starts a feature (a workflow of its own, with its
+ * folder). Any other message, a chat with no link to a skill, or another skill (`/blueprint-ftsd ...`),
+ * never creates one. Returns the words after the skill (the feature's name), or null for any other message.
  */
 export function sdlcStart(text: string): string | null {
   const m = /^\/([\w-]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
-  if (!m || !BUILTIN_SKILLS.some((s) => s.id === m[1])) return null;
+  if (!m || m[1] !== WORKFLOW_SKILL) return null;
   return (m[2] ?? '').trim().slice(0, 48);
 }

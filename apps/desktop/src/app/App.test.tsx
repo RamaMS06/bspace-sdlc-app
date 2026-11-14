@@ -1,4 +1,5 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import type { Settings } from '@bspace-sdlc-app/shared';
 
@@ -8,6 +9,8 @@ vi.mock('@/shared/lib/ipc', () => ({
   systemLocale: vi.fn(),
   listProjects: vi.fn().mockResolvedValue([]),
   detectAgents: vi.fn().mockResolvedValue([]),
+  getSystemInfo: vi.fn().mockResolvedValue({ os: 'macos', osVersion: '15', packageManager: 'brew' }),
+  checkTools: vi.fn().mockResolvedValue([]),
   listRecentChats: vi.fn().mockResolvedValue([]),
   listArchivedChats: vi.fn().mockResolvedValue([]),
   setThreadArchived: vi.fn().mockResolvedValue(undefined),
@@ -120,5 +123,27 @@ describe('App settings failure', () => {
     const retry = await screen.findByRole('button', { name: 'Try again' });
     retry.click();
     expect(await screen.findByText('Get started')).toBeInTheDocument();
+  });
+});
+
+describe('the footer of the get started pages', () => {
+  beforeEach(() => {
+    localStorage.removeItem('theme');
+    useApp.setState({ route: { name: 'welcome' }, settings: null });
+  });
+
+  it.each(['welcome', 'connect', 'requirements', 'onboarding-account'] as const)('%s has the version and the light / dark switch, and the switch works', async (name) => {
+    vi.mocked(getSettings).mockResolvedValue(base);
+    useApp.setState({ route: { name }, settings: null });
+    render(<App />);
+    const footer = await screen.findByTestId('onboarding-footer');
+    expect(within(footer).getByTestId('version-tag')).toBeInTheDocument();
+    // Starts white; the switch makes dark an explicit choice, and back.
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    await userEvent.click(within(footer).getByRole('button', { name: 'Switch to dark mode' }));
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    await userEvent.click(within(footer).getByRole('button', { name: 'Switch to light mode' }));
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    localStorage.removeItem('theme');
   });
 });

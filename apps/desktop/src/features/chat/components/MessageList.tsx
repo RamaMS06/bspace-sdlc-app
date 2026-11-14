@@ -159,7 +159,7 @@ function sendAction(chatId: string, a: A2uiAction, sendOptions?: SendOptions) {
 }
 
 /** An agent text part: prose, the surfaces it owns, and a placeholder for a block still streaming. */
-function AgentText({ text, messageId, part, a2ui }: { text: string; messageId: string; part: number; a2ui: A2uiState }) {
+function AgentText({ text, messageId, part, a2ui, quiet = false }: { text: string; messageId: string; part: number; a2ui: A2uiState; quiet?: boolean }) {
   const { text: prose, blocks, pending, invalid } = useMemo(() => extractA2ui(text), [text]);
   const { t } = useTranslation();
   const { handle, locked, sendOptions } = useContext(ActionsContext);
@@ -169,7 +169,7 @@ function AgentText({ text, messageId, part, a2ui }: { text: string; messageId: s
   }
   return (
     <>
-      {prose && <Markdown text={prose} />}
+      {prose && <Markdown text={prose} quiet={quiet} />}
       {ids.map((sid) => (
         <A2uiSurface
           key={`${sid}:${a2ui.version[sid]}`}
@@ -227,6 +227,9 @@ function Parts({
     }
     run = [];
   };
+  // Text the agent wrote before its last step is what it said while working; only what follows the last
+  // step is its answer, and reads as one.
+  const lastStep = parts.reduce((at, p, i) => ((p.type === 'thought' || (p.type === 'tool' && !isHiddenTool(p))) ? i : at), -1);
   parts.forEach((p, i) => {
     if (p.type === 'tool' || p.type === 'thought') {
       if (p.type === 'thought' || !isHiddenTool(p)) {
@@ -241,7 +244,7 @@ function Parts({
       return;
     }
     flushStrip();
-    if (p.type === 'text') out.push(<AgentText key={i} text={p.text} messageId={messageId} part={i} a2ui={a2ui} />);
+    if (p.type === 'text') out.push(<AgentText key={i} text={p.text} messageId={messageId} part={i} a2ui={a2ui} quiet={i < lastStep} />);
     else if (p.type === 'mention') out.push(<Chip key={i}>@{p.title}</Chip>);
     else if (p.type === 'file') out.push(<SentFile key={i} part={p} />);
   });
@@ -285,8 +288,16 @@ export function MessageList({
   useEffect(() => {
     const box = scrollRef?.current;
     if (!box) return;
+    let lastTop = box.scrollTop;
     const onScroll = () => {
-      stick.current = box.scrollHeight - box.scrollTop - box.clientHeight <= 80;
+      const top = box.scrollTop;
+      const away = box.scrollHeight - top - box.clientHeight;
+      // Back near the end: follow again. Leave it only when the reader scrolls UP: new content growing
+      // the list (a tall block, a card) moves the end away without the reader doing anything, and that
+      // must not make the list stop following.
+      if (away <= 80) stick.current = true;
+      else if (top < lastTop) stick.current = false;
+      lastTop = top;
     };
     // The scroll-to-bottom pill asks to follow the conversation again.
     const onStick = () => {

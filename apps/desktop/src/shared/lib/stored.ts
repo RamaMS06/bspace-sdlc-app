@@ -25,6 +25,8 @@ export const STORED_KEYS = [
   'chat.failover.auth',
   'chat.failover.down',
   'chat.failover.model',
+  'chat.failover.outdated',
+  'chat.failoverOutdated',
   'chat.failoverModel',
   'chat.failoverNone',
   'chat.autoOffFailed',

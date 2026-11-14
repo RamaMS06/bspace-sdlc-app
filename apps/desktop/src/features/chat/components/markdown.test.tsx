@@ -119,3 +119,42 @@ describe('Markdown in agent replies', () => {
     expect(container.querySelector('ol')).toHaveAttribute('start', '5');
   });
 });
+
+describe('what the agent says while working vs its answer', () => {
+  it('text before the last step is quiet; the text after it is the answer', () => {
+    const m: ChatMessage = {
+      ...msg('agent', ''),
+      parts: [
+        { type: 'text', text: 'Checking the workflow files.' },
+        { type: 'tool', toolCallId: 't1', title: 'Read intent.md', status: 'done', toolKind: 'read' } as never,
+        { type: 'text', text: 'next: intake' },
+        { type: 'tool', toolCallId: 't2', title: 'Edit intake.md', status: 'done', toolKind: 'edit' } as never,
+        { type: 'text', text: 'What is the project called?' },
+      ],
+    };
+    render(<MessageList streaming={false} messages={[m]} />);
+    const quiet = (t: string) => screen.getByText(t).closest('[data-quiet]');
+    expect(quiet('Checking the workflow files.')).not.toBeNull();
+    expect(quiet('next: intake')).not.toBeNull();
+    expect(quiet('What is the project called?')).toBeNull();
+  });
+});
+
+describe('code blocks', () => {
+  it('sit in a container with the language and colour their tokens', async () => {
+    const { container } = agent('```ts\nconst a: number = 1;\n```');
+    const block = container.querySelector('[data-code-block]')!;
+    expect(block).toHaveTextContent('ts');
+    await waitFor(() => expect(block.querySelector('code[data-highlighted]')).not.toBeNull(), { timeout: 10000 });
+    const colored = [...block.querySelectorAll('code span[style]')].map((s) => s.getAttribute('style'));
+    expect(colored.some((c) => c?.includes('--shiki-dark') && c.includes('--shiki-light'))).toBe(true);
+    expect(block.querySelector('code')!.textContent).toBe('const a: number = 1;');
+  }, 15000);
+
+  it('an unknown language stays plain text', async () => {
+    const { container } = agent('```brainfuck\n+++.\n```');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(container.querySelector('code[data-highlighted]')).toBeNull();
+    expect(container.querySelector('pre')!.textContent?.trim()).toBe('+++.');
+  });
+});

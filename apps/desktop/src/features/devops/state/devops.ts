@@ -46,3 +46,6 @@ export const useDevops = create<DevopsState>((set) => ({
     set({ status: await devopsSignOut(), error: null });
   },
 }));
+
+/** Whether the signed-in account is an admin: it can edit the SDLC plugin; everyone else can use it. */
+export const useIsAdmin = () => useDevops((s) => !!s.status?.admin);

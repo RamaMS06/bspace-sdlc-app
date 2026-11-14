@@ -55,6 +55,13 @@ describe('session preamble (agents that cannot load the plugin)', () => {
     expect(p).not.toMatch(/hyperframes|remotion|renders\//i);
   });
 
+  it('applies the skill only when asked: /using-bspace-sdlc or a feature chat, never for an ordinary message', () => {
+    const p = buildSessionPreamble();
+    expect(p).toMatch(/Apply it only when the user types \/using-bspace-sdlc, or when this chat is already a feature/);
+    expect(p).toMatch(/answer normally: do not follow it, do not start or restart an SDLC workflow/);
+    expect(p).not.toContain('Follow these instructions for the whole session');
+  });
+
   it('adds the Indonesian hint only for the id language', () => {
     expect(languageHint('en')).toBe('');
     expect(buildSessionPreamble('id')).toContain('The user reads Indonesian. Reply in Indonesian unless they write in another language.');

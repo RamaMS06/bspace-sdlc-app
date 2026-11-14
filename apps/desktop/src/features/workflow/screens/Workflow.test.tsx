@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import type { Project } from '@bspace-sdlc-app/shared';
@@ -13,10 +13,17 @@ vi.mock('@/shared/lib/ipc', () => ({
   listChats: vi.fn(),
   listJobs: vi.fn().mockResolvedValue([]),
 }));
+vi.mock('@/features/workflow/lib/share', () => ({
+  shareStatus: vi.fn(),
+  shareProjects: vi.fn(),
+  shareInvite: vi.fn(),
+  shareRevoke: vi.fn(),
+}));
 vi.mock('@/features/chat/state/chat', () => ({ useChat: { getState: () => ({ send: vi.fn() }) } }));
 
 import * as ipc from '@/shared/lib/ipc';
-import { stagesFrom } from '@/features/workflow/lib/sdlcState';
+import * as share from '@/features/workflow/lib/share';
+import { stagesFrom } from '@/features/sdlc/lib/sdlcState';
 import { Workflow } from '@/features/workflow/screens/Workflow';
 import { useApp } from '@/shared/state/app';
 
@@ -92,6 +99,21 @@ describe('Workflow screen', () => {
     expect(within(section).getByText('0 of 7 stages done')).toBeInTheDocument();
   });
 
+  it('follows its chats: archiving them takes the feature out, restoring brings it back', async () => {
+    vi.mocked(ipc.listProjects).mockResolvedValue([project('p1', 'Attendance'), project('p2', 'Payroll')]);
+    render(<Workflow />);
+    expect(await screen.findByRole('button', { name: /Payroll/ })).toBeInTheDocument();
+    // The chats of Payroll were archived (the sidebar or Settings › Archive says so by bumping the version).
+    vi.mocked(ipc.listProjects).mockResolvedValue([project('p1', 'Attendance')]);
+    act(() => useApp.getState().bumpProjects());
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Payroll/ })).toBeNull());
+    expect(screen.getByRole('button', { name: /Attendance/ })).toBeInTheDocument();
+    // Restored: it is listed again.
+    vi.mocked(ipc.listProjects).mockResolvedValue([project('p1', 'Attendance'), project('p2', 'Payroll')]);
+    act(() => useApp.getState().bumpProjects());
+    expect(await screen.findByRole('button', { name: /Payroll/ })).toBeInTheDocument();
+  });
+
   it('creating a feature makes its project and chat', async () => {
     vi.mocked(ipc.listProjects).mockResolvedValue([]);
     vi.mocked(ipc.createProject).mockResolvedValue(project('p2', 'Payroll'));
@@ -105,6 +127,63 @@ describe('Workflow screen', () => {
     expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).toMatchObject({ title: 'Payroll' });
     expect(vi.mocked(ipc.createProject).mock.calls[0]![1]).toContain('using-bspace-sdlc');
     await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c2' }));
+  });
+});
+
+describe('Invite to a feature', () => {
+  const shared = {
+    org: 'buma', project: 'BUMA Bspace', projectId: 'p-1', repoId: 'r-1', repoName: 'p1', webUrl: 'https://dev.azure.com/buma/x/_git/p1', remoteUrl: 'u',
+    invites: [{ email: 'dewi@bukitmakmur.com', role: 'viewer' as const, at: '' }],
+  };
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useApp.setState({ settings: { ...DEFAULT_SETTINGS, workingFolder: '/w', defaultAgent: 'claude' }, route: { name: 'workflow' } });
+    vi.mocked(ipc.listProjects).mockResolvedValue([project('p1', 'Attendance')]);
+    vi.mocked(ipc.projectFiles).mockResolvedValue([]);
+  });
+
+  it('the first invite picks the Azure DevOps project, then sends the email with the role', async () => {
+    vi.mocked(share.shareStatus).mockResolvedValue(null);
+    vi.mocked(share.shareProjects).mockResolvedValue([{ id: 'p-1', name: 'BUMA Bspace' }, { id: 'p-2', name: 'Other' }]);
+    vi.mocked(share.shareInvite).mockResolvedValue({ info: shared, addedToOrg: true, orgNote: null });
+    render(<Workflow />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Invite' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Invite people to Attendance' });
+    const send = within(dialog).getByRole('button', { name: 'Invite' });
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Dewi@bukitmakmur.com');
+    // With two projects, one has to be picked first.
+    expect(send).toBeDisabled();
+    await userEvent.selectOptions(await within(dialog).findByRole('combobox', { name: 'Azure DevOps project' }), 'p-1');
+    await userEvent.selectOptions(within(dialog).getByRole('combobox', { name: 'Can' }), 'contributor');
+    await userEvent.click(send);
+    await waitFor(() => expect(share.shareInvite).toHaveBeenCalledWith('p1', { id: 'p-1', name: 'BUMA Bspace' }, 'Dewi@bukitmakmur.com', 'contributor'));
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('dewi@bukitmakmur.com was added to the organization');
+    expect(within(dialog).getByRole('list', { name: 'Invited' })).toHaveTextContent('dewi@bukitmakmur.com');
+  });
+
+  it('a shared feature lists who was invited and removes someone', async () => {
+    vi.mocked(share.shareStatus).mockResolvedValue(shared);
+    vi.mocked(share.shareRevoke).mockResolvedValue({ ...shared, invites: [] });
+    render(<Workflow />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Invite' }));
+    const dialog = await screen.findByRole('dialog');
+    // No project picker once the feature has its repo.
+    expect(within(dialog).queryByRole('combobox', { name: 'Azure DevOps project' })).toBeNull();
+    expect(share.shareProjects).not.toHaveBeenCalled();
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Remove dewi@bukitmakmur.com' }));
+    await waitFor(() => expect(share.shareRevoke).toHaveBeenCalledWith('p1', 'dewi@bukitmakmur.com'));
+    expect(await within(dialog).findByText('No one yet.')).toBeInTheDocument();
+  });
+
+  it("shows Azure DevOps' own words when it refuses", async () => {
+    vi.mocked(share.shareStatus).mockResolvedValue(shared);
+    vi.mocked(share.shareInvite).mockRejectedValue("Azure DevOps doesn't know that email yet.");
+    render(<Workflow />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Invite' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'x@y.co');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Invite' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent("doesn't know that email");
   });
 });
 

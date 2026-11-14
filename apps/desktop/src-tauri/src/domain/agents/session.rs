@@ -8,9 +8,11 @@ use std::sync::Arc;
 
 /// Added to Claude's system prompt for sessions Buma starts.
 pub(crate) const BUMA_APPEND: &str = "You are running inside BSpace SDLC, BUMA's desktop app for taking a feature from \
-idea to deploy. Work with the bspace-sdlc-skills plugin: start from the using-bspace-sdlc skill, which routes by the \
-files on disk. When the user has to choose, ask with your AskUserQuestion tool: Buma shows it as a card with the \
-options. Never write JSON or markup for a choice.";
+idea to deploy, with the bspace-sdlc-skills plugin. Answer ordinary messages (a question, a quick task, a chat) \
+normally: do not invoke a skill, and never start or restart an SDLC workflow, unless the user types a skill's /name \
+or asks for what a skill does. The using-bspace-sdlc skill starts only when the user types /using-bspace-sdlc, or when \
+this chat is already a feature (its folder has an AGENTS.md brief). When the user has to choose, ask with your \
+AskUserQuestion tool: Buma shows it as a card with the options. Never write JSON or markup for a choice.";
 
 /// The Buma agent plugin in the repo, used when the bundled copy is missing (`tauri dev`).
 /// Debug builds only: a release build must never reach into the build machine's checkout.
@@ -206,6 +208,15 @@ pub(crate) async fn probe<T>(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn claudes_system_prompt_leaves_ordinary_messages_alone() {
+        // Only a typed /name, a request for what a skill does, or a chat that already is a feature starts a skill.
+        assert!(super::BUMA_APPEND.contains("Answer ordinary messages"));
+        assert!(super::BUMA_APPEND.contains("never start or restart an SDLC workflow"));
+        assert!(super::BUMA_APPEND.contains("only when the user types /using-bspace-sdlc"));
+        assert!(!super::BUMA_APPEND.contains("start from the using-bspace-sdlc skill, which routes"));
+    }
+
     use super::*;
 
     #[test]

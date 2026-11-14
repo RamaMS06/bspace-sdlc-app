@@ -13,7 +13,7 @@ export function buildProjectBrief(p: Pick<Project, 'title' | 'folder'>): string 
     `- A BUMA feature (app) being built in BSpace SDLC. Its folder: ${p.folder || slugify(p.title)}.`,
     '',
     '## How to work',
-    '- Use the bspace-sdlc-skills plugin. Start with the using-bspace-sdlc skill: it reads the files on disk (stakeholder-input/, sdlc/, intent/<ID>-<slug>/, specs/) and names the next step.',
+    '- Use the bspace-sdlc-skills plugin when the user works on this feature or types a skill (/name). Start with the using-bspace-sdlc skill then: it reads the files on disk (stakeholder-input/, sdlc/, intent/<ID>-<slug>/, specs/) and names the next step. A message with nothing to do with the feature gets a normal answer; do not start a workflow or a skill for it.',
     '- Every gate is approved by a person (analyst, designer, developer, QA). Ask for the approval; never write an Approved-by line the user did not give.',
     '- Keep all files in this folder. Do not write outside it.',
     '- Designs use the BUMA Design System in Figma through the Figma MCP; Flutter and Vue code use the BUMA Design System packages.',
