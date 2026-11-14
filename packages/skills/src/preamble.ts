@@ -47,7 +47,7 @@ export function sessionFacts(facts?: SessionFacts | null): string {
  */
 export function buildSessionPreamble(language?: UiLanguage | null, facts?: SessionFacts | null): string {
   return [
-    'You are running inside BSpace SDLC. Follow these instructions for the whole session.',
+    'You are running inside BSpace SDLC. Below is the using-bspace-sdlc skill. Apply it only when the user types /using-bspace-sdlc, or when this chat is already a feature (its folder has an AGENTS.md brief). For anything else (a question, a quick task, a chat) answer normally: do not follow it, do not start or restart an SDLC workflow, and do not run any skill the user did not ask for.',
     stripFrontmatter(usingBspaceSdlc),
     languageHint(language),
     sessionFacts(facts),

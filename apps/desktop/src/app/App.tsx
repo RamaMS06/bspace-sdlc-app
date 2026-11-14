@@ -6,6 +6,7 @@ import { Sidebar, type SidebarKey } from '@/app/layout/Sidebar';
 import { StatusBar } from '@/app/layout/StatusBar';
 import { TitleBar } from '@/app/layout/TitleBar';
 import { VersionTag } from '@/app/layout/VersionTag';
+import { ThemeToggle } from '@/app/layout/ThemeToggle';
 import { BumaLoading } from '@/shared/ui/buma/Loading';
 import { setUiLanguage } from '@/i18n';
 import { systemLanguage } from '@/shared/lib/language';
@@ -50,7 +51,8 @@ export default function App() {
   const { t } = useTranslation();
   useWindowDrag();
 
-  // Get started and the rest of onboarding are always white, dialogs included.
+  // Get started and the rest of onboarding start white, dialogs included, whatever the system says; the
+  // switch in their footer makes an explicit choice (dark too).
   const onboarding = ONBOARDING.has(route.name);
   useEffect(() => {
     forceLight(onboarding);
@@ -131,9 +133,16 @@ export default function App() {
 
   if (onboarding) {
     return (
-      <div className="light h-full overflow-y-auto bg-background">
+      <div className="h-full overflow-y-auto bg-background">
         <Onboarding name={route.name} />
-        <VersionTag floating />
+        {/* The footer of every get started page: the version and the light / dark switch. */}
+        <footer
+          data-testid="onboarding-footer"
+          className="pointer-events-auto fixed right-4 bottom-3 z-40 flex items-center gap-2 rounded-md border border-border bg-card/90 py-0.5 pr-1 pl-2 backdrop-blur-sm"
+        >
+          <VersionTag />
+          <ThemeToggle />
+        </footer>
       </div>
     );
   }

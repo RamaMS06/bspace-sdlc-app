@@ -10,6 +10,8 @@ export interface DevopsProfile {
 
 export interface DevopsStatus {
   signedIn: boolean;
+  /** The account is an admin: it can edit the SDLC plugin (src-tauri/src/domain/admin.rs decides). */
+  admin?: boolean;
   profile: DevopsProfile | null;
 }
 

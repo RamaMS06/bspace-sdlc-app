@@ -3,3 +3,4 @@ export { FeaturePipeline } from './components/FeaturePipeline';
 export { SDLC_STAGES, SdlcWorkflow } from './components/SdlcWorkflow';
 export { StepBar } from './components/StepBar';
 export { createFeature, sdlcStart } from './lib/featureFlow';
+export { useFeatureState, STEP_OF_STAGE } from './lib/sdlcState';

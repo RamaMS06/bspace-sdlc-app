@@ -20,7 +20,7 @@ export function Welcome() {
   const lang = uiLanguage();
   return (
     // The welcome screen is always light: white, with the BUMA and BSpace logos, whatever the app theme.
-    <div className="light relative flex min-h-full flex-wrap overflow-hidden bg-background text-foreground">
+    <div className="relative flex min-h-full flex-wrap overflow-hidden bg-background text-foreground">
       <div role="group" aria-label={t('common.language')} className="absolute top-6 right-8 z-10 flex gap-1 rounded-md border border-hairline bg-background p-0.5">
         {LANGUAGES.map((l) => (
           <button

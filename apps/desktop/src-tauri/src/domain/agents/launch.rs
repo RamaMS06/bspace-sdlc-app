@@ -18,11 +18,31 @@ pub(crate) async fn agent_launch(data: &Path, db: &Db, home: &Path, keys: &ApiKe
     if agent_id == AgentId::Custom {
         return api_agent(data, db, home, keys).await;
     }
+    if agent_id == AgentId::Codex && std::env::var("BUMA_CODEX_ADAPTER").as_deref() != Ok("zed") {
+        return codex_bridge(data);
+    }
     let mut command = detect::acp_command(agent_id).ok_or("Pick an agent first")?;
     let program = command[0].clone();
     let found = detect::agent_program(&RealExec, agent_id).ok_or_else(|| format!("Can't find {program} on this computer"))?;
     command[0] = found.to_string_lossy().into_owned();
     Ok((command, Vec::new()))
+}
+
+/// Codex's ACP bridge: a script that runs Codex's own `codex app-server` and speaks ACP to the app.
+/// Codex's ACP adapter bundles an old Codex, which refuses the models a ChatGPT account has today, so the
+/// app talks to the installed-latest Codex itself. `BUMA_CODEX_ADAPTER=zed` goes back to the adapter.
+const CODEX_BRIDGE: &str = include_str!("../../../bridges/codex-app-server.mjs");
+
+/// Writes the bridge into the app's data folder (when it changed) and returns the command that runs it.
+fn codex_bridge(data: &Path) -> Result<Launch, String> {
+    let dir = data.join("bridges");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let file = dir.join("codex-app-server.mjs");
+    if std::fs::read_to_string(&file).ok().as_deref() != Some(CODEX_BRIDGE) {
+        std::fs::write(&file, CODEX_BRIDGE).map_err(|e| e.to_string())?;
+    }
+    let node = crate::infra::exec::Exec::which(&RealExec, "node").ok_or("Codex needs Node.js, which isn't on this computer")?;
+    Ok((vec![node.to_string_lossy().into_owned(), file.to_string_lossy().into_owned()], Vec::new()))
 }
 
 /// The command and environment that start Your API: the engine with the saved provider and key.
@@ -83,4 +103,24 @@ pub(crate) fn account_env(data: &Path, agent: AgentId) -> Result<Vec<(String, St
 /// The model the user picked for this agent, if any.
 pub(crate) fn picked_model(db: &Db, home: &Path, agent: AgentId) -> Option<String> {
     db.get_settings(home).agent_models.get(&agent_key(agent)).cloned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn codex_starts_through_the_bridge_script_written_into_the_data_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let (command, env) = codex_bridge(dir.path()).unwrap();
+        assert!(command[0].contains("node"), "{command:?}");
+        let script = dir.path().join("bridges/codex-app-server.mjs");
+        assert_eq!(command[1], script.to_string_lossy());
+        assert_eq!(std::fs::read_to_string(&script).unwrap(), CODEX_BRIDGE);
+        assert!(env.is_empty());
+        // A changed copy on disk is replaced by the one the app ships.
+        std::fs::write(&script, "old").unwrap();
+        codex_bridge(dir.path()).unwrap();
+        assert_eq!(std::fs::read_to_string(&script).unwrap(), CODEX_BRIDGE);
+    }
 }

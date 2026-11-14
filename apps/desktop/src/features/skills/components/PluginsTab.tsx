@@ -23,6 +23,7 @@ import {
   type StagedPlugins,
 } from '@/features/skills/lib/plugins';
 import { cn } from '@/shared/lib/utils';
+import { useIsAdmin } from '@/features/devops';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -30,11 +31,14 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 function PluginCard({
   plugin,
   replacedBy,
+  admin,
   onToggle,
   onRemove,
 }: {
   plugin: PluginInfo;
   replacedBy?: PluginInfo;
+  /** An admin edits plugins; everyone else only reads and uses them. */
+  admin: boolean;
   onToggle(on: boolean): void;
   onRemove(): void;
 }) {
@@ -73,14 +77,14 @@ function PluginCard({
           </button>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {plugin.source === 'installed' && (
+          {admin && plugin.source === 'installed' && (
             <Button variant="secondary" small onClick={onRemove}>
               {updatesBundled ? t('plugins.useBundled') : t('plugins.remove')}
             </Button>
           )}
           <Switch
             checked={plugin.enabled}
-            disabled={plugin.replaced}
+            disabled={plugin.replaced || !admin}
             aria-label={t('plugins.toggle', { name: plugin.name })}
             onCheckedChange={onToggle}
           />
@@ -164,6 +168,7 @@ function InstallDialog({ staged, busy, onCancel, onInstall }: { staged: StagedPl
  */
 export function PluginsTab() {
   const { t } = useTranslation();
+  const admin = useIsAdmin();
   const [plugins, setPlugins] = useState<PluginInfo[] | null>(null);
   const [staged, setStaged] = useState<StagedPlugins | null>(null);
   const [busy, setBusy] = useState(false);
@@ -218,31 +223,41 @@ export function PluginsTab() {
     <section aria-label={t('plugins.title')} className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-3">
         <span className="mr-auto text-[13px] text-text-2">{t('plugins.intro')}</span>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button disabled={busy} className="gap-1.5">
-              <Plus size={14} aria-hidden="true" />
-              {t('plugins.add')}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuItem onSelect={() => void fromFolder()}>
-              <FolderOpen size={15} strokeWidth={1.5} aria-hidden="true" />
-              {t('plugins.fromFolder')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void fromZip()}>
-              <FileArchive size={15} strokeWidth={1.5} aria-hidden="true" />
-              {t('plugins.fromZip')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setGithub('')}>
-              <Link size={15} strokeWidth={1.5} aria-hidden="true" />
-              {t('plugins.fromGithub')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {admin ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button disabled={busy} className="gap-1.5">
+                <Plus size={14} aria-hidden="true" />
+                {t('plugins.add')}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onSelect={() => void fromFolder()}>
+                <FolderOpen size={15} strokeWidth={1.5} aria-hidden="true" />
+                {t('plugins.fromFolder')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void fromZip()}>
+                <FileArchive size={15} strokeWidth={1.5} aria-hidden="true" />
+                {t('plugins.fromZip')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setGithub('')}>
+                <Link size={15} strokeWidth={1.5} aria-hidden="true" />
+                {t('plugins.fromGithub')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <BumaBadge variant="neutral" label={t('plugins.adminsOnly')} />
+        )}
       </div>
 
-      {github !== null && (
+      {!admin && (
+        <p role="note" data-testid="plugins-admin-note" className="m-0 rounded-md bg-raised/60 px-3 py-2 text-[13px] text-text-2">
+          {t('plugins.adminNote')}
+        </p>
+      )}
+
+      {admin && github !== null && (
         <form onSubmit={fromGithub} className="flex gap-2 rounded-xl border border-border bg-card p-3">
           <Input
             autoFocus
@@ -271,6 +286,7 @@ export function PluginsTab() {
         <PluginCard
           key={`${p.source}-${p.name}`}
           plugin={p}
+          admin={admin}
           replacedBy={bundled}
           onToggle={(on) => void run(() => pluginSetEnabled(p.name, on))}
           onRemove={() => void run(() => pluginRemove(p.name))}

@@ -174,6 +174,8 @@ describe('fix round', () => {
     }
     const view = render(<Both n={1} />);
     const box = screen.getByTestId('box');
+    box.scrollTop = 1500; // at the end, then the reader scrolls up
+    fireEvent.scroll(box);
     box.scrollTop = 100;
     fireEvent.scroll(box);
     spy.mockClear();

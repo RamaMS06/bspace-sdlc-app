@@ -1,22 +1,18 @@
 import { useTranslation } from 'react-i18next';
 import { Check } from 'lucide-react';
 import type { Project } from '@bspace-sdlc-app/shared';
+import { useFeatureState } from '@/features/sdlc/lib/sdlcState';
 import { SDLC_STAGES } from '@/features/sdlc/components/SdlcWorkflow';
 import { cn } from '@/shared/lib/utils';
 
 /**
- * Where a feature stands in the SDLC, ideate to deploy. Until gate state is read from the project's files,
- * the stored status places it: a draft is ideating, a feature being built is on Build, a finished one is done.
+ * Where a feature stands in the SDLC, ideate to deploy, read from the files in its folder (the same
+ * artifacts the skills write). Until they are read, the first stage is shown as the current one.
  */
-export function stageOf(project: Project): number {
-  if (project.status === 'draft') return 0;
-  if (project.status === 'building') return SDLC_STAGES.findIndex((s) => s.name === 'Build');
-  return SDLC_STAGES.length;
-}
 
 export function FeaturePipeline({ project }: { project: Project }) {
   const { t } = useTranslation();
-  const active = stageOf(project);
+  const active = useFeatureState(project.id)?.current ?? 0;
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-6">
       <div className="flex flex-col gap-1">

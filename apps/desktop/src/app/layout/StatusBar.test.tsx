@@ -12,6 +12,7 @@ import { formatResetIn } from '@/shared/lib/time';
 import { mergeUsage, stopUsagePolling, useUsage } from '@/features/usage/state/usage';
 import { i18n } from '@/i18n';
 import { useApp } from '@/shared/state/app';
+import { useDevops } from '@/features/devops';
 
 const NOW = new Date('2026-11-04T10:00:00Z');
 
@@ -115,6 +116,21 @@ describe('status bar: the agent in use, all of them in the popover', () => {
     expect(useApp.getState().route).toEqual({ name: 'settings' });
   });
 
+  it('shows only the first account in the bar; the popover lists every account', async () => {
+    vi.mocked(getAgentUsage).mockResolvedValue([
+      { ...claude, accountId: 'default', account: 'first@buma.co.id', session: { usedPercent: 22, resetsAt: '2026-11-04T11:41:00Z' }, modelWeekly: null },
+      { ...claude, accountId: 'acc-2', account: 'second@buma.co.id', session: { usedPercent: 2, resetsAt: '2026-11-04T11:41:00Z' }, modelWeekly: null },
+    ]);
+    render(<StatusBar />);
+    await waitFor(() => expect(screen.getAllByTestId('status-account')).toHaveLength(1));
+    expect(screen.getByTestId('status-account')).toHaveTextContent(/22% used/);
+    expect(screen.queryByText(/second@buma.co.id/)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Claude Code usage' }));
+    const rows = await screen.findAllByTestId('usage-row');
+    expect(rows).toHaveLength(2);
+    expect(screen.getByText('second@buma.co.id')).toBeInTheDocument();
+  });
+
   it('goes to the Agents screen from usage details', async () => {
     render(<StatusBar />);
     await userEvent.click(screen.getByRole('button', { name: 'Claude Code usage' }));
@@ -141,5 +157,23 @@ describe('sortUsage', () => {
     const u = (agentId: string) => ({ agentId, status: 'ok', session: null, weekly: null, modelWeekly: null, updatedAt: '', message: null }) as never;
     const out = sortUsage([u('opencode'), u('codex'), u('cursor'), u('claude')]);
     expect(out.map((x: { agentId: string }) => x.agentId)).toEqual(['claude', 'codex', 'opencode', 'cursor']);
+  });
+});
+
+describe('the Admin label in the footer', () => {
+  const as = (admin: boolean) =>
+    useDevops.setState({ status: { signedIn: true, admin, profile: { org: 'buma', id: 'u', displayName: 'R', email: admin ? 'p-rama.msugiyanto@bukitmakmur.com' : 'x@y.z' } } });
+  afterEach(() => stopUsagePolling());
+
+  it('shows for an admin, next to the version, and not for anyone else', () => {
+    as(true);
+    const { unmount } = render(<StatusBar />);
+    expect(screen.getByTestId('admin-badge')).toHaveTextContent('Admin');
+    // Footer-sized: smaller than a BUMA badge's 24px.
+    expect(within(screen.getByTestId('admin-badge')).getByTestId('badge')).toHaveClass('h-[18px]', 'px-1.5');
+    unmount();
+    as(false);
+    render(<StatusBar />);
+    expect(screen.queryByTestId('admin-badge')).toBeNull();
   });
 });

@@ -684,7 +684,7 @@ describe('chat persistence scope', () => {
 
 describe('ChatProject status and jobs', () => {
 
-  it('the step bar moves on when the project does', async () => {
+  it("the step bar follows the feature's files, not its saved status", async () => {
     const user = userEvent.setup();
     const step = (name: string) => screen.getByText(name, { selector: '[data-step-name]' }).closest('li');
     vi.mocked(ipc.listProjects).mockResolvedValue([{ ...projects[0]!, status: 'draft' }, projects[1]!]);
@@ -695,12 +695,24 @@ describe('ChatProject status and jobs', () => {
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'go');
     await user.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
-    // The first edit finishes: the project is building, and the header follows.
+    // The first edit finishes: the project is "building", but nothing is approved yet, so it is still on Ideate.
     vi.mocked(ipc.listProjects).mockResolvedValue(projects);
     await emit('c1', { kind: 'tool', toolCallId: 't1', title: 'Edit intake.md', status: 'done', toolKind: 'edit' });
     expect(ipc.setProjectStatus).toHaveBeenCalledWith('p1', 'building');
-    await waitFor(() => expect(step('Build')).toHaveAttribute('aria-current', 'step'));
-  });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(step('Ideate')).toHaveAttribute('aria-current', 'step');
+    expect(step('Build')).not.toHaveAttribute('aria-current');
+    // The intent is approved on disk: the next read moves it on.
+    vi.mocked(ipc.projectFiles).mockImplementation(async (_id, dir) =>
+      dir === 'intent'
+        ? [{ name: 'ATT-x', path: 'intent/ATT-x', dir: true, size: 0, dim: null } as never]
+        : dir === 'intent/ATT-x'
+          ? [{ name: 'intent.md', path: 'intent/ATT-x/intent.md', dir: false, size: 9, dim: null } as never]
+          : [],
+    );
+    vi.mocked(ipc.readProjectFile).mockResolvedValue({ kind: 'text', text: 'Status: approved\nApproved-by: R' } as never);
+    await waitFor(() => expect(step('Blueprint')).toHaveAttribute('aria-current', 'step'), { timeout: 7000 });
+  }, 15000);
 
   it('tracks a turn as a build job: working, needs you, done, failed', async () => {
     const user = userEvent.setup();

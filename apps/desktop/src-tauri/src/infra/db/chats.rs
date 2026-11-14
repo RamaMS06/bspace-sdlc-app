@@ -102,6 +102,22 @@ impl Db {
     pub fn purge_archive(&self) -> Result<(usize, usize)> {
         let conn = self.conn();
         let tx = conn.unchecked_transaction()?;
+        // A feature follows its chats: one whose chats are all archived goes with them (its record and
+        // cards; the files in its folder stay). One with no chat yet, or with a live chat, stays.
+        tx.execute(
+            "DELETE FROM jobs WHERE project_id IN (\
+               SELECT p.id FROM projects p \
+               WHERE EXISTS (SELECT 1 FROM chats c WHERE c.project_id = p.id AND c.archived_at IS NOT NULL) \
+                 AND NOT EXISTS (SELECT 1 FROM chats c WHERE c.project_id = p.id AND c.archived_at IS NULL)) \
+             AND status <> 'working'",
+            [],
+        )?;
+        tx.execute(
+            "DELETE FROM projects WHERE \
+               EXISTS (SELECT 1 FROM chats c WHERE c.project_id = projects.id AND c.archived_at IS NOT NULL) \
+               AND NOT EXISTS (SELECT 1 FROM chats c WHERE c.project_id = projects.id AND c.archived_at IS NULL)",
+            [],
+        )?;
         tx.execute("DELETE FROM messages WHERE chat_id IN (SELECT id FROM chats WHERE archived_at IS NOT NULL)", [])?;
         let chats = tx.execute("DELETE FROM chats WHERE archived_at IS NOT NULL", [])?;
         let cards = tx.execute("DELETE FROM jobs WHERE archived_at IS NOT NULL AND status <> 'working'", [])?;
@@ -248,6 +264,21 @@ mod tests {
         assert_eq!(db.list_archived_chats().unwrap().len(), 1);
         db.add_message(&loose.id, MessageRole::User, &[]).unwrap();
         assert!(db.list_archived_chats().unwrap().is_empty());
+    }
+
+    #[test]
+    fn purging_the_archive_takes_the_features_whose_chats_were_all_archived() {
+        let db = db();
+        db.insert_project(&project("gone", "2026-01-01T00:00:00Z")).unwrap();
+        db.insert_project(&project("live", "2026-01-02T00:00:00Z")).unwrap();
+        db.insert_project(&project("fresh", "2026-01-03T00:00:00Z")).unwrap();
+        let g = db.create_chat(Some("gone"), AgentId::Claude, "G").unwrap();
+        db.create_chat(Some("live"), AgentId::Claude, "L").unwrap();
+        db.set_thread_archived(&g.id, true).unwrap();
+        db.purge_archive().unwrap();
+        let left: Vec<String> = db.list_projects().unwrap().into_iter().map(|p| p.id).collect();
+        // "gone" lost every chat with the purge, so it goes; one with a live chat or none yet stays.
+        assert_eq!(left, ["fresh", "live"]);
     }
 
     #[test]

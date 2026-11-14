@@ -7,7 +7,7 @@ export type ResolvedTheme = 'light' | 'dark';
 
 const KEY = 'theme';
 let media: MediaQueryList | null = null;
-/** While set, the app is light whatever the choice (the onboarding screens are always white). */
+/** While set, 'system' means light (the onboarding screens start white); an explicit light or dark choice still wins. */
 let forcedLight = false;
 const listeners = new Set<() => void>();
 let snapshot: { choice: ThemeChoice; resolved: ResolvedTheme } = { choice: 'system', resolved: 'light' };
@@ -21,15 +21,15 @@ export function themeChoice(): ThemeChoice {
   }
 }
 
-/** What the choice means right now: the system's theme for 'system'. Ignores the onboarding override. */
+/** What the choice means right now: the system's theme for 'system' (light while onboarding starts the app white). */
 export function resolveTheme(choice: ThemeChoice): ResolvedTheme {
-  if (choice === 'system') return media?.matches ? 'dark' : 'light';
+  if (choice === 'system') return !forcedLight && media?.matches ? 'dark' : 'light';
   return choice;
 }
 
 function apply(choice: ThemeChoice) {
   const resolved = resolveTheme(choice);
-  document.documentElement.classList.toggle('dark', !forcedLight && resolved === 'dark');
+  document.documentElement.classList.toggle('dark', resolved === 'dark');
   if (snapshot.choice !== choice || snapshot.resolved !== resolved) {
     snapshot = { choice, resolved };
     listeners.forEach((l) => l());
@@ -49,7 +49,7 @@ export function toggleTheme() {
   setTheme(resolveTheme(themeChoice()) === 'dark' ? 'light' : 'dark');
 }
 
-/** Forces the light theme on the whole window (dialogs included) until called with `false`. */
+/** Until called with `false`, a choice of 'system' means light (the onboarding screens start white); a choice the user made with the switch is kept. */
 export function forceLight(on: boolean) {
   forcedLight = on;
   apply(themeChoice());

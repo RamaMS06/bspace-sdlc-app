@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { projectFiles, readProjectFile, type ProjectFile } from '@/shared/lib/ipc';
 
 /**
@@ -107,3 +108,27 @@ export async function readFeatureState(projectId: string): Promise<FeatureState>
   };
   return { ...stagesFrom(facts), intentDir };
 }
+
+/** How often the open feature's folder is read again (the agent writes its files while it works). */
+const REFRESH_MS = 5000;
+
+/** The feature's state read from its files, kept fresh while the caller is mounted; undefined until the first read. */
+export function useFeatureState(projectId: string | undefined): FeatureState | undefined {
+  const [state, setState] = useState<FeatureState>();
+  useEffect(() => {
+    setState(undefined);
+    if (!projectId) return;
+    let alive = true;
+    const load = () => void readFeatureState(projectId).then((s) => alive && setState(s)).catch(() => {});
+    load();
+    const timer = setInterval(load, REFRESH_MS);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [projectId]);
+  return state;
+}
+
+/** The 7 stages as the header's 5 steps: Wireframe and Design are both "Design"; Deploy done is every step done. */
+export const STEP_OF_STAGE = [0, 1, 2, 2, 3, 4, 5] as const;

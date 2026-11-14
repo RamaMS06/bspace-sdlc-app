@@ -5,6 +5,7 @@ import remarkBreaks from 'remark-breaks';
 import { useTranslation } from 'react-i18next';
 import { Check, Copy } from 'lucide-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { highlightFence } from '@/shared/lib/highlight';
 
 /** Agent prose may carry links from pages it read: only https and mail open, like A2UI's https rule. */
 const SAFE_LINK = /^(https:|mailto:)/i;
@@ -38,19 +39,31 @@ function CodeBlock({ children }: { children?: ReactNode }) {
       () => {},
     );
   };
+  // Coloured once the highlighter has loaded; plain until then (and for languages it doesn't know).
+  const [html, setHtml] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setHtml(null);
+    void highlightFence(text, lang).then((h) => alive && setHtml(h));
+    return () => {
+      alive = false;
+    };
+  }, [text, lang]);
   return (
-    <div className="relative my-2 first:mt-0 last:mb-0">
-      {lang && <span className="absolute left-3 top-1.5 text-[11px] text-text-3">{lang}</span>}
-      <button
-        type="button"
-        aria-label={t('chat.copyCode')}
-        onClick={copy}
-        className="absolute right-2 top-1.5 inline-flex size-6 items-center justify-center rounded-sm text-text-3 hover:text-foreground"
-      >
-        {copied ? <Check size={14} strokeWidth={1.5} aria-hidden="true" /> : <Copy size={14} strokeWidth={1.5} aria-hidden="true" />}
-      </button>
-      <pre className={`m-0 overflow-x-auto rounded-md border border-border bg-panel p-3 font-mono text-[12.5px] leading-[1.55] ${lang ? 'pt-7' : ''}`}>
-        {children}
+    <div data-code-block className="my-2 overflow-hidden rounded-md border border-border bg-panel first:mt-0 last:mb-0">
+      <div className="flex h-8 items-center justify-between border-b border-border bg-raised/60 pr-1.5 pl-3">
+        <span className="font-mono text-[11px] text-text-3">{lang ?? ''}</span>
+        <button
+          type="button"
+          aria-label={t('chat.copyCode')}
+          onClick={copy}
+          className="inline-flex size-6 cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent text-text-3 hover:text-foreground"
+        >
+          {copied ? <Check size={14} strokeWidth={1.5} aria-hidden="true" /> : <Copy size={14} strokeWidth={1.5} aria-hidden="true" />}
+        </button>
+      </div>
+      <pre className="m-0 overflow-x-auto p-3 font-mono text-[12.5px] leading-[1.55] text-foreground">
+        {html ? <code className="code-tokens" data-highlighted="" dangerouslySetInnerHTML={{ __html: html }} /> : children}
       </pre>
     </div>
   );
@@ -128,9 +141,13 @@ function htmlAsText() {
 const plugins = [remarkGfm, remarkBreaks, htmlAsText];
 
 /** Agent prose as Markdown: no raw HTML, no images, links open outside the webview. */
-export const Markdown = memo(function Markdown({ text }: { text: string }) {
+/** How agent text reads while it works (between steps): smaller and quieter than its answer. */
+const QUIET =
+  'text-[13px] text-text-2 [&_p]:text-[13px] [&_p]:text-text-2 [&_ul]:text-[13px] [&_ul]:text-text-2 [&_ol]:text-[13px] [&_ol]:text-text-2 [&_strong]:text-text-2 [&_h1]:text-[13px] [&_h2]:text-[13px] [&_h3]:text-[13px] [&_h1]:text-text-2 [&_h2]:text-text-2 [&_h3]:text-text-2';
+
+export const Markdown = memo(function Markdown({ text, quiet = false }: { text: string; quiet?: boolean }) {
   return (
-    <div className="min-w-0 break-words">
+    <div className={`min-w-0 break-words ${quiet ? QUIET : ''}`} data-quiet={quiet || undefined}>
       <ReactMarkdown remarkPlugins={plugins} urlTransform={(u) => u} components={components}>
         {text}
       </ReactMarkdown>

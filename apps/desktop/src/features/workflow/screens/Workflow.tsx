@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, FolderOpen, MessageCircle, Plus } from 'lucide-react';
+import { Check, FolderOpen, MessageCircle, Plus, UserPlus } from 'lucide-react';
 import type { Job, Project } from '@bspace-sdlc-app/shared';
 import { AgentOffice } from '@/features/workflow/components/AgentOffice';
+import { InviteDialog } from '@/features/workflow/components/InviteDialog';
 import { BumaBadge } from '@/shared/ui/buma/Badge';
 import { BumaLoading } from '@/shared/ui/buma/Loading';
 import { Button } from '@/shared/ui/Button';
@@ -10,7 +11,7 @@ import { NewFeatureDialog, featureChat, runStage, refreshJobs, useJobs } from '@
 import { SDLC_STAGES } from '@/features/sdlc';
 import { StatusIcon } from '@/shared/ui/StatusIcon';
 import { listProjects, openProjectFolder } from '@/shared/lib/ipc';
-import { readFeatureState, type FeatureState } from '@/features/workflow/lib/sdlcState';
+import { readFeatureState, type FeatureState } from '@/features/sdlc/lib/sdlcState';
 import { ago } from '@/shared/lib/time';
 import { cn } from '@/shared/lib/utils';
 import { useApp } from '@/shared/state/app';
@@ -150,6 +151,7 @@ function FeatureDetail({ project, state, job, agent }: { project: Project; state
   const { t } = useTranslation();
   const navigate = useApp((s) => s.navigate);
   const [busy, setBusy] = useState<number | null>(null);
+  const [inviting, setInviting] = useState(false);
   const done = state ? state.stages.filter((s) => s === 'done').length : 0;
   const percent = Math.round((done / SDLC_STAGES.length) * 100);
 
@@ -181,6 +183,11 @@ function FeatureDetail({ project, state, job, agent }: { project: Project; state
           <MessageCircle size={14} aria-hidden="true" />
           {t('workflow.openChat')}
         </Button>
+        <Button variant="secondary" className="gap-1.5" onClick={() => setInviting(true)}>
+          <UserPlus size={14} aria-hidden="true" />
+          {t('invite.open')}
+        </Button>
+        <InviteDialog project={project} open={inviting} onOpenChange={setInviting} />
       </div>
 
       <div className="flex flex-col gap-2">

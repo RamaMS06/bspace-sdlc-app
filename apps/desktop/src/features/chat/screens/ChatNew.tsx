@@ -98,7 +98,7 @@ export function ChatNew() {
     try {
       const text = parts.find((p) => p.type === 'text');
       const typed = text?.type === 'text' ? text.text : '';
-      // Starting with an SDLC skill starts a feature: it gets its folder and shows on Workflow.
+      // Only /using-bspace-sdlc starts a feature: it gets its folder and shows on Workflow.
       let feature: Project | null = null;
       const name = sdlcStart(typed);
       if (settings && name !== null && !creating.current) feature = await createFeature(name || t('chat.newFeature'));

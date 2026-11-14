@@ -18,6 +18,8 @@ export function currentStep(status: ProjectStatus, verifying = false): number {
 type Props =
   | {
       status: ProjectStatus;
+      /** The step read from the feature's files; the stored status is only a guess until it is known. */
+      step?: number;
     }
   | {
       /** Visible step names, in order. */
@@ -34,7 +36,7 @@ export function StepBar(props: Props) {
   const { t } = useTranslation();
   const own = 'steps' in props;
   const names = own ? props.steps : STEPS.map((s) => t(`stepBar.${s}`));
-  const cur = own ? props.current : currentStep(props.status);
+  const cur = own ? props.current : (props.step ?? currentStep(props.status));
   const onPick = own ? props.onPick : undefined;
   return (
     // A project's steps sit in the chat header: one line always, and when its container (`@container/steps`)

@@ -18,6 +18,18 @@ impl Db {
         query_as(&self.conn(), &sql, &[])
     }
 
+    /// The projects the app shows (Workflow, the @ menu): a project follows its chats, so one whose chats are
+    /// all archived is hidden with them and comes back when they are restored. One with no chat yet stays.
+    pub fn list_visible_projects(&self) -> Result<Vec<Project>> {
+        let sql = format!(
+            "{PROJECT_SELECT} WHERE NOT (\
+               EXISTS (SELECT 1 FROM chats c WHERE c.project_id = projects.id AND c.archived_at IS NOT NULL) \
+               AND NOT EXISTS (SELECT 1 FROM chats c WHERE c.project_id = projects.id AND c.archived_at IS NULL)) \
+             ORDER BY updated_at DESC, rowid DESC"
+        );
+        query_as(&self.conn(), &sql, &[])
+    }
+
     pub fn insert_project(&self, p: &Project) -> Result<()> {
         let vals = bind_values(p, &PROJECT_KEYS)?;
         self.conn().execute(
@@ -107,6 +119,27 @@ mod tests {
         assert!(db.update_project("a", json!({"status": "bogus"})).is_err());
         assert!(db.update_project("missing", json!({"title": "x"})).is_err());
         assert_eq!(db.get_project("a").unwrap().unwrap().title, "New");
+    }
+
+    #[test]
+    fn a_project_follows_its_chats_into_the_archive_and_back() {
+        let db = db();
+        db.insert_project(&project("a", "2026-01-01T00:00:00Z")).unwrap();
+        db.insert_project(&project("b", "2026-02-01T00:00:00Z")).unwrap();
+        db.insert_project(&project("fresh", "2026-03-01T00:00:00Z")).unwrap();
+        let first = db.create_chat(Some("a"), AgentId::Claude, "First").unwrap();
+        db.create_chat(Some("a"), AgentId::Claude, "Second").unwrap();
+        db.create_chat(Some("b"), AgentId::Claude, "Only").unwrap();
+        let ids = |db: &Db| db.list_visible_projects().unwrap().into_iter().map(|p| p.id).collect::<Vec<_>>();
+        assert_eq!(ids(&db), ["fresh", "b", "a"]);
+        // Archiving a project's thread archives all its chats: it leaves Workflow with them.
+        db.set_thread_archived(&first.id, true).unwrap();
+        assert_eq!(ids(&db), ["fresh", "b"]);
+        // A project that never had a chat is not hidden, and the full list still has everything.
+        assert_eq!(db.list_projects().unwrap().len(), 3);
+        // Restoring brings it back.
+        db.set_thread_archived(&first.id, false).unwrap();
+        assert_eq!(ids(&db), ["fresh", "b", "a"]);
     }
 
     #[test]

@@ -15,7 +15,7 @@ import {
 } from '@/shared/ui/primitives/dropdown-menu';
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/shared/ui/primitives/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/shared/ui/primitives/command';
-import { groupModels, KNOWN_MODELS, parseSingle, singlePick, useFailover, StepPicker, useModelName, EXACT_LIST, modelOptions, useModels } from '@/features/agents';
+import { groupModels, KNOWN_MODELS, parseSingle, singlePick, useFailover, StepPicker, useModelName, EXACT_LIST, modelOptions, runnableModels, useModels } from '@/features/agents';
 import { usePick } from '@/features/chat/lib/usePick';
 import { Textarea } from '@/shared/ui/primitives/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/shared/ui/primitives/tooltip';
@@ -200,8 +200,9 @@ export function ModelPicker({ agent, chatId, disabled }: { agent: AgentId; chatI
   // full list (Claude: Anthropic's; opencode: all providers), then the ones added by hand.
   const options = useMemo(() => {
     const seen = new Set<string>();
-    const own = catalog?.length && EXACT_LIST.includes(agent) ? [] : session;
-    return [...own, ...(catalog ?? []), ...(catalog?.length ? [] : (KNOWN_MODELS[agent] ?? [])), ...(extra ?? []).map((value) => ({ value, name: value }))].filter(
+    const full = runnableModels(agent, catalog, session);
+    const own = full && EXACT_LIST.includes(agent) ? [] : session;
+    return [...own, ...(full ?? []), ...(full ? [] : (KNOWN_MODELS[agent] ?? [])), ...(extra ?? []).map((value) => ({ value, name: value }))].filter(
       (m) => m.value !== 'default' && !seen.has(m.value) && !!seen.add(m.value),
     );
   }, [session, catalog, extra, agent]);

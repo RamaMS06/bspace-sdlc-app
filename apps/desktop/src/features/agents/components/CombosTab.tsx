@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowDown, ArrowUp, Plus, Star, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, GripVertical, Plus, Star, Trash2, X } from 'lucide-react';
 import type { AgentId, AgentInfo } from '@bspace-sdlc-app/shared';
 import { AgentLogo } from '@/shared/ui/AgentLogo';
 import { Button } from '@/shared/ui/Button';
@@ -103,14 +103,67 @@ export function StepPicker({ agents, onPick, children }: { agents: AgentId[]; on
   );
 }
 
-function StepRow({ step, index, count, onMove, onRemove }: { step: Step; index: number; count: number; onMove(by: -1 | 1): void; onRemove(): void }) {
+/** Where a dragged row would land: how many of the other rows have their middle above the pointer. */
+export function dropIndex(mids: number[], from: number, y: number): number {
+  return mids.reduce((n, mid, i) => (i !== from && mid < y ? n + 1 : n), 0);
+}
+
+/** `from` moved to `to`, the rest keeping their order. */
+export function moveStep<T>(list: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || from >= list.length) return list;
+  const next = [...list];
+  const [item] = next.splice(from, 1);
+  next.splice(Math.max(0, Math.min(to, next.length)), 0, item!);
+  return next;
+}
+
+function StepRow({
+  step,
+  index,
+  count,
+  drag,
+  onGrab,
+  onMove,
+  onRemove,
+}: {
+  step: Step;
+  index: number;
+  count: number;
+  /** While a row is being dragged: which one, and where it would land. */
+  drag: { from: number; to: number } | null;
+  onGrab(index: number, e: React.PointerEvent<HTMLElement>): void;
+  onMove(by: -1 | 1): void;
+  onRemove(): void;
+}) {
   const { t, i18n } = useTranslation();
   const name = useModelName(step.agent);
   useFailover((s) => s.cooldown);
   const until = useFailover.getState().restingUntil(step);
   const label = `${AGENT_NAMES[step.agent]} · ${name(step.model, t('composer.modelDefault'))}`;
+  const dragging = drag?.from === index;
+  // The line where the dragged row would land: below the row it moves down past, above the one it moves up past.
+  const line = drag && !dragging && index === drag.to && drag.to !== drag.from ? (drag.to > drag.from ? 'bottom' : 'top') : null;
   return (
-    <li data-testid={`step-${stepKey(step)}`} className="flex items-center gap-buma-xs rounded-md px-buma-xs py-buma-2xs hover:bg-raised/50">
+    <li
+      data-testid={`step-${stepKey(step)}`}
+      data-step-index={index}
+      className={cn(
+        'relative flex items-center gap-buma-xs rounded-md px-buma-xs py-buma-2xs hover:bg-raised/50',
+        dragging && 'bg-raised opacity-70 shadow-md',
+        line === 'top' && 'before:absolute before:inset-x-0 before:-top-px before:h-0.5 before:rounded-full before:bg-primary',
+        line === 'bottom' && 'after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary',
+      )}
+    >
+      <button
+        type="button"
+        data-testid={`grip-${index}`}
+        aria-label={t('combos.drag', { name: label })}
+        title={t('combos.dragHint')}
+        onPointerDown={(e) => onGrab(index, e)}
+        className="flex size-6 shrink-0 cursor-grab touch-none items-center justify-center rounded border-0 bg-transparent text-text-3 hover:text-foreground active:cursor-grabbing"
+      >
+        <GripVertical size={14} aria-hidden="true" />
+      </button>
       <span className="w-4 shrink-0 text-center font-mono text-[11px] text-text-3">{index + 1}</span>
       <AgentLogo id={step.agent} size={16} />
       <span className="min-w-0 flex-1 truncate text-[13px]">
@@ -138,6 +191,46 @@ function ComboCard({ combo, agents, isDefault, canRemove }: { combo: Combo; agen
   const fo = useFailover.getState();
   const [name, setName] = useState(combo.name);
   const steps = combo.steps;
+  const list = useRef<HTMLOListElement>(null);
+  // Dragging a row by its grip (pointer events: they work in every webview, unlike HTML5 drag and drop,
+  // which Tauri's file-drop handling takes over on Windows).
+  const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
+  const dragRef = useRef(drag);
+  dragRef.current = drag;
+  const stepsRef = useRef(steps);
+  stepsRef.current = steps;
+  const grab = (index: number, e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    setDrag({ from: index, to: index });
+    const rows = () => [...(list.current?.querySelectorAll<HTMLElement>('[data-step-index]') ?? [])];
+    const over = (y: number) => {
+      const mids = rows().map((r) => {
+        const b = r.getBoundingClientRect();
+        return b.top + b.height / 2;
+      });
+      setDrag((d) => (d ? { ...d, to: dropIndex(mids, d.from, y) } : d));
+    };
+    const end = (commit: boolean) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+      window.removeEventListener('keydown', key);
+      const d = dragRef.current;
+      setDrag(null);
+      if (commit && d && d.from !== d.to) useFailover.getState().setComboSteps(combo.id, moveStep(stepsRef.current, d.from, d.to));
+    };
+    const move = (ev: PointerEvent) => over(ev.clientY);
+    const up = () => end(true);
+    const cancel = () => end(false);
+    const key = (ev: KeyboardEvent) => ev.key === 'Escape' && end(false);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+    window.addEventListener('keydown', key);
+  };
+  // A combo that goes away mid-drag leaves nothing listening (the listeners remove themselves on release).
+  useEffect(() => () => setDrag(null), []);
   const move = (i: number, by: -1 | 1) => {
     const j = i + by;
     if (j < 0 || j >= steps.length) return;
@@ -175,13 +268,15 @@ function ComboCard({ combo, agents, isDefault, canRemove }: { combo: Combo; agen
         )}
       </div>
       {steps.length > 0 ? (
-        <ol aria-label={t('combos.stepsAria', { name: combo.name })} className="m-0 flex list-none flex-col gap-buma-2xs p-0">
+        <ol ref={list} aria-label={t('combos.stepsAria', { name: combo.name })} className="m-0 flex list-none flex-col gap-buma-2xs p-0">
           {steps.map((s, i) => (
             <StepRow
               key={`${stepKey(s)}-${i}`}
               step={s}
               index={i}
               count={steps.length}
+              drag={drag}
+              onGrab={grab}
               onMove={(by) => move(i, by)}
               onRemove={() => fo.setComboSteps(combo.id, steps.filter((_, k) => k !== i))}
             />

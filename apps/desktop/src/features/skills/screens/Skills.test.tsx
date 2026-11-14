@@ -40,6 +40,7 @@ import {
 } from '@/shared/lib/ipc';
 import { Skills } from '@/features/skills/screens/Skills';
 import * as plugins from '@/features/skills/lib/plugins';
+import { useDevops } from '@/features/devops';
 
 const bundled = {
   name: 'bspace-sdlc-skills',
@@ -64,7 +65,12 @@ async function renderSkills() {
 
 const hooks = { id: 'hooks', description: 'Use when writing hooks', enabled: true, path: '/d/skills/hooks/SKILL.md' };
 
+const profile = { org: 'buma', id: 'u', displayName: 'Rama', email: 'p-rama.msugiyanto@bukitmakmur.com' };
+/** Signed in to Azure DevOps as an admin (can edit the SDLC plugin) or as anyone else. */
+const signedInAs = (admin: boolean) => useDevops.setState({ status: { signedIn: true, admin, profile: admin ? profile : { ...profile, email: 'someone@bukitmakmur.com' } } });
+
 beforeEach(() => {
+  signedInAs(true);
   vi.mocked(listSkills).mockReset().mockResolvedValue([hooks]);
   vi.mocked(plugins.pluginsList).mockReset().mockResolvedValue([bundled]);
   for (const fn of [plugins.pluginInstall, plugins.pluginDiscard, plugins.pluginStageFolder, plugins.pluginSetEnabled]) vi.mocked(fn).mockClear();
@@ -128,6 +134,40 @@ describe('Skills screen', () => {
     render(<Skills />);
     await userEvent.click(await screen.findByRole('switch', { name: 'Turn bspace-sdlc-skills on or off' }));
     expect(plugins.pluginSetEnabled).toHaveBeenCalledWith('bspace-sdlc-skills', false);
+  });
+
+  describe('only an admin edits the SDLC plugin', () => {
+    it('anyone else sees it read-only: no way to add, remove or switch plugins, and a note saying who edits it', async () => {
+      signedInAs(false);
+      vi.mocked(plugins.pluginsList).mockResolvedValue([bundled, { ...bundled, version: '1.0.9', source: 'installed' as const, path: '/p' }]);
+      render(<Skills />);
+      await screen.findByTestId('plugin-bspace-sdlc-skills-bundled');
+      expect(screen.queryByRole('button', { name: 'Add plugin' })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Use bundled version|Remove/ })).toBeNull();
+      for (const sw of screen.getAllByRole('switch')) expect(sw).toBeDisabled();
+      expect(screen.getByTestId('plugins-admin-note')).toHaveTextContent('edited by admins');
+      expect(screen.getByText('Managed by admins')).toBeInTheDocument();
+      // They can still look at what is in it.
+      await userEvent.click(within(screen.getByTestId('plugin-bspace-sdlc-skills-bundled')).getByRole('button', { name: /2 skills/ }));
+      expect(screen.getAllByText('blueprint-ftsd').length).toBeGreaterThan(0);
+    });
+
+    it('their own skills stay theirs to add, edit and use', async () => {
+      signedInAs(false);
+      render(<Skills />);
+      await userEvent.click(await screen.findByRole('tab', { name: 'Skills' }));
+      expect(await screen.findByText('hooks')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /New skill/ })).toBeEnabled();
+      expect(screen.getByRole('button', { name: /Import/ })).toBeEnabled();
+    });
+
+    it('an admin has all of it, and no note', async () => {
+      render(<Skills />);
+      await screen.findByTestId('plugin-bspace-sdlc-skills-bundled');
+      expect(screen.getByRole('button', { name: 'Add plugin' })).toBeEnabled();
+      expect(screen.getByRole('switch', { name: 'Turn bspace-sdlc-skills on or off' })).toBeEnabled();
+      expect(screen.queryByTestId('plugins-admin-note')).toBeNull();
+    });
   });
 
   it('says how to start when there are none', async () => {
