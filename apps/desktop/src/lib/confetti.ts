@@ -1,7 +1,8 @@
 // A small confetti burst on a full-window canvas, for when a plan turns on. No dependency: a few
 // hundred rectangles with gravity and drag, drawn for ~2.5 s, then the canvas is removed.
 
-export const CONFETTI_COLORS = ['#F2470C', '#FF8A5B', '#FFD6C2', '#EDEDED'];
+// BUMA primary/500, primary/400, secondary/500, warning/500 (canvas needs literal colors, not CSS vars).
+export const CONFETTI_COLORS = ['#08A94C', '#39BA70', '#F8981D', '#FCD305'];
 const DURATION_MS = 2500;
 const SECOND_BURST_MS = 600;
 

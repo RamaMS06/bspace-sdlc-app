@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-/** Who is signed in to Claude in Tayang (Tayang's own Claude config folder, see claude_account.rs). */
+/** Who is signed in to Claude in Buma (Buma's own Claude config folder, see claude_account.rs). */
 export interface ClaudeAccount {
   signedIn: boolean;
   email: string | null;

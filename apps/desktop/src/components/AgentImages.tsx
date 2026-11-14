@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, FolderOpen, ImageOff } from 'lucide-react';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
-import type { MessagePart } from '@tayang/shared';
+import type { MessagePart } from '@bspace-sdlc-app/shared';
 import { Button } from '@/components/Button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { assetUrl } from '@/lib/ipc';

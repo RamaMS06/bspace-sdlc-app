@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>flutter-run-verify — bspace-sdlc-skills</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/doc.css">
+<script src="assets/doc.js" defer></script>
+</head>
+<body data-page="flutter-run-verify"><div class="wrap">
+<div class="topbar"><a class="brand" href="index.html">bspace <span>sdlc</span> skills</a><span class="note">v1.0.7</span><div class="langswitch" aria-label="Language"><button type="button" data-lang="id" aria-pressed="true">ID</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div></div>
+<nav class="pages"><a href="index.html">Overview</a><span class="navgroup">Router</span><a href="using-bspace-sdlc.html">using-bspace-sdlc</a><span class="navgroup">Dokumen</span><a href="blueprint-ftsd.html">blueprint-ftsd</a><span class="navgroup">Flutter</span><a href="flutter-slice-screen.html">flutter-slice-screen</a><a href="flutter-match-component.html">flutter-match-component</a><a href="flutter-resolve-assets.html">flutter-resolve-assets</a><a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a><a href="flutter-run-verify.html" aria-current="page">flutter-run-verify</a><span class="navgroup">Vue</span><a href="vue-slice-screen.html">vue-slice-screen</a><a href="vue-resolve-assets.html">vue-resolve-assets</a><span class="navgroup">Eksekusi</span><a href="subagent-driven-development.html">subagent-driven-development</a></nav>
+  <span class="navgroup">Wireframe</span><a href="wireframe-lofi.html">wireframe-lofi</a>
+  <span class="navgroup">Design</span><a href="figma-generate-screen.html">figma-generate-screen</a>
+<h1><em>flutter</em>-run-verify</h1>
+<p class="lede">Membuktikan screen Flutter benar-benar render: headless multi-viewport dulu, lalu runner nyata bila tersedia. Menangkap overflow, infinite constraints, safe-area overlap, large text, missing asset, native build, plugin, launch crash, dan debug-console exception. Bukan skill untuk menulis feature atau business logic.</p>
+<div class="layer"><div class="layer-head"><span class="tag">Route contract</span><span class="note">CALLED BY FLUTTER SLICE · DIRECT RUNTIME CHECK</span></div><div class="layer-body"><div class="tablewrap"><table class="compact"><tr><th>Bagian</th><th>As-is</th></tr><tr><td>Trigger</td><td><code>flutter-slice-screen</code> sudah pass <code>--check</code>; user meminta cek runtime/device; atau router melihat <code>run:</code> belum ada.</td></tr><tr><td>Prasyarat</td><td>Nearest <code>pubspec.yaml</code>, feature dir valid, <code>validate_output.py --check</code> pass, render test exact screen.</td></tr><tr><td>Memanggil</td><td>Tidak memanggil repair skill; auto-fix terbatas pada error yang diizinkan dan re-run. Fidelity score tetap dari <a href="flutter-verify-fidelity.html">verify-fidelity</a>.</td></tr><tr><td>Output</td><td>Headless log, runner log/screenshot bila ada, <code>run: PASS|skipped|BLOCKED</code>.</td></tr><tr><td>Next</td><td>PASS/skipped → rekonsiliasi spec dan Close. BLOCKED → stop; jangan klaim selesai.</td></tr></table></div></div></div>
+<div class="layer"><div class="layer-head"><span class="tag">Contract</span><span class="note">headless wajib · device setelahnya</span></div><div class="layer-body"><ul><li><b>PASS (headless):</b> render test exact screen hijau di semua viewport, log tersimpan, zero exception.</li><li>Runner nyata menambah bukti pod/gradle, platform plugin, launch, dan console. Tidak ada device → <code>run: skipped (no device)</code>, bukan blocker headless.</li><li>Tooling hilang atau screen tidak reachable → <code>BLOCKED</code>, tidak disamarkan sebagai pass.</li></ul></div></div>
+<h2>Alur</h2><pre>
+--check feature-dir
+       │ pass
+       ▼
+flutter pub get → analyze → render test
+       │
+       ├─ 320×568 · 390×844 · 393×852 · 430×932
+       ├─ safe-area padding + TextScaler 1.3
+       └─ takeException null + log bersih
+              │ PASS (headless)
+              ▼
+flutter devices → boot existing runner → flutter run --route
+              │ clean ─► screenshot + run: PASS
+              │ no device ─► run: skipped (no device)
+              │ error ─► classify → allowed fix ≤3 rounds → BLOCKED
+</pre>
+<h2>Langkah</h2>
+<div class="step"><h3><span class="n">1</span>Locate dan preflight</h3><ol><li>Package root = nearest <code>pubspec.yaml</code>. Jalankan SDK runner sesuai <code>.fvmrc</code> DS; jangan memakai SDK lebih baru.</li><li>Jalankan <code>validate_output.py --check &lt;feature-dir&gt;</code> dulu. Gagal = stop, jangan build.</li><li><code>flutter pub get</code>. Dengan <code>ios/</code>, jalankan <code>flutter build ios --config-only --no-codesign</code>; Podfile.lock stale/missing → <code>pod install --repo-update</code>.</li><li><code>flutter analyze --no-fatal-infos</code>; fix error dan lint yang disebabkan slice. Error pre-existing di luar target dicatat, bukan diperbaiki.</li></ol></div>
+<div class="step"><h3><span class="n">2</span>Render test persistent</h3><p>Satu file <code>&lt;screen&gt;_render_test.dart</code> per screen, terpisah dari fidelity/component tests. Capture output ke log. Ukuran harus real viewport, bukan hanya designSize.</p><pre>for (final logical in const [Size(320, 568), Size(390, 844), Size(393, 852), Size(430, 932)]) {
+  testWidgets('renders clean at $logical', (tester) async {
+    tester.view.devicePixelRatio = 3.0;
+    tester.view.physicalSize = logical * 3.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(/* same app root + ScreenUtilInit */);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+}</pre><p>Tambahkan <code>FakeViewPadding</code> top 59/bottom 34 dan <code>TextScaler.linear(1.3)</code>. Semua <code>RenderParagraph</code> harus <code>didExceedMaxLines == false</code>, kecuali truncation Figma yang eksplisit. <code>--check</code> membutuhkan dua API ini.</p></div>
+<div class="step"><h3><span class="n">3</span>Definition headless</h3><p>Green berarti <code>takeException()</code> null dan captured log zero matches. Jalankan exact test file, bukan directory test. <code>PASS (headless)</code> membuktikan layout, safe area, text scale, dan asset load secara headless; native plugin tetap menunggu device.</p></div>
+<div class="step"><h3><span class="n">4</span>Runner nyata</h3><ol><li><code>flutter devices --machine</code>; pilih mobile runner yang sudah hidup. Jika perlu boot existing iOS simulator atau Android emulator. Tidak ada runner sama sekali → skip.</li><li><code>flutter run -d &lt;id&gt; --route &lt;screen route&gt;</code>; simpan output ke <code>build/run-verify/run.log</code>; tunggu first frame + 15 detik lalu quit.</li><li>Grep <code>EXCEPTION CAUGHT</code>, <code>overflowed</code>, <code>Unhandled Exception</code>, Xcode/Gradle failure, plus runtime patterns. Warning Xcode/Gradle dicatat sekali, tidak difix.</li><li>Auto-fix maksimal 3 ronde, fresh <code>flutter run</code> setiap ronde. Tetap error → <code>run: BLOCKED &lt;first error&gt;</code>.</li></ol></div>
+<div class="step"><h3><span class="n">5</span>Fix yang diizinkan</h3><p>Boleh: Dart error di slice; overflow lalu re-score; pub get/upgrade dalam DS constraint; direct dependency; pod install; naikkan Podfile minimum iOS ke DS minimum. Tidak boleh: <code>dependency_overrides</code>, ubah Flutter pin/DS ref, <code>--major-versions</code>, <code>// ignore:</code>, melemahkan test, edit di luar slice selain <code>pubspec.yaml</code>/<code>Podfile</code>, hand-edit <code>project.pbxproj</code>.</p><p>Untuk overflow: <code>Expanded</code>/<code>Flexible</code> pada bounded Flex; <code>SizedBox</code> hanya jika Figma menentukan extent; <code>Intrinsic*</code> hanya bila sibling perlu berbagi extent. Jangan hardcode ukuran yang tidak ada di Figma.</p></div>
+<div class="step"><h3><span class="n">6</span>Reachability dan screenshot</h3><p>Screen harus benar-benar di layar, via deep link, navigation nyata, atau temporary initial-location edit yang dikembalikan dan dilaporkan. Simpan screenshot runner di <code>specs/&lt;ID&gt;-.../renders/run-&lt;runner&gt;.png</code>. Screenshot harus menunjukkan target, semua section, icon/image graphic nyata, tanpa blank atau shortened region.</p></div>
+<h2>Grepping runtime errors</h2><pre>grep -niE 'EXCEPTION CAUGHT BY|A RenderFlex overflowed by|BoxConstraints forces an infinite|unbounded height|unbounded width|Incorrect use of ParentDataWidget|Unable to load asset|setState\(\) called during build|Failed assertion|Another exception was thrown|RenderBox was not laid out|Vertical viewport was given unbounded height|Cannot hit test a render box' run.log</pre>
+<h2>Catatan <code>plan.md</code></h2><div class="tablewrap"><table class="compact"><tr><th>Status</th><th>Format</th></tr><tr><td>headless pass + device pass</td><td><code>- run: PASS &lt;device&gt;</code></td></tr><tr><td>headless pass, no runner</td><td><code>- run: skipped (no device)</code></td></tr><tr><td>blocked</td><td><code>- run: BLOCKED &lt;reason&gt;</code></td></tr></table></div>
+<div class="warn"><span class="tag">Definition of done</span><p>Render test hijau pada empat viewport + safe-area/text-scale, exit 0, log bersih. Untuk setiap runner: first frame, target reachable, post-navigation grep bersih, screenshot tersimpan, dan file edit serta residual noise dilaporkan.</p></div>
+<footer>Sumber: <code>skills/flutter-run-verify/SKILL.md</code> dan <code>flutter-slice-screen/references/environment.md</code>.</footer>
+</div></body></html>

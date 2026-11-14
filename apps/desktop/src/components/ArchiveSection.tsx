@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArchiveRestore } from 'lucide-react';
-import type { Job, RecentChat } from '@tayang/shared';
+import type { Job, RecentChat } from '@bspace-sdlc-app/shared';
 import { Button } from '@/components/Button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { listArchivedChats, listJobs, purgeArchive, setJobsArchived, setThreadArchived } from '@/lib/ipc';
@@ -87,7 +87,7 @@ export function ArchiveSection() {
           </span>
         )}
         {error && (
-          <span role="alert" className="text-xs text-orange-light">
+          <span role="alert" className="text-xs text-error">
             {error}
           </span>
         )}
@@ -126,7 +126,7 @@ function List({
 }) {
   const { t } = useTranslation();
   return (
-    <section aria-label={title} className="flex flex-col border-b border-[#222] px-4 py-3 last:border-b-0">
+    <section aria-label={title} className="flex flex-col border-b border-border px-4 py-3 last:border-b-0">
       <span className="pb-2 text-sm">
         {title} <span className="font-mono text-xs text-text-3">{items.length}</span>
       </span>
@@ -135,7 +135,7 @@ function List({
       ) : (
         <ul className="m-0 flex max-h-64 list-none flex-col overflow-y-auto p-0">
           {items.map((it) => (
-            <li key={it.id} className="flex h-9 items-center gap-3 border-t border-[#1c1c1c] first:border-t-0">
+            <li key={it.id} className="flex h-9 items-center gap-3 border-t border-border first:border-t-0">
               <span className="min-w-0 flex-1 truncate text-[13px]">{it.name}</span>
               <span className="shrink-0 text-xs text-text-3">{t('archive.archivedAgo', { ago: ago(it.at) })}</span>
               <Button

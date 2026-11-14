@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>subagent-driven-development — bspace-sdlc-skills</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/doc.css">
+<script src="assets/doc.js" defer></script>
+</head>
+<body data-page="subagent-driven-development"><div class="wrap">
+<div class="topbar"><a class="brand" href="index.html">bspace <span>sdlc</span> skills</a><span class="note">v1.0.7</span><div class="langswitch" aria-label="Language"><button type="button" data-lang="id" aria-pressed="true">ID</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div></div>
+<nav class="pages"><a href="index.html">Overview</a><span class="navgroup">Router</span><a href="using-bspace-sdlc.html">using-bspace-sdlc</a><span class="navgroup">Dokumen</span><a href="blueprint-ftsd.html">blueprint-ftsd</a><span class="navgroup">Flutter</span><a href="flutter-slice-screen.html">flutter-slice-screen</a><a href="flutter-match-component.html">flutter-match-component</a><a href="flutter-resolve-assets.html">flutter-resolve-assets</a><a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a><a href="flutter-run-verify.html">flutter-run-verify</a><span class="navgroup">Vue</span><a href="vue-slice-screen.html">vue-slice-screen</a><a href="vue-resolve-assets.html">vue-resolve-assets</a><span class="navgroup">Eksekusi</span><a href="subagent-driven-development.html" aria-current="page">subagent-driven-development</a></nav>
+  <span class="navgroup">Wireframe</span><a href="wireframe-lofi.html">wireframe-lofi</a>
+  <span class="navgroup">Design</span><a href="figma-generate-screen.html">figma-generate-screen</a>
+<h1><em>subagent</em>-driven development</h1>
+<p class="lede">Model eksekusi default untuk pekerjaan multi-unit: section Figma, frame, task code, refactor, Flutter, atau Vue. Orchestrator memegang state tipis di file; worker mendapat konteks baru per unit; hasil berupa report file; gate dijalankan pihak luar.</p>
+<div class="layer"><div class="layer-head"><span class="tag">Route contract</span><span class="note">WRAPPER · ANY CALLER</span></div><div class="layer-body"><div class="tablewrap"><table class="compact"><tr><th>Bagian</th><th>As-is</th></tr><tr><td>Trigger</td><td>Caller punya lebih dari satu unit, multi-frame/section, atau risiko context window penuh.</td></tr><tr><td>Prasyarat</td><td>Caller sudah menentukan unit, writable set, brief fields, dan gate. Skill ini tidak menentukan isi task.</td></tr><tr><td>Memanggil</td><td>Dipakai di atas <a href="flutter-slice-screen.html">Flutter</a>, <a href="vue-slice-screen.html">Vue</a>, atau code plan; worker mengikuti caller skill.</td></tr><tr><td>Output</td><td><code>.sdd/&lt;batch&gt;/progress.md</code>, tasks, reports, unit results, proposals, gate evidence.</td></tr><tr><td>Next</td><td>Kembali ke caller setelah global gate. Unit blocked/needs-context menghentikan wiring/run berikutnya.</td></tr></table></div></div></div>
+<div class="layer"><div class="layer-head"><span class="tag">Kapan aktif</span><span class="note">default, bukan opt-in</span></div><div class="layer-body"><ul><li>Unit > 1, atau satu pekerjaan berisiko memenuhi context window.</li><li>Caller menentukan unit dan gate; skill ini menentukan brief, isolation, report, verification, resume.</li><li>Dengan subagent tool: satu worker per unit. Tanpa tool: sequential fallback, reset context setelah report.</li></ul></div></div>
+<h2>Alur</h2><pre>
+Decompose units + disjoint write sets
+              │
+              ▼
+write brief + progress.md
+              │
+              ▼
+dispatch fresh worker (parallel max 3–4 bila aman)
+              │
+              ▼
+worker writes report ─► mechanical gate
+       │ pass                         │ fail
+       ▼                              ▼
+update progress               focused fix brief + fresh worker
+              │
+              ▼
+apply shared-file proposals serially → global gate → cleanup
+</pre>
+<h2>Core rules</h2>
+<div class="step"><h3><span class="n">1</span>Brief sebelum dispatch</h3><p>Brief wajib memuat goal, absolute input paths/node ids/URL, writable set, rules yang harus dibaca, definition of done, dan report path. Brief tidak lengkap berarti unit belum ready.</p></div>
+<div class="step"><h3><span class="n">2</span>Fresh context dan file report</h3><p>Worker hanya menerima path brief plus skill yang diikuti. Heavy Figma output, screenshot, dan log tinggal di worker. Worker menulis report, lalu mengembalikan satu status line; orchestrator membaca file, bukan transcript.</p></div>
+<div class="step"><h3><span class="n">3</span>Disjoint write sets</h3><p>Parallel hanya jika writable set tidak overlap. Registry, <code>plan.md</code>, <code>pubspec.yaml</code>/<code>package.json</code>, <code>main.dart</code>/router, dan shared assets punya satu writer: orchestrator. Maksimal 3–4 worker paralel; ragu → serial.</p></div>
+<div class="step"><h3><span class="n">4</span>External verification</h3><p>Worker tidak boleh certify gate sendiri. Bukti berupa script exit code, test/analyze/lint, file existence, validator <code>--check</code>, atau verifier terpisah. Visual gate memakai score geometry lalu pixel diff; verifier fresh menjelaskan diff, score yang menentukan.</p></div>
+<div class="step"><h3><span class="n">5</span>Human gate tetap human</h3><p>Pertanyaan developer direlay orchestrator, tidak dijawab sendiri. Gunakan structured question tool jika ada. Simpan jawaban verbatim di brief/report.</p></div>
+<div class="step"><h3><span class="n">6</span>Retry rules</h3><p>Unit gagal gate dua kali → <code>BLOCKED</code>, bukan retry tanpa akhir. Score gate yang mengukur progress memakai aturan fidelity sendiri: tidak ada round cap sampai pass atau stop menjadi <code>NEEDS_CONTEXT</code>. Jangan re-dispatch brief identik.</p></div>
+<div class="step"><h3><span class="n">7</span>Tidak ada mode question</h3><p>Linear vs parallel ditentukan jumlah unit dan write set, bukan ditanyakan ke developer. Catat keputusan di <code>progress.md</code>.</p></div>
+<h2>Workspace</h2><pre>.sdd/&lt;batch-id&gt;/
+├── progress.md          # satu row per unit; orchestrator-only
+├── tasks/&lt;unit-id&gt;.md   # brief sebelum dispatch
+└── reports/&lt;unit-id&gt;.md # worker report</pre>
+<p>Status: <code>pending → running → awaiting-verify → awaiting-human → done/gated</code>, atau <code>needs-context</code>/<code>blocked</code>. Hapus workspace saat semua unit done atau gated dengan acknowledgment. Permanent result masuk project files.</p>
+<h2>Report contract</h2><div class="tablewrap"><table><tr><th>Bagian</th><th>Isi</th></tr><tr><td><code>## Status</code></td><td><code>DONE</code>, <code>DONE_WITH_CONCERNS</code>, <code>NEEDS_CONTEXT</code> + field yang hilang, atau <code>BLOCKED</code> + yang dicoba dan 2–4 opsi safest-first</td></tr><tr><td>Files written</td><td>File yang worker ubah</td></tr><tr><td>Gate result</td><td>Command/exit code atau bukti file</td></tr><tr><td>Proposals</td><td>Usulan untuk file milik orchestrator</td></tr><tr><td>Gaps</td><td>Hal yang belum selesai</td></tr></table></div>
+<h2>Caller contract</h2><div class="tablewrap"><table class="compact"><tr><th>Caller wajib menentukan</th><th>Contoh</th></tr><tr><td>Unit</td><td>satu section, frame, atau plan task</td></tr><tr><td>Brief fields tambahan</td><td>node IDs, DS path, AC IDs</td></tr><tr><td>Gate</td><td>test + analyze/lint; <code>diff_renders.py</code>; <code>validate_output.py</code></td></tr></table></div>
+<div class="warn"><span class="tag">Resume</span><p>Sesi baru cukup membaca <code>progress.md</code>, melanjutkan unit pertama yang belum <code>done</code>. Jangan menyimpan state resume hanya di conversation. Untuk Flutter, lihat <code>flutter-slice-screen/references/handoff.md</code> dan <code>orchestration.md</code>.</p></div>
+<footer>Sumber: <code>skills/subagent-driven-development/SKILL.md</code> dan caller references.</footer>
+</div></body></html>

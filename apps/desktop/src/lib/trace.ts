@@ -1,4 +1,4 @@
-import type { TraceSpan } from '@tayang/shared';
+import type { TraceSpan } from '@bspace-sdlc-app/shared';
 
 /** A pause longer than this between turns is cut from the axis, so a chat picked up days later still fits. */
 export const IDLE_GAP_MS = 60_000;

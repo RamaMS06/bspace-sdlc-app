@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "desktop-web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-lc", "source ~/.nvm/nvm.sh >/dev/null && nvm use 22 >/dev/null && cd apps/desktop && npx vite --port 1420 --strictPort"],
+      "port": 1420
+    }
+  ]
+}

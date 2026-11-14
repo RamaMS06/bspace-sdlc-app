@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { useAuth } from '@/state/auth';
-import { findPlan, isLowerPlan, type BillingStatus, type CheckoutResponse, type PaidPlanId } from '@tayang/shared';
+import { findPlan, isLowerPlan, type BillingStatus, type CheckoutResponse, type PaidPlanId } from '@bspace-sdlc-app/shared';
 import { POLL_LIMIT_MS, POLL_MS, WHATSAPP_POLL_MS, billingCheckout, billingErrorCode, billingStatus, type BillingErrorCode } from '@/lib/billing';
 import { track } from '@/lib/analytics';
 

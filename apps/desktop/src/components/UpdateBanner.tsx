@@ -13,7 +13,7 @@ export function UpdateBanner() {
   if (phase !== 'available' && phase !== 'downloading' && phase !== 'ready') return null;
 
   return (
-    <div role="status" className="flex flex-col gap-2 rounded-lg border border-deep-orange bg-tint p-3 text-[13px]">
+    <div role="status" className="flex flex-col gap-2 rounded-lg border border-primary-border bg-primary-soft p-3 text-[13px]">
       <p className="m-0 font-medium text-foreground">
         {phase === 'ready' ? t('updates.ready', { version: version ?? '' }) : t('updates.available', { version: version ?? '' })}
       </p>
@@ -23,7 +23,7 @@ export function UpdateBanner() {
         </p>
       )}
       {error && phase === 'available' && (
-        <p role="alert" className="m-0 text-orange-light">
+        <p role="alert" className="m-0 text-error">
           {t('updates.failed', { message: error })}
         </p>
       )}

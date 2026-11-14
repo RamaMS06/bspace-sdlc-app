@@ -1,6 +1,6 @@
 import { act, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
-import type { AgentUpdate, FileInfo } from '@tayang/shared';
+import type { AgentUpdate, FileInfo } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   getChat: vi.fn().mockResolvedValue(null),
@@ -80,7 +80,7 @@ describe('isRenderTool', () => {
     expect(isRenderTool(title, null)).toBe(expected);
   });
 
-  it("matches the project's own render command from tayang.json", () => {
+  it("matches the project's own render command from buma.json", () => {
     expect(isRenderTool('Run node scripts/make-video.mjs --out renders', ['node', 'scripts/make-video.mjs'])).toBe(true);
     expect(isRenderTool('Run node scripts/other.mjs', ['node', 'scripts/make-video.mjs'])).toBe(false);
     // Whole words only: `make` is not `cmake`.
@@ -143,7 +143,7 @@ describe('a project chat build job at the end of a turn', () => {
     arrange();
     await emit('c1', { kind: 'text', text: 'Render jalan di latar belakang.' });
     await emit('c1', { kind: 'done', stopReason: 'end_turn' });
-    await waitFor(() => expect(lastJob()).toMatchObject({ status: 'needs-you', note: 'No video yet. The agent stopped before rendering' }));
+    await waitFor(() => expect(lastJob()).toMatchObject({ status: 'needs-you', note: 'Nothing finished yet. The agent stopped before the step was done' }));
   });
 
   it('needs you, "stopped before rendering", without a new video', async () => {
@@ -152,9 +152,9 @@ describe('a project chat build job at the end of a turn', () => {
     vi.mocked(latestRenderInfo).mockResolvedValueOnce(render(new Date(Date.now() - 60_000)));
     await emit('c1', { kind: 'text', text: 'Pipeline sedang berjalan di latar belakang.' });
     await emit('c1', { kind: 'done', stopReason: 'end_turn' });
-    await waitFor(() => expect(lastJob()).toMatchObject({ status: 'needs-you', note: 'No video yet. The agent stopped before rendering' }));
+    await waitFor(() => expect(lastJob()).toMatchObject({ status: 'needs-you', note: 'Nothing finished yet. The agent stopped before the step was done' }));
     setUiLanguage('id');
-    expect(localized(lastJob().note!)).toBe('Belum ada video. Agen berhenti sebelum videonya jadi');
+    expect(localized(lastJob().note!)).toBe('Belum ada yang selesai. Agen berhenti sebelum langkahnya selesai');
   });
 
   it('needs your answer when the agent ended on a question', async () => {
@@ -260,14 +260,14 @@ describe('a project chat build job at the end of a turn', () => {
 });
 
 describe('a render the agent runs', () => {
-  it('shows as working "Rendering video" while it runs, and ends with the tool or the turn', async () => {
+  it('shows as working "Working" while it runs, and ends with the tool or the turn', async () => {
     setRenderArgv('p1', null);
     await useChat.getState().send('c1', [{ type: 'text', text: 'go' }], { agentId: 'claude', job });
     const started = useChat.getState().turnStartedAt.c1;
     expect(started).toBeGreaterThan(0);
     await emit('c1', { kind: 'tool', toolCallId: 't1', title: 'Run npx hyperframes render --output renders/a.mp4', status: 'running', toolKind: 'execute' });
     expect(useRender.getState().runs.p1).toMatchObject({ source: 'agent', chatId: 'c1', toolCallId: 't1' });
-    expect(lastJob()).toMatchObject({ status: 'working', note: 'Rendering video' });
+    expect(lastJob()).toMatchObject({ status: 'working', note: 'Working' });
     // Another tool finishing is not the render ending.
     await emit('c1', { kind: 'tool', toolCallId: 't2', title: 'Read STYLE.md', status: 'done', toolKind: 'read' });
     expect(useRender.getState().runs.p1).toBeDefined();
@@ -282,13 +282,13 @@ describe('a render the agent runs', () => {
     expect(useChat.getState().turnStartedAt.c1).toBeUndefined();
   });
 
-  it('keeps saying "Rendering video" after a permission prompt during the render is answered', async () => {
+  it('keeps saying "Working" after a permission prompt during the render is answered', async () => {
     setRenderArgv('p1', null);
     await useChat.getState().send('c1', [{ type: 'text', text: 'go' }], { agentId: 'claude', job });
     await emit('c1', { kind: 'tool', toolCallId: 't1', title: 'npx hyperframes render', status: 'running', toolKind: 'execute' });
     useChat.setState({ permissions: { c1: [{ chatId: 'c1', requestId: 'r1', title: 't', commands: [], options: [] }] } });
     await act(async () => useChat.getState().respondPermission('c1', 'allow'));
-    expect(lastJob()).toMatchObject({ status: 'working', note: 'Rendering video' });
+    expect(lastJob()).toMatchObject({ status: 'working', note: 'Working' });
   });
 
   it('an error ends it too, and chats without a project never track one', async () => {

@@ -1,0 +1,9 @@
+@import "@buma-dev/styles/src/assets/scss/config";
+@import "@buma-dev/styles/src/assets/scss/utils";
+
+.b-label {
+  .required-symbol {
+    color: color(danger, 500);
+    margin-left: 2px;
+  }
+}

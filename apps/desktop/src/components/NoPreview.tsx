@@ -2,13 +2,15 @@ import type { ReactNode } from 'react';
 import { Film } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+// BUMA base palette pairs [fill, text]: primary/600, secondary/600, info/600, neutral/600, neutral/200, primary/100.
+// Inline style backgrounds, so literal colors rather than CSS vars.
 const SWATCHES: [string, string][] = [
-  ['#0B1E3F', '#FFFFFF'],
-  ['#F2470C', '#141414'],
-  ['#E8ECF4', '#0B1E3F'],
-  ['#3B1F14', '#FFE7D6'],
-  ['#1F2A1A', '#F5E6A8'],
-  ['#FFF0E0', '#3B1F14'],
+  ['#06873D', '#FFFFFF'],
+  ['#C67A17', '#FFFFFF'],
+  ['#0363B1', '#FFFFFF'],
+  ['#333F47', '#F5F8FA'],
+  ['#E8ECF5', '#333F47'],
+  ['#D5FADD', '#06873D'],
 ];
 
 /** A colour pair picked from `id`, the same every time. */
@@ -37,7 +39,7 @@ export function NoPreview({
     <div
       data-testid={testId}
       className={cn(
-        'flex aspect-[9/16] w-full flex-col items-center justify-center gap-2 rounded-md border border-[#333]',
+        'flex aspect-[9/16] w-full flex-col items-center justify-center gap-2 rounded-md border border-hairline',
         !swatchId && 'bg-ink',
         className,
       )}

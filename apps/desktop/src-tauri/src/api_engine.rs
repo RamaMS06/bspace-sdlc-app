@@ -1,6 +1,6 @@
 //! "Your API": the user brings only an API key (DeepSeek, 9router, CommandCode or any
-//! OpenAI-compatible address) and Tayang runs a pinned opencode release as the agent behind it.
-//! The user never sees or configures opencode: Tayang downloads it into its app-data folder and
+//! OpenAI-compatible address) and Buma runs a pinned opencode release as the agent behind it.
+//! The user never sees or configures opencode: Buma downloads it into its app-data folder and
 //! starts `opencode acp` with one provider written to a config file (`OPENCODE_CONFIG`).
 //!
 //! The key lives in the OS keychain (see `commands::api_key_store`), the provider, address and
@@ -11,15 +11,15 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-/// The opencode release Tayang runs. Bumped by hand after trying it.
+/// The opencode release Buma runs. Bumped by hand after trying it.
 pub const ENGINE_VERSION: &str = "1.19.5";
 const RELEASE_BASE: &str = "https://github.com/anomalyco/opencode/releases/download";
 /// The keychain account that holds the provider's key.
 pub const KEY_ACCOUNT: &str = "provider-api-key";
-/// The env var the engine reads the key from (the config says `{env:TAYANG_PROVIDER_KEY}`).
-pub const KEY_ENV: &str = "TAYANG_PROVIDER_KEY";
-/// opencode's id for the one provider Tayang configures; models are `tayang/<model>`.
-pub const PROVIDER_ID: &str = "tayang";
+/// The env var the engine reads the key from (the config says `{env:BUMA_PROVIDER_KEY}`).
+pub const KEY_ENV: &str = "BUMA_PROVIDER_KEY";
+/// opencode's id for the one provider Buma configures; models are `buma/<model>`.
+pub const PROVIDER_ID: &str = "buma";
 
 /// The provider the user set up. `provider` is the preset the UI picked (`deepseek`, `9router`,
 /// `commandcode`, `other`) and only names it; `base_url` is what is called.
@@ -275,7 +275,7 @@ pub fn engine_root(data_dir: &Path) -> PathBuf {
     data_dir.join("engine")
 }
 
-/// opencode's own config folder for Tayang's sessions (empty: the config comes in the env).
+/// opencode's own config folder for Buma's sessions (empty: the config comes in the env).
 pub fn engine_config_dir(data_dir: &Path) -> PathBuf {
     engine_root(data_dir).join("config")
 }
@@ -448,17 +448,17 @@ mod tests {
     #[test]
     fn opencode_gets_one_provider_with_the_key_from_env() {
         let c = opencode_config(&deepseek());
-        assert_eq!(c["model"], "tayang/deepseek-chat");
-        let p = &c["provider"]["tayang"];
+        assert_eq!(c["model"], "buma/deepseek-chat");
+        let p = &c["provider"]["buma"];
         assert_eq!(p["npm"], "@ai-sdk/openai-compatible");
         assert_eq!(p["name"], "DeepSeek");
         assert_eq!(p["options"]["baseURL"], "https://api.deepseek.com");
-        assert_eq!(p["options"]["apiKey"], "{env:TAYANG_PROVIDER_KEY}");
+        assert_eq!(p["options"]["apiKey"], "{env:BUMA_PROVIDER_KEY}");
         assert!(p["models"]["deepseek-chat"].is_object());
         assert!(p["models"]["deepseek-reasoner"].is_object());
-        assert_eq!(c["enabled_providers"], json!(["tayang"]));
+        assert_eq!(c["enabled_providers"], json!(["buma"]));
         let old = ApiProvider { models: Vec::new(), ..deepseek() };
-        assert_eq!(opencode_config(&old)["provider"]["tayang"]["models"].as_object().unwrap().len(), 1, "a saved provider without a list still has its model");
+        assert_eq!(opencode_config(&old)["provider"]["buma"]["models"].as_object().unwrap().len(), 1, "a saved provider without a list still has its model");
         assert!(!c.to_string().contains("sk-"), "the key never goes in the config");
     }
 
@@ -471,7 +471,7 @@ mod tests {
         Path::new("/data/engine/data"),
     );
         let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
-        assert_eq!(get("TAYANG_PROVIDER_KEY"), Some("sk-1"));
+        assert_eq!(get("BUMA_PROVIDER_KEY"), Some("sk-1"));
         assert_eq!(get("OPENCODE_CONFIG_DIR"), Some("/data/engine/config"));
         assert_eq!(get("XDG_DATA_HOME"), Some("/data/engine/data"));
         assert_eq!(get("OPENCODE_DISABLE_FREE_MODELS"), Some("1"));
@@ -531,7 +531,7 @@ mod tests {
     #[ignore]
     async fn downloads_the_real_engine() {
         let dir = tempfile::tempdir().unwrap();
-        let client = reqwest::Client::builder().user_agent("tayang-studio-test").build().unwrap();
+        let client = reqwest::Client::builder().user_agent("bspace-sdlc-app-test").build().unwrap();
         let seen = std::sync::atomic::AtomicU64::new(0);
         let bin = install_engine(&client, dir.path(), |d, _| seen.store(d, std::sync::atomic::Ordering::Relaxed)).await.unwrap();
         assert!(seen.load(std::sync::atomic::Ordering::Relaxed) > 10_000_000);

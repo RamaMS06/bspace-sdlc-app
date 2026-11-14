@@ -68,11 +68,11 @@ const isBinding = (v: unknown): v is { path: string } => isObj(v) && typeof v.pa
 const absPath = (path: string, base: string) => (path.startsWith('/') ? path : `${base}/${path}`.replace(/\/+/g, '/'));
 
 /** The API origins the app's CSP `img-src`/`media-src` allow (tauri.conf.json); keep the two in step. */
-export const API_IMAGE_ORIGINS = ['https://studio.tayang.app', 'http://localhost:8787', 'http://127.0.0.1:8787'];
-/** The API owns only this path on those origins; other studio.tayang.app pages are not ours to embed. */
+export const API_IMAGE_ORIGINS = ['https://bspace.buma.internal', 'http://localhost:8787', 'http://127.0.0.1:8787'];
+/** The API owns only this path on those origins; other bspace.buma.internal pages are not ours to embed. */
 const API_PATH_PREFIX = '/api/';
 
-/** Image URLs the agent may show: the app's own asset protocol, or the Tayang API. Nothing else loads. */
+/** Image URLs the agent may show: the app's own asset protocol, or the Buma API. Nothing else loads. */
 export function safeImageUrl(url: unknown): string | null {
   if (typeof url !== 'string') return null;
   try {
@@ -108,7 +108,7 @@ const TEXT_VARIANTS: Record<string, string> = {
   h3: 'text-[17px] font-semibold leading-snug',
   h4: 'text-[15px] font-semibold leading-snug',
   h5: 'text-[14px] font-semibold leading-snug',
-  body: 'text-[14px] leading-[1.6] text-[#D9D9D9]',
+  body: 'text-[14px] leading-[1.6] text-foreground',
   caption: 'text-[12px] leading-snug text-text-3',
 };
 
@@ -257,7 +257,7 @@ function renderNode(id: string, base: string, ctx: Ctx, anc: string[]): ReactNod
                   variant="outline"
                   aria-pressed={on}
                   disabled={ctx.disabled}
-                  className={cn(on && 'border-deep-orange bg-tint text-orange-light hover:bg-tint')}
+                  className={cn(on && 'border-primary-border bg-primary-soft text-primary-text hover:bg-primary-soft')}
                   onClick={() => {
                     if (on) set(selected.filter((x) => x !== o.value));
                     else if (max === undefined || selected.length < max) set([...selected, o.value]);

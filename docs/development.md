@@ -36,31 +36,31 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 ## The API
 
-Online features (Google sign-in, paid plans, the built-in styles, install stats) come from the Tayang API at `https://studio.tayang.app/api`. Its code lives in a separate private repository; the desktop app talks to it only over HTTP, using the request and response types in `packages/shared`.
+Online features (Google sign-in, paid plans, the built-in styles, install stats) come from the Buma API at `https://bspace.buma.internal/api`. Its code lives in a separate private repository; the desktop app talks to it only over HTTP, using the request and response types in `packages/shared`.
 
-The app works without it: making videos, styles you copy or write, and everything on this computer. To point the app at another API (for example a local one), set Settings › Account › API address, or start the app with `TAYANG_API_URL` (a base with the path, used as given and never saved):
+The app works without it: making videos, styles you copy or write, and everything on this computer. To point the app at another API (for example a local one), set Settings › Account › API address, or start the app with `BUMA_API_URL` (a base with the path, used as given and never saved):
 
 ```
-TAYANG_API_URL=http://localhost:8787/api pnpm dev:desktop
+BUMA_API_URL=http://localhost:8787/api pnpm dev:desktop
 ```
 
-Old saved addresses are migrated when the app reads its settings: `https://api.tayang.app` becomes `https://studio.tayang.app/api`, and `http://localhost:8787` or `http://127.0.0.1:8787` without a path gets `/api` appended.
+Old saved addresses are migrated when the app reads its settings: `https://api.bspace.buma.internal` becomes `https://bspace.buma.internal/api`, and `http://localhost:8787` or `http://127.0.0.1:8787` without a path gets `/api` appended.
 
 ## Where data lives
 
-- App data (SQLite, `tayang.db`) is in the operating system's app data directory for Tayang Studio.
-- `pnpm dev:desktop` runs as **Tayang Studio Dev** (`app.tayang.studio.dev`, from `src-tauri/tauri.dev.conf.json`), so it has its own app data and runs beside an installed Tayang Studio (`app.tayang.studio`) without sharing chats, settings or its window. On macOS the two folders are `~/Library/Application Support/app.tayang.studio.dev` and `.../app.tayang.studio`. Dev builds keep the sign-in token in `auth-dev.json` there, never in the keychain.
-- Projects live in the working folder the user picks. Agent sessions run with the project folder, or a `.tayang/<purpose>` subfolder of the working folder, as their working directory. They never run outside it.
+- App data (SQLite, `buma.db`) is in the operating system's app data directory for BSpace SDLC.
+- `pnpm dev:desktop` runs as **BSpace SDLC Dev** (`com.buma.bspace-sdlc-app.dev`, from `src-tauri/tauri.dev.conf.json`), so it has its own app data and runs beside an installed BSpace SDLC (`com.buma.bspace-sdlc-app`) without sharing chats, settings or its window. On macOS the two folders are `~/Library/Application Support/com.buma.bspace-sdlc-app.dev` and `.../com.buma.bspace-sdlc-app`. Dev builds keep the sign-in token in `auth-dev.json` there, never in the keychain.
+- Projects live in the working folder the user picks. Agent sessions run with the project folder, or a `.buma/<purpose>` subfolder of the working folder, as their working directory. They never run outside it.
 
 ## Permissions and the agent's own settings
 
-Tayang answers the ACP permission requests an agent sends (`session/request_permission`) and only ever picks the allow-once option after the user presses Allow. It can't see or block commands the agent runs without asking: if the agent's own configuration auto-allows a command (for example Claude Code's `permissions.allow` rules in `~/.claude/settings.json`, or a "yolo"/auto-approve mode), that command runs without a card in Tayang. Tayang does not change agent configuration, with one exception: Auto mode. Style studies always run in auto mode, and chats do when Settings › Agents › Auto mode for chats (or a chat's Auto toggle) is on. For Claude Code, Tayang sends `session/set_mode` with `auto` (and `default` when turned off); if the agent doesn't list an `auto` mode or the switch fails, and for every other agent, Tayang answers each permission request with its allow-once option (never allow-always) and shows "Ran without asking: <command>". A request with no allow-once option still shows the card. The setup (install) chat never runs in auto mode. The product copy is worded to match: "Tayang shows you every command your agent asks to run, and nothing it asks about runs until you allow it."
+Buma answers the ACP permission requests an agent sends (`session/request_permission`) and only ever picks the allow-once option after the user presses Allow. It can't see or block commands the agent runs without asking: if the agent's own configuration auto-allows a command (for example Claude Code's `permissions.allow` rules in `~/.claude/settings.json`, or a "yolo"/auto-approve mode), that command runs without a card in Buma. Buma does not change agent configuration, with one exception: Auto mode. Style studies always run in auto mode, and chats do when Settings › Agents › Auto mode for chats (or a chat's Auto toggle) is on. For Claude Code, Buma sends `session/set_mode` with `auto` (and `default` when turned off); if the agent doesn't list an `auto` mode or the switch fails, and for every other agent, Buma answers each permission request with its allow-once option (never allow-always) and shows "Ran without asking: <command>". A request with no allow-once option still shows the card. The setup (install) chat never runs in auto mode. The product copy is worded to match: "Buma shows you every command your agent asks to run, and nothing it asks about runs until you allow it."
 
 ## Release smoke test
 
-Run this on a packaged build (`pnpm --filter @tayang/desktop tauri build`) before shipping. A release build never falls back to the repo's copy of the agent plugin.
+Run this on a packaged build (`pnpm --filter @bspace-sdlc-app/desktop tauri build`) before shipping. A release build never falls back to the repo's copy of the agent plugin.
 
-- [ ] The bundle has the plugin: `agent-plugin/.claude-plugin/plugin.json` is in the app's resources (macOS: `Tayang Studio.app/Contents/Resources/agent-plugin/`). Start the app's binary from a terminal (macOS: `Tayang Studio.app/Contents/MacOS/`), start a Claude chat and check stderr has no "plugin.json is missing" warning. Without the plugin Claude still gets the skills, as text in its first prompt, but the bundle is wrong.
+- [ ] The bundle has the plugin: `agent-plugin/.claude-plugin/plugin.json` is in the app's resources (macOS: `BSpace SDLC.app/Contents/Resources/agent-plugin/`). Start the app's binary from a terminal (macOS: `BSpace SDLC.app/Contents/MacOS/`), start a Claude chat and check stderr has no "plugin.json is missing" warning. Without the plugin Claude still gets the skills, as text in its first prompt, but the bundle is wrong.
 - [ ] CSP: style previews load on the Style screen (from the API origin in `img-src`), the style popup plays its preview video (API origin in `media-src`; needs Range responses), and a rendered video and its frames play in the preview.
 - [ ] Questions: ask an agent for topic ideas; its question (Claude's AskUserQuestion, opencode's question) shows as a card with options and Other. Picking one starts the video in a new chat (the agent's POST /video).
 - [ ] Windows: build and install the Windows bundle, run onboarding (winget installs), start a chat and render one video.
@@ -78,9 +78,9 @@ To ship a version:
 
 ### Auto-update
 
-Release builds check `https://github.com/Maru-Yasa/tayang-studio/releases/latest/download/latest.json` 10 seconds after launch and every 6 hours. When a newer version is there, the sidebar offers it; the download is checked against the public key in `tauri.conf.json` and installed on restart. Dev builds never check. Drafts and pre-releases are never "latest", so they reach nobody until published. This only works while the repository is public: release downloads from a private repository need a login.
+Release builds check `https://github.com/<github-owner>/bspace-sdlc-app/releases/latest/download/latest.json` 10 seconds after launch and every 6 hours. When a newer version is there, the sidebar offers it; the download is checked against the public key in `tauri.conf.json` and installed on restart. Dev builds never check. Drafts and pre-releases are never "latest", so they reach nobody until published. This only works while the repository is public: release downloads from a private repository need a login.
 
-The updater signing key is `~/.tauri/tayang-studio.key` on the maintainer's machine, with its password in `~/.tauri/tayang-studio.key.password`, and both are in the repository secrets (`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). Back them up somewhere safe. If the key is lost, installed copies can never update again, and everyone has to reinstall by hand.
+The updater signing key is `~/.tauri/bspace-sdlc-app.key` on the maintainer's machine, with its password in `~/.tauri/bspace-sdlc-app.key.password`, and both are in the repository secrets (`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). Back them up somewhere safe. If the key is lost, installed copies can never update again, and everyone has to reinstall by hand.
 
 Installers are not code-signed yet. macOS shows them as from an unidentified developer (right-click › Open the first time), and Windows SmartScreen warns. On macOS an unsigned app also asks for the keychain password again after each update, because the keychain trusts one exact build. A Developer ID certificate and notarization fix both (add the `APPLE_*` secrets that tauri-action reads).
 
@@ -90,7 +90,7 @@ Chats saved by this version can store `thought` parts (the agent's reasoning) an
 
 ## Notifications and background mode
 
-- Reminders use `tauri-plugin-notification`. On desktop the plugin always reports the permission as granted, so Tayang cannot tell when a user has turned its notifications off in the operating system (macOS, Windows). The Calendar banner only shows where the plugin does report a denial. Settings › General has a "Send a test notification" button so people can check that notifications reach them.
-- Background mode shows a tray icon only while it is on. On Linux the tray needs AppIndicator: the deb depends on `libayatana-appindicator3-1` and the rpm on `libayatana-appindicator-gtk3`; an AppImage uses the system's library, so it must be installed there. Without it the tray library crashes while loading; Tayang catches that (`std::panic::catch_unwind`), turns background mode and Open at login back off, shows "Background mode needs a system tray, which isn't available here" in Settings, and never hides the window. The same failure at startup turns the setting off and the app opens normally.
-- Launching Tayang a second time shows the running window (`tauri-plugin-single-instance`). "Open at login" starts the app with `--hidden`, which keeps the window hidden when a tray icon exists.
+- Reminders use `tauri-plugin-notification`. On desktop the plugin always reports the permission as granted, so Buma cannot tell when a user has turned its notifications off in the operating system (macOS, Windows). The Calendar banner only shows where the plugin does report a denial. Settings › General has a "Send a test notification" button so people can check that notifications reach them.
+- Background mode shows a tray icon only while it is on. On Linux the tray needs AppIndicator: the deb depends on `libayatana-appindicator3-1` and the rpm on `libayatana-appindicator-gtk3`; an AppImage uses the system's library, so it must be installed there. Without it the tray library crashes while loading; Buma catches that (`std::panic::catch_unwind`), turns background mode and Open at login back off, shows "Background mode needs a system tray, which isn't available here" in Settings, and never hides the window. The same failure at startup turns the setting off and the app opens normally.
+- Launching Buma a second time shows the running window (`tauri-plugin-single-instance`). "Open at login" starts the app with `--hidden`, which keeps the window hidden when a tray icon exists.
 - Dev builds register the login item for the dev binary, and notifications in dev may carry the terminal's identity until the app is bundled.

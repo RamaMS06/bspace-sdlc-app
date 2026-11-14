@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>flutter-slice-screen — bspace-sdlc-skills</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/doc.css">
+<script src="assets/doc.js" defer></script>
+</head>
+<body data-page="flutter-slice-screen">
+<div class="wrap">
+
+<div class="topbar"><a class="brand" href="index.html">bspace <span>sdlc</span> skills</a><span class="note">v1.0.7</span><div class="langswitch" aria-label="Language"><button type="button" data-lang="id" aria-pressed="true">ID</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div></div>
+
+<nav class="pages">
+  <a href="index.html">Overview</a>
+  <span class="navgroup">Intake</span><a href="stakeholder-intake.html">stakeholder-intake</a>
+  <span class="navgroup">Router</span><a href="using-bspace-sdlc.html">using-bspace-sdlc</a>
+  <span class="navgroup">Dokumen</span><a href="blueprint-ftsd.html">blueprint-ftsd</a>
+  <span class="navgroup">Wireframe</span><a href="wireframe-lofi.html">wireframe-lofi</a>
+  <span class="navgroup">Design</span><a href="figma-generate-screen.html">figma-generate-screen</a>
+  <span class="navgroup">Flutter</span><a href="flutter-slice-screen.html" aria-current="page">flutter-slice-screen</a><a href="flutter-match-component.html">flutter-match-component</a><a href="flutter-resolve-assets.html">flutter-resolve-assets</a><a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a><a href="flutter-run-verify.html">flutter-run-verify</a>
+  <span class="navgroup">Vue</span><a href="vue-slice-screen.html">vue-slice-screen</a><a href="vue-resolve-assets.html">vue-resolve-assets</a>
+  <span class="navgroup">Eksekusi</span><a href="subagent-driven-development.html">subagent-driven-development</a>
+</nav>
+
+<h1><em>flutter</em>-slice-screen</h1>
+<p class="lede">Skill utama Flutter. Mengubah node Figma menjadi screen Flutter yang bisa dijalankan, khusus kode presentation, dengan BUMA Design System. Dipakai untuk screen baru, menambah satu komponen ke screen yang sudah ada, memperbaiki props/sizing/styling agar sesuai Figma, atau memperbaiki mismatch Code Connect. Tidak dipakai untuk API, domain, atau repository, dan tidak untuk web/Vue.</p>
+
+<div class="layer"><div class="layer-head"><span class="tag">Route contract</span><span class="note">START · CALLED BY ROUTER · ORCHESTRATOR</span></div><div class="layer-body"><div class="tablewrap"><table class="compact"><tr><th>Bagian</th><th>As-is</th></tr><tr><td>Trigger</td><td>Direct: developer memberi URL node Figma + target Flutter. E2E: <a href="using-bspace-sdlc.html">using-bspace-sdlc</a> sudah lulus G2. Repair: screen/component perlu dislice ulang.</td></tr><tr><td>Prasyarat</td><td>Package root dengan <code>pubspec.yaml</code>, SDK/DS pin, Figma MCP, epic; optional <code>--intent</code> untuk pin AC.</td></tr><tr><td>Memanggil</td><td><a href="flutter-match-component.html">flutter-match-component</a>, <a href="flutter-resolve-assets.html">flutter-resolve-assets</a>, <a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a>; <a href="subagent-driven-development.html">SDD</a> bila multi-unit.</td></tr><tr><td>Output</td><td>Presentation Dart, <code>spec.md</code>, <code>plan.md</code>, worker reports, render pairs, score files.</td></tr><tr><td>Next</td><td><code>validate_output.py --check</code> pass → <a href="flutter-run-verify.html">flutter-run-verify</a>. Report BLOCKED/NEEDS_CONTEXT → stop.</td></tr></table></div></div></div>
+
+<div class="layer">
+  <div class="layer-head"><span class="tag">Input dan prinsip</span><span class="note">SKILL.md · references/ (11) · scripts/ (4) · assets/</span></div>
+  <div class="layer-body"><ul>
+    <li><b>Input:</b> URL node Figma. Opsional: <code>--intent intent/&lt;ID&gt;/intent.md</code> dari <a href="using-bspace-sdlc.html">using-bspace-sdlc</a>.</li>
+    <li><b>Hanya satu pertanyaan, sekali:</b> nama epic. Nilai lain (nama screen, folder, route, package, section) memakai default deterministik dan dicatat di <code>plan.md</code>.</li>
+    <li><b>Selalu orchestrator dan worker</b> (<a href="subagent-driven-development.html">subagent-driven-development</a>): sesi ini tidak pernah memegang payload Figma milik section. Setiap section dikerjakan worker dengan konteks baru, termasuk screen yang hanya punya satu section.</li>
+    <li><b>Import DS hanya lewat barrel:</b> <code>import 'package:buma_design_system/buma_design_system.dart';</code>. Tidak pernah <code>src/</code>.</li>
+    <li><b>Hemat token:</b> response Figma tidak pernah diketik ulang (pakai <code>figma_xml.py raw</code>), setiap node di-fetch sekali, PNG tidak dibaca di luar perbandingan render, warna diambil dari <code>get_variable_defs</code> dan bukan dari piksel, <code>plan.md</code> dibaca per heading lewat grep.</li>
+  </ul></div>
+</div>
+
+<h2>Alur</h2>
+<pre>
+ Input: link Figma + node-id  (opsional --intent)
+        │
+        ▼
+┌─ Orchestrator ───────────────────────────────────────────────┐
+│ 1 Screening project      pubspec.yaml terdekat, konvensi,    │
+│                          routing, sumber versi package       │
+│ 2 Harness + DS           pin .fvmrc; ScreenUtil/route/state; │
+│                          buma_design_system (ref: release)   │
+│ 3 Figma MCP + folder     validate_output.py --init           │
+│                          → specs/&lt;ID&gt;-&lt;slug&gt;-&lt;DD_MM_YYYY&gt;/   │
+│ 4a get_metadata          1 frame → lanjut                    │
+│                          banyak frame → orchestration.md     │
+│                          ambigu → tanya sekali               │
+│ 4b rekursi nested instance → work/raw/get_metadata-&lt;id&gt;.md   │
+│ 4c ## Sections + get_screenshot root → renders/figma.png     │
+└───────────────────────────┬──────────────────────────────────┘
+                            │ 1 worker per section (maks 3–4 paralel)
+┌─ Section worker ──────────▼──────────────────────────────────┐
+│ get_design_context + get_variable_defs                       │
+│   → figma_xml.py spec → work/spec-&lt;id&gt;.md                    │
+│ 4d layout tree (CSS → Row/Column/Expanded) di ## Notes       │
+│ 5  komponen → flutter-match-component                        │
+│    aset     → figma_xml.py assets / flutter-resolve-assets   │
+│    token    → references/tokens.md                           │
+│    chart    → figma_xml.py classify + chart_refs.py          │
+│ 7  widgets/&lt;screen&gt;_&lt;section&gt;.dart                          │
+│ 8  render test → diff_renders.py → loop sampai exit 0/4      │
+│    (flutter-verify-fidelity)                                 │
+│ → work/section-&lt;id&gt;-report.md                               │
+└───────────────────────────┬──────────────────────────────────┘
+┌─ Orchestrator ────────────▼──────────────────────────────────┐
+│ 6  spec.md (WHAT + AC) · plan.md (Sections/Assets/Evidence/  │
+│    Notes) dari report                                        │
+│ 7  screen file (Scaffold) + content file; format + analyze   │
+│ 8  render.png vs figma.png; render test 320/390/393/430      │
+│    validate_output.py --check &lt;feature-dir&gt;  (maks 2 ronde)  │
+│ 9  flutter-run-verify → run: PASS | skipped | BLOCKED        │
+│    rekonsiliasi spec.md, git add slice folder                │
+└──────────────────────────────────────────────────────────────┘
+</pre>
+
+<h2>Langkah</h2>
+<div class="step"><h3><span class="n">1–2</span>Screening dan harness</h3>
+<p><code>references/project-screening.md</code> dijalankan sekali. SDK Flutter di-pin ke <code>.fvmrc</code> milik DS (<code>environment.md</code> §0). <code>buma_design_system</code> wajib ada: kalau belum, ditambahkan dengan URL git tetap dan <code>ref: release</code>. <code>resolved-ref</code> dari <code>pubspec.lock</code> dicatat di <code>## Notes</code>.</p></div>
+<div class="step"><h3><span class="n">3</span>Folder slice</h3>
+<pre>python3 &lt;skill-dir&gt;/scripts/validate_output.py --init &lt;screen_name&gt; --epic &lt;epic-slug&gt; &lt;package-root&gt;/specs/</pre>
+<p>Exit 3 berarti nama screen ini adalah prefix dari slice lain. Developer ditanya sekali: section dari screen itu, atau screen baru (<code>--new</code>)?</p></div>
+<div class="step"><h3><span class="n">4</span>Membaca node</h3>
+<ul>
+  <li>Response <code>get_metadata</code> disimpan <b>verbatim</b> (fence <code>```xml</code>) lewat <code>figma_xml.py raw</code> lalu <code>extract</code>. <code>--check</code> menolak tag karangan dan node tanpa geometri.</li>
+  <li><b>Evidence:</b> setiap nilai yang tidak bisa dibuktikan render (data, perilaku tap/drag, pilihan variant) menjadi baris <code>## Evidence</code> berisi node id dan field. Kalau tidak ada sumber, statusnya <code>NEEDS_CONTEXT</code>, tidak ditebak.</li>
+  <li><b>Layout dari CSS <code>get_design_context</code>:</b> <code>flex-row</code> → <code>Row</code>, <code>flex-1</code> → <code>Expanded</code>, tanpa class ukuran → hug. Tinggi ditentukan oleh konten. Di layar sempit, layout reflow dan tidak pernah dikecilkan. Teks tidak pernah dipotong kecuali node Figma-nya punya <code>truncate</code>. Geometri dibulatkan ke integer.</li>
+</ul></div>
+<div class="step"><h3><span class="n">5</span>Resolusi</h3>
+<p>Komponen ke <a href="flutter-match-component.html">flutter-match-component</a>, aset ke <a href="flutter-resolve-assets.html">flutter-resolve-assets</a>. Setiap warna, font, spacing, dan radius adalah token DS. Chart: chart DS dulu, kalau tidak ada pakai fl_chart; Syncfusion hanya untuk radial atau gauge. Tipe chart ditentukan dari bentuknya, bukan nama layer.</p></div>
+<div class="step"><h3><span class="n">6</span><code>spec.md</code> dan <code>plan.md</code></h3>
+<p><code>spec.md</code> hanya berisi WHAT: tujuan, state, AC. <code>plan.md</code> berisi empat bagian: <b>Sections</b> (<code>Node | Name | Widget file</code>), <b>Assets</b> (<code>Node | Name | Kind | Path</code>), <b>Evidence</b> (<code>Property | Value | Source</code>), dan <b>Notes</b> (target, DS, harness, baris <code>mask</code>/<code>reference</code>/<code>chart</code>, serta <code>run:</code>). Hanya orchestrator yang menulis <code>plan.md</code>.</p></div>
+<div class="step"><h3><span class="n">7</span>Generate Dart</h3>
+<p>File screen memegang chrome (<code>Scaffold</code>, appBar, bottomBar, FAB), content widget memegang <code>body</code>. Teks memakai <code>UILabel</code>, bukan <code>Text(</code>. Alpha diatur lewat token, bukan <code>Opacity(</code>. Setiap section punya file sendiri. Kode dibangun dari snippet Code Connect dengan nilai instance yang sebenarnya.</p></div>
+<div class="step"><h3><span class="n">8</span>Fidelity dan <code>--check</code></h3>
+<p>Per section, lihat <a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a>. Setelah semua section pass, orchestrator menjalankan:</p>
+<pre>python3 &lt;skill-dir&gt;/scripts/validate_output.py --check &lt;target-feature-directory&gt;</pre>
+<p><code>--check</code> gagal pada: literal hardcoded (warna, <code>TextStyle(</code>, <code>EdgeInsets</code>), <code>Icon(</code> atau tombol Material mentah, <code>Opacity(</code>, <code>Text(</code>, render yang hilang atau basi, section yang tidak lulus skor ulang, aset yang tidak ada atau tidak dideklarasikan, harness tidak di-copy verbatim, <code>frameWidth</code> yang tidak sama dengan Figma, report worker yang belum <code>DONE</code>, SDK di luar pin, intent AC yang belum dipetakan atau pin basi, dan <code>run: BLOCKED</code>. Maksimal dua ronde, lalu berhenti dan melapor.</p></div>
+<div class="step"><h3><span class="n">9</span>Verifikasi headless dan device</h3>
+<p><a href="flutter-run-verify.html">flutter-run-verify</a>: <code>PASS (headless)</code>, lalu satu kali run di device per batch. Setelah itu rekonsiliasi <code>spec.md</code> (AC met atau diverged) dan <code>git add</code> folder slice.</p></div>
+
+<h2>File yang dihasilkan</h2>
+<pre>
+&lt;package-root&gt;/
+├── specs/&lt;ID&gt;-&lt;slug&gt;-&lt;DD_MM_YYYY&gt;/
+│   ├── spec.md · plan.md
+│   ├── renders/   figma.png · render.png · section-&lt;id&gt;(-figma).png · run-&lt;runner&gt;.png
+│   └── work/      raw/ · spec-&lt;id&gt;.md · layout-&lt;id&gt;.json · section-&lt;id&gt;-{brief,report,verify}.md
+│                  iter/&lt;id&gt;/score.json (di-commit) + render/layout/diff (git-ignored)
+├── assets/images/&lt;kategori&gt;/
+├── test/support/fidelity_harness.dart          (copy verbatim dari skill)
+├── test/features/&lt;f&gt;/presentation/&lt;screen&gt;_render_test.dart
+└── lib/features/&lt;f&gt;/presentation/
+    ├── &lt;screen&gt;.screen.dart
+    └── widgets/&lt;screen&gt;_content.dart · &lt;screen&gt;_&lt;section&gt;.dart
+</pre>
+
+<h2>Script</h2>
+<div class="tools">
+  <div><div class="file">validate_output.py</div><p><code>--init</code> membuat folder slice. <code>--check</code> adalah gate kode, yang juga menjalankan ulang skor setiap section dan mengecek pin intent.</p></div>
+  <div><div class="file">figma_xml.py</div><p><code>raw</code> · <code>extract</code> · <code>spec</code> · <code>assets</code> · <code>classify</code>: menyalin response Figma dari transcript, memotong subtree, membuat spec section, mengunduh aset, dan mengklasifikasi chart.</p></div>
+  <div><div class="file">diff_renders.py</div><p>Skor render: geometri vs metadata, lalu diff piksel YIQ. Exit 0/1/4/5. Lihat <a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a>.</p></div>
+  <div><div class="file">chart_refs.py</div><p>Mencetak kode chart yang versinya pas dari source dan test chart DS serta <code>example/</code> package yang ter-resolve.</p></div>
+</div>
+<p class="lede">Self-check: <code>python3 scripts/check_plan_tables_selfcheck.py</code>. Asset: <code>assets/test-support/fidelity_harness.dart</code> (<code>loadDsFonts</code>, <code>pumpDs</code>, <code>writeLayout</code>) dan <code>assets/screen-template/</code>.</p>
+
+<h2>Reference</h2>
+<div class="tablewrap"><table class="compact">
+<tr><th>File</th><th>Isi</th></tr>
+<tr><td><code>project-screening.md</code></td><td>Screening sekali jalan: konvensi presentation, routing, sumber dependency</td></tr>
+<tr><td><code>environment.md</code></td><td>§0 pin SDK dan runner (global atau fvm), deteksi harness, <code>dependency_overrides</code></td></tr>
+<tr><td><code>package-inventory.md</code></td><td>Constraint package yang sudah teruji</td></tr>
+<tr><td><code>ds-api.md</code></td><td>Member DS: warna, spacing, radius, ikon, font, responsive (<code>.sp</code>)</td></tr>
+<tr><td><code>tokens.md</code></td><td>Kategori token dan aturan pencocokan</td></tr>
+<tr><td><code>charts.md</code></td><td>Chart DS / fl_chart / Syncfusion, tooltip, bukti tap dan drag</td></tr>
+<tr><td><code>external-packages.md</code></td><td>Chart, map, animasi tanpa padanan DS</td></tr>
+<tr><td><code>output-contract.md</code></td><td>File tree, skema ID, daftar render, skeleton Dart</td></tr>
+<tr><td><code>handoff.md</code></td><td>Brief dan report worker, section worker, verifier independen</td></tr>
+<tr><td><code>orchestration.md</code></td><td>Batch multi-frame: slug per frame, file bersama, finalisasi</td></tr>
+<tr><td><code>routing.md</code></td><td>Mode <code>none</code> / <code>suggest</code> / <code>auto</code></td></tr>
+</table></div>
+
+<div class="boundaries"><span class="tag">Batasan</span><ul>
+  <li>Hanya presentation: tidak ada domain, repository, datasource, service, API client, atau serialization.</li>
+  <li>Tidak pernah membuat komponen di dalam package DS. Kalau tidak ada yang cocok, dibuat widget lokal screen dan gap-nya dicatat.</li>
+  <li>Di luar fitur target, yang boleh disentuh hanya: route registry (mode <code>auto</code>), <code>main.dart</code>/<code>pubspec.yaml</code> untuk harness, dan dependency DS.</li>
+  <li>Figma dan Code Connect read-only: tidak memanggil <code>get_code_connect_suggestions</code>, <code>send_code_connect_mappings</code>, atau <code>add_code_connect_map</code>.</li>
+  <li>Report worker <code>BLOCKED</code> atau <code>NEEDS_CONTEXT</code> menghentikan slice: tidak ada route dan tidak ada run.</li>
+</ul></div>
+
+<footer>Sumber: <code>skills/flutter-slice-screen/SKILL.md</code> dan <code>references/</code>.</footer>
+</div>
+</body>
+</html>

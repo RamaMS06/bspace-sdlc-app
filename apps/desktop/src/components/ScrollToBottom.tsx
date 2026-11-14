@@ -5,7 +5,7 @@ import { ArrowDown } from 'lucide-react';
 const FAR = 200;
 
 /** Sent to the scroll container when the pill is clicked: the list follows new messages again. */
-export const STICK_EVENT = 'tayang:stick';
+export const STICK_EVENT = 'buma:stick';
 
 /** A pill at the bottom centre that appears once the chat is scrolled well above the end. */
 export function ScrollToBottom({ scrollRef }: { scrollRef: RefObject<HTMLElement | null> }) {

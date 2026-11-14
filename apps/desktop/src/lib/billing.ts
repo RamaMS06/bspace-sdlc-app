@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { BillingStatus, CheckoutResponse, PaidPlanId, UiLanguage } from '@tayang/shared';
+import type { BillingStatus, CheckoutResponse, PaidPlanId, UiLanguage } from '@bspace-sdlc-app/shared';
 
 // Paid plans. Rust calls the API with the stored sign-in token; the webview only ever sees the
 // payment link and the plan state.

@@ -1,4 +1,4 @@
-//! Sign in with Google through the Tayang API, device-authorization style. The desktop asks
+//! Sign in with Google through the Buma API, device-authorization style. The desktop asks
 //! the API for a device code, opens the browser, and polls until the user approves; the
 //! token it gets back lives in the OS keychain and never reaches the webview.
 
@@ -13,7 +13,7 @@ use crate::types::{Account, AuthError, AuthStart, AuthState, AuthStatus};
 use serde::Deserialize;
 
 /// Keychain service name for every stored token.
-pub const SERVICE: &str = "app.tayang.studio";
+pub const SERVICE: &str = "com.buma.bspace-sdlc-app";
 
 /// The keychain account for an API base: `api:` + origin + path, without a trailing slash,
 /// so a token is bound to the API it came from. Every sign-in path goes through here, so it is
@@ -284,7 +284,7 @@ pub fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .redirect(reqwest::redirect::Policy::none())
-        .user_agent(concat!("tayang-studio/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("bspace-sdlc-app/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| e.to_string())
 }
@@ -808,8 +808,8 @@ pub(crate) mod tests {
 
     #[test]
     fn account_key_is_origin_plus_path() {
-        assert_eq!(account_key("https://studio.tayang.app/api").unwrap(), "api:https://studio.tayang.app/api");
-        assert_eq!(account_key(" https://Studio.Tayang.app:443/api/ ").unwrap(), "api:https://studio.tayang.app/api");
+        assert_eq!(account_key("https://bspace.buma.internal/api").unwrap(), "api:https://bspace.buma.internal/api");
+        assert_eq!(account_key(" https://BSpace.Buma.Internal:443/api/ ").unwrap(), "api:https://bspace.buma.internal/api");
         assert_eq!(account_key("http://localhost:8787/api").unwrap(), "api:http://localhost:8787/api");
         assert_eq!(account_key("http://localhost:8787").unwrap(), "api:http://localhost:8787");
         assert_ne!(account_key("http://localhost:8787/api").unwrap(), account_key("http://127.0.0.1:8787/api").unwrap());
@@ -822,7 +822,7 @@ pub(crate) mod tests {
         for ok in ["http://localhost:8787/api", "http://LOCALHOST/api", "http://127.0.0.1:8787/api", "http://127.9.8.7/api", "http://127.1/api", "http://[::1]:8787/api", "https://example.com/api"] {
             assert!(account_key(ok).is_ok(), "{ok}");
         }
-        for bad in ["http://studio.tayang.app/api", "http://192.168.1.20:8787/api", "http://10.0.0.1/api", "http://[::2]/api", "http://localhost.evil.com/api", "http://127.0.0.1.evil.com/api", "http://[::ffff:192.168.1.1]/api"] {
+        for bad in ["http://bspace.buma.internal/api", "http://192.168.1.20:8787/api", "http://10.0.0.1/api", "http://[::2]/api", "http://localhost.evil.com/api", "http://127.0.0.1.evil.com/api", "http://[::ffff:192.168.1.1]/api"] {
             assert_eq!(account_key(bad), Err(AuthError::Insecure), "{bad}");
         }
         assert_eq!(account_key("not a url"), Err(AuthError::Server));
@@ -1257,7 +1257,7 @@ pub(crate) mod tests {
         let r = rig();
         r.store.set(&key("http://localhost:8787/api"), "tyg_abc").unwrap();
         assert_eq!(r.auth.token(" http://localhost:8787/api/ ").await.as_deref(), Some("tyg_abc"));
-        assert_eq!(r.auth.token("https://studio.tayang.app/api").await, None);
+        assert_eq!(r.auth.token("https://bspace.buma.internal/api").await, None);
         assert_eq!(r.auth.token("http://example.com/api").await, None, "never over plain http to another computer");
     }
 

@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Settings } from '@tayang/shared';
+import type { Settings } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   ENGINE_PROGRESS_EVENT: 'engine://progress',

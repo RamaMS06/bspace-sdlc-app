@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChatTrace, TraceSpan } from '@tayang/shared';
+import type { ChatTrace, TraceSpan } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', async (original) => ({ ...(await original<typeof import('@/lib/ipc')>()), getChatTrace: vi.fn() }));
 

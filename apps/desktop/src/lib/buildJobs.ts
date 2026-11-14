@@ -1,4 +1,4 @@
-import type { Job } from '@tayang/shared';
+import type { Job } from '@bspace-sdlc-app/shared';
 import { listJobs, updateSettings, upsertJob } from '@/lib/ipc';
 import { stored } from '@/lib/stored';
 import { finishedRender } from '@/lib/renderCheck';

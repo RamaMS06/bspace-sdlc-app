@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowRight } from 'lucide-react';
-import type { AgentId, AgentInfo } from '@tayang/shared';
-import defaultOyen from '@/assets/brand/oyen-expr-default.svg';
+import type { AgentId, AgentInfo } from '@bspace-sdlc-app/shared';
 import { AgentLogo } from '@/components/AgentLogo';
 import { ApiSetupDialog } from '@/components/ApiSetupDialog';
 import { ClaudeAccountControl } from '@/components/ClaudeAccountControl';
 import { Button } from '@/components/Button';
-import { Oyen } from '@/components/Oyen';
+import { StatusIcon } from '@/components/StatusIcon';
 import { OnboardingHeader } from '@/components/OnboardingHeader';
 import { AGENT_INSTALL_URL } from '@/lib/agents';
 import { detectAgents, updateSettings } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { useClaudeAccount } from '@/state/claudeAccount';
+import { bumaButtonClass } from '@/components/buma/Button';
+import { cn } from '@/lib/utils';
 import { track } from '@/lib/analytics';
 
 const ROWS: { id: AgentId; name?: string }[] = [
@@ -21,6 +22,7 @@ const ROWS: { id: AgentId; name?: string }[] = [
   { id: 'gemini', name: 'Gemini CLI' },
   { id: 'codex', name: 'Codex' },
   { id: 'antigravity', name: 'Antigravity CLI' },
+  { id: 'cursor', name: 'Cursor' },
   { id: 'custom' },
 ];
 
@@ -52,7 +54,7 @@ export function Connect() {
   };
 
   const info = (id: AgentId) => agents?.find((a) => a.id === id);
-  // Claude also needs Tayang's own sign-in (its own config folder, see claude_account.rs).
+  // Claude also needs Buma's own sign-in (its own config folder, see claude_account.rs).
   const ready = (id: AgentId) => !!info(id)?.installed && (id !== 'claude' || claudeSignedIn);
   const connectedId = ROWS.find((r) => ready(r.id) && settings?.defaultAgent === r.id)?.id;
 
@@ -89,13 +91,13 @@ export function Connect() {
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[15px] font-medium">{name}</span>
-                    {a?.recommended && <span className="text-xs text-orange-light">{t('onboarding.connect.recommended')}</span>}
+                    {a?.recommended && <span className="text-xs text-primary-text">{t('onboarding.connect.recommended')}</span>}
                   </div>
                   <span className="text-[13px] text-text-3">{status}</span>
                 </div>
                 {connected && (
-                  <span className="inline-flex h-9 items-center gap-2 text-sm text-[#D9D9D9]">
-                    <Oyen mood="happy" size={24} />
+                  <span className="inline-flex h-9 items-center gap-2 text-sm text-foreground">
+                    <StatusIcon kind="success" size={24} />
                     {t('onboarding.connect.connected')}
                   </span>
                 )}
@@ -115,7 +117,7 @@ export function Connect() {
                     href={AGENT_INSTALL_URL[r.id]}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex h-9 items-center px-1 text-sm font-medium text-primary hover:text-accent-hover"
+                    className={cn(bumaButtonClass({ variant: 'secondary' }), 'no-underline')}
                   >
                     {t('onboarding.connect.howToInstall')}
                   </a>
@@ -134,20 +136,22 @@ export function Connect() {
           }}
         />
 
-        {error && <p role="alert" className="m-0 text-[13px] text-orange-light">{error}</p>}
+        {error && <p role="alert" className="m-0 text-[13px] text-error">{error}</p>}
 
         <div className="flex items-center gap-4 px-1">
-          <img src={defaultOyen} alt="" aria-hidden="true" className="size-10 shrink-0" />
-          <span className="text-sm leading-[1.6] text-text-2">
-            {t('onboarding.connect.newToAgents')}{' '}
-            <a href="https://docs.claude.com/en/docs/claude-code" target="_blank" rel="noreferrer" className="text-primary hover:text-accent-hover">
-              {t('onboarding.connect.showMe')}
-            </a>
-          </span>
+          <span className="mr-auto text-sm leading-[1.6] text-text-2">{t('onboarding.connect.newToAgents')}</span>
+          <a
+            href="https://docs.claude.com/en/docs/claude-code"
+            target="_blank"
+            rel="noreferrer"
+            className={cn(bumaButtonClass({ variant: 'secondary' }), 'shrink-0 no-underline')}
+          >
+            {t('onboarding.connect.showMe')}
+          </a>
         </div>
 
         <div className="mt-2 flex items-center justify-between">
-          <Button variant="ghost" className="h-12 px-0 text-[15px]" onClick={() => navigate({ name: 'welcome' })}>
+          <Button variant="ghost" className="h-12 px-5 text-[15px]" onClick={() => navigate({ name: 'welcome' })}>
             {t('common.back')}
           </Button>
           <Button className="h-12 gap-2 px-5 text-[15px]" disabled={!connectedId} onClick={() => {

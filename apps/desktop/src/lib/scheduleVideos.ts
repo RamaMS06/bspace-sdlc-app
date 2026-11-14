@@ -1,5 +1,5 @@
-import { DEFAULT_SETTINGS, type ChatMessage, type MessagePart, type Project, type Settings, type VideoKind } from '@tayang/shared';
-import { VIDEO_KINDS } from '@tayang/skills';
+import { DEFAULT_SETTINGS, type ChatMessage, type MessagePart, type Project, type Settings, type VideoKind } from '@bspace-sdlc-app/shared';
+import { VIDEO_KINDS } from '@bspace-sdlc-app/skills';
 import type { A2uiAction } from '@/a2ui/render';
 import { slotTime } from '@/lib/autopilot';
 import { notifyAutopilotChanged } from '@/lib/autopilotHooks';
@@ -10,7 +10,7 @@ import { useApp } from '@/state/app';
 import { appendSystem, isInternalChat, noteForAgent, useChat } from '@/state/chat';
 
 /**
- * The reserved A2UI event of a schedule card. The agent's button only asks: Tayang shows what would be
+ * The reserved A2UI event of a schedule card. The agent's button only asks: Buma shows what would be
  * scheduled in its own dialog, and only the user's confirmation there writes anything. The agent gets
  * no turn for it.
  */
@@ -132,7 +132,7 @@ export function batchReason(message: string): string {
 }
 
 /**
- * Step one of a pressed schedule card: checks its items against this chat. Null in chats where Tayang
+ * Step one of a pressed schedule card: checks its items against this chat. Null in chats where Buma
  * doesn't take the action (setup, style studies, autopilot topics). A card that can't be scheduled gets
  * one line saying why and stays answerable; nothing was written.
  */
@@ -152,7 +152,7 @@ export async function prepareSchedule(chatId: string, a: A2uiAction): Promise<Pl
 }
 
 /**
- * Step two, after the user confirmed in Tayang's dialog: one all-or-nothing write in Rust. Either way
+ * Step two, after the user confirmed in Buma's dialog: one all-or-nothing write in Rust. Either way
  * the card is answered from now on (a second press could only duplicate), and one line says what
  * happened; on success the agent hears about it with the next message.
  */
@@ -182,5 +182,5 @@ export async function confirmSchedule(chatId: string, a: A2uiAction, items: Plan
     .map((i) => `${i.at} — ${i.title}`)
     .join(', ');
   // i18n-ignore: this goes to the agent, not the user
-  noteForAgent(chatId, `The user confirmed your schedule card. Tayang put these videos on the calendar: ${exact}.`);
+  noteForAgent(chatId, `The user confirmed your schedule card. Buma put these videos on the calendar: ${exact}.`);
 }

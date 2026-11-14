@@ -5,9 +5,9 @@ import { ArrowLeft, Check, ChevronRight, ChevronsUpDown, Globe, KeyRound } from 
 import commandcodeLogo from '@/assets/brand/commandcode.svg';
 import deepseekLogo from '@/assets/brand/deepseek.svg';
 import ninerouterLogo from '@/assets/brand/9router.svg';
-import type { ApiCheck, ApiProviderId, Settings } from '@tayang/shared';
+import type { ApiCheck, ApiProviderId, Settings } from '@bspace-sdlc-app/shared';
 import { Button } from '@/components/Button';
-import { Oyen } from '@/components/Oyen';
+import { StatusIcon } from '@/components/StatusIcon';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
@@ -24,6 +24,7 @@ import {
   type EngineProgress,
 } from '@/lib/ipc';
 import { track } from '@/lib/analytics';
+import { bumaButtonClass } from '@/components/buma/Button';
 import { useModels } from '@/state/models';
 
 /** The providers offered by name; `other` takes any OpenAI-compatible address. */
@@ -299,7 +300,7 @@ export function ApiSetupDialog({
                       <span className="flex flex-wrap items-center gap-2">
                         <span className="text-[14px] font-medium">{providerName(o.id)}</span>
                         {savedProvider?.provider === o.id && (
-                          <span className="rounded-full bg-raised px-2 py-0.5 text-[11px] text-orange-light">
+                          <span className="rounded-full bg-raised px-2 py-0.5 text-[11px] text-primary-text">
                             {t('apiSetup.lastUsed', { model: savedProvider.model })}
                           </span>
                         )}
@@ -359,7 +360,7 @@ export function ApiSetupDialog({
               <span className="flex items-center justify-between text-[13px] font-medium">
                 {t('apiSetup.key')}
                 {p.keyUrl && (
-                  <a href={p.keyUrl} target="_blank" rel="noreferrer" className="text-xs font-normal text-primary hover:text-accent-hover">
+                  <a href={p.keyUrl} target="_blank" rel="noreferrer" className={cn(bumaButtonClass({ variant: 'secondary', small: true }), 'no-underline')}>
                     {t('apiSetup.getKey')}
                   </a>
                 )}
@@ -392,7 +393,7 @@ export function ApiSetupDialog({
 
             {check && (
               <div role="status" className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
-                <Oyen mood={check.ok ? 'happy' : 'surprised'} size={28} />
+                <StatusIcon kind={check.ok ? 'success' : 'error'} size={28} />
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <span className="text-[13px]">{check.ok ? t('apiSetup.connected', { count: check.models.length }) : failureText(check)}</span>
                   {!check.ok && check.detail && <span className="break-words text-xs text-text-3">{check.detail}</span>}
@@ -402,7 +403,7 @@ export function ApiSetupDialog({
 
             {progress && (
               <div role="status" className="flex items-center gap-3">
-                <Oyen mood="sleepy" size={24} />
+                <StatusIcon kind="working" size={24} />
                 <span className="text-[13px] text-text-2">
                   {progress.total
                     ? t('apiSetup.downloading', { done: mb(progress.done), total: mb(progress.total) })
@@ -412,7 +413,7 @@ export function ApiSetupDialog({
             )}
 
             {error && (
-              <p role="alert" className="m-0 text-[13px] text-orange-light">
+              <p role="alert" className="m-0 text-[13px] text-error">
                 {error}
               </p>
             )}

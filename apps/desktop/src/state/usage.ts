@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AgentId, AgentUsage } from '@tayang/shared';
+import type { AgentId, AgentUsage } from '@bspace-sdlc-app/shared';
 import { getAgentUsage } from '@/lib/ipc';
 
 export const POLL_MS = 5 * 60 * 1000;
@@ -22,9 +22,19 @@ let timer: ReturnType<typeof setInterval> | null = null;
 export function mergeUsage(prev: AgentUsage[], next: AgentUsage[]): AgentUsage[] {
   return next.map((n) => {
     if (n.status !== 'error') return n;
-    const old = prev.find((p) => p.agentId === n.agentId && p.status === 'ok');
+    const old = prev.find((p) => p.agentId === n.agentId && p.accountId === n.accountId && p.status === 'ok');
     return old ? { ...old, message: n.message } : n;
   });
+}
+
+/** Claude and Codex always lead; the rest keep their order. */
+const LEAD: AgentId[] = ['claude', 'codex'];
+export function sortUsage(list: AgentUsage[]): AgentUsage[] {
+  const rank = (u: AgentUsage) => {
+    const i = LEAD.indexOf(u.agentId);
+    return i < 0 ? LEAD.length : i;
+  };
+  return list.map((u, i) => ({ u, i })).sort((a, b) => rank(a.u) - rank(b.u) || a.i - b.i).map((x) => x.u);
 }
 
 export const useUsage = create<UsageState>((set, get) => ({
@@ -42,7 +52,7 @@ export const useUsage = create<UsageState>((set, get) => ({
     set({ loading: true });
     try {
       const next = await getAgentUsage(force);
-      set((s) => ({ usage: mergeUsage(s.usage, next), loading: false, loaded: true }));
+      set((s) => ({ usage: sortUsage(mergeUsage(s.usage, next)), loading: false, loaded: true }));
     } catch {
       set({ loading: false, loaded: true });
     }

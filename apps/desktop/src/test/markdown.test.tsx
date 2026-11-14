@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import type { ChatMessage } from '@tayang/shared';
+import type { ChatMessage } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({ assetUrl: (p: string) => p }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn().mockResolvedValue(undefined) }));

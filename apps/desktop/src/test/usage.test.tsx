@@ -1,7 +1,7 @@
 import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import type { AgentUsage } from '@tayang/shared';
+import type { AgentUsage } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({ getAgentUsage: vi.fn() }));
 
@@ -103,14 +103,10 @@ describe('status bar: the agent in use, all of them in the popover', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Claude Code usage' }));
     expect(await screen.findByText('Usage')).toBeInTheDocument();
     expect(screen.getByText('all agents')).toBeInTheDocument();
-    expect(screen.getAllByTestId('usage-row')).toHaveLength(2);
-    // The fixture's session reset is already past: no "Resets in now".
-    expect(screen.getByText('Resets any moment')).toBeInTheDocument();
+    // Gemini has nothing to show: one "Not tracked" line instead of a block.
+    expect(screen.getAllByTestId('usage-row')).toHaveLength(1);
+    expect(screen.getByText('Not tracked: Gemini CLI')).toBeInTheDocument();
     expect(screen.getByRole('progressbar', { name: 'Fable usage' })).toHaveAttribute('aria-valuenow', '85');
-
-    await userEvent.click(screen.getByRole('button', { name: 'Compact' }));
-    expect(localStorage.getItem('tayang.usageView')).toBe('compact');
-    expect(screen.queryByText('Resets any moment')).not.toBeInTheDocument();
 
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Refresh usage' }));
     await waitFor(() => expect(getAgentUsage).toHaveBeenLastCalledWith(true));
@@ -123,7 +119,7 @@ describe('status bar: the agent in use, all of them in the popover', () => {
     render(<StatusBar />);
     await userEvent.click(screen.getByRole('button', { name: 'Claude Code usage' }));
     await userEvent.click(await screen.findByRole('button', { name: /Usage details & history/ }));
-    expect(useApp.getState().route).toEqual({ name: 'agents' });
+    expect(useApp.getState().route).toEqual({ name: 'agents', tab: 'usage' });
   });
 
   it('shows opencode without a meter, with today and the last 7 days in the popover', async () => {
@@ -136,5 +132,14 @@ describe('status bar: the agent in use, all of them in the popover', () => {
     expect(await screen.findByText('$0.00 · 186.6K tokens')).toBeInTheDocument();
     expect(screen.getByText('$0.00 · 186.6K tokens').parentElement).toHaveAttribute('title', '54 replies');
     expect(screen.getByText('$1.50 · 1.2M tokens')).toBeInTheDocument();
+  });
+});
+
+describe('sortUsage', () => {
+  it('keeps Claude then Codex on top, the rest in order', async () => {
+    const { sortUsage } = await import('@/state/usage');
+    const u = (agentId: string) => ({ agentId, status: 'ok', session: null, weekly: null, modelWeekly: null, updatedAt: '', message: null }) as never;
+    const out = sortUsage([u('opencode'), u('codex'), u('cursor'), u('claude')]);
+    expect(out.map((x: { agentId: string }) => x.agentId)).toEqual(['claude', 'codex', 'opencode', 'cursor']);
   });
 });

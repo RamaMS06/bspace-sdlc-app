@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { AuthErrorCode, AuthStart, AuthStatus } from '@tayang/shared';
+import type { AuthErrorCode, AuthStart, AuthStatus } from '@bspace-sdlc-app/shared';
 
 // Sign in with Google runs in Rust: it talks to the API, keeps the token in the OS keychain and
 // only ever tells the webview the state below.

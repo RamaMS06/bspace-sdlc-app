@@ -1,23 +1,21 @@
-import type { AgentId, ToolId } from '@tayang/shared';
+import type { AgentId, ToolId } from '@bspace-sdlc-app/shared';
 import { KeyRound } from 'lucide-react';
 import antigravity from '@/assets/brand/antigravity.svg';
+import cursor from '@/assets/brand/cursor.svg';
 import claude from '@/assets/brand/claude.svg';
 import gemini from '@/assets/brand/googlegemini.svg';
 import openai from '@/assets/brand/openai.svg';
 import opencode from '@/assets/brand/opencode.svg';
 import node from '@/assets/brand/nodedotjs.svg';
-import ffmpeg from '@/assets/brand/ffmpeg.svg';
-import chrome from '@/assets/brand/googlechrome.svg';
 
 const SRC: Partial<Record<AgentId | ToolId, string>> = {
   claude,
   gemini,
   codex: openai,
   antigravity,
+  cursor,
   opencode,
   node,
-  ffmpeg,
-  chrome,
 };
 
 export function AgentLogo({ id, size = 24 }: { id: AgentId | ToolId; size?: number }) {

@@ -1,4 +1,4 @@
-//! Built-in styles from the Tayang API: sync into SQLite and install a style's starter
+//! Built-in styles from the Buma API: sync into SQLite and install a style's starter
 //! template (a zip) into a project folder.
 
 use crate::db::Db;
@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use std::io::{Cursor, Read};
 use std::path::{Component, Path, PathBuf};
 
-/// Largest template Tayang downloads.
+/// Largest template Buma downloads.
 const MAX_TEMPLATE: u64 = 200 * 1024 * 1024;
 /// Largest styles list response.
 const MAX_LIST: u64 = 5 * 1024 * 1024;
@@ -39,7 +39,7 @@ impl HttpFetcher {
     pub fn new(timeout: std::time::Duration) -> Result<Self, String> {
         let client = reqwest::Client::builder()
             .timeout(timeout)
-            .user_agent(concat!("tayang-studio/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("bspace-sdlc-app/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| e.to_string())?;
         Ok(Self { client })
@@ -68,10 +68,10 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-/// `TAYANG_API_URL` (when set and non-empty) wins over the stored `apiUrl`; never stored and
-/// used as given (no /api migration), e.g. `TAYANG_API_URL=http://localhost:8787/api`.
+/// `BUMA_API_URL` (when set and non-empty) wins over the stored `apiUrl`; never stored and
+/// used as given (no /api migration), e.g. `BUMA_API_URL=http://localhost:8787/api`.
 pub fn effective_api_url(settings: &crate::types::Settings) -> String {
-    resolve_api_url(std::env::var("TAYANG_API_URL").ok(), settings)
+    resolve_api_url(std::env::var("BUMA_API_URL").ok(), settings)
 }
 
 fn resolve_api_url(env: Option<String>, settings: &crate::types::Settings) -> String {
@@ -82,7 +82,7 @@ fn resolve_api_url(env: Option<String>, settings: &crate::types::Settings) -> St
 }
 
 /// `path` (e.g. `/v1/styles`) under the API base. The base may carry a path
-/// (`https://studio.tayang.app/api`); it is kept, minus one trailing slash.
+/// (`https://bspace.buma.internal/api`); it is kept, minus one trailing slash.
 pub(crate) fn endpoint(api_url: &str, path: &str) -> String {
     let base = api_url.trim();
     format!("{}{}", base.strip_suffix('/').unwrap_or(base), path)
@@ -117,12 +117,12 @@ pub async fn sync_styles<F: Fetcher>(db: &Db, api_url: &str, fetcher: &F) -> Res
     Ok(StylesSync { styles: db.list_styles().map_err(|e| e.to_string())?, offline })
 }
 
-/// True when the folder holds nothing but the files Tayang itself writes.
+/// True when the folder holds nothing but the files Buma itself writes.
 fn is_fresh_folder(folder: &Path) -> bool {
     std::fs::read_dir(folder)
         .map(|rd| {
             rd.filter_map(|e| e.ok()).all(|e| {
-                matches!(e.file_name().to_string_lossy().as_ref(), "AGENTS.md" | "CLAUDE.md" | ".tayang")
+                matches!(e.file_name().to_string_lossy().as_ref(), "AGENTS.md" | "CLAUDE.md" | ".buma")
             })
         })
         .unwrap_or(false)
@@ -381,8 +381,8 @@ mod tests {
 
     #[test]
     fn endpoint_keeps_the_base_path() {
-        for base in ["https://studio.tayang.app/api", "https://studio.tayang.app/api/", " https://studio.tayang.app/api "] {
-            assert_eq!(endpoint(base, "/v1/styles"), "https://studio.tayang.app/api/v1/styles", "{base:?}");
+        for base in ["https://bspace.buma.internal/api", "https://bspace.buma.internal/api/", " https://bspace.buma.internal/api "] {
+            assert_eq!(endpoint(base, "/v1/styles"), "https://bspace.buma.internal/api/v1/styles", "{base:?}");
         }
         assert_eq!(endpoint("http://localhost:8787/api", "/v1/styles/a/template"), "http://localhost:8787/api/v1/styles/a/template");
         assert_eq!(endpoint("https://edge.test", "/v1/styles"), "https://edge.test/v1/styles");
@@ -403,10 +403,10 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let home = std::path::PathBuf::from("/home/u");
         let mut s = db.get_settings(&home);
-        assert_eq!(resolve_api_url(None, &s), "https://studio.tayang.app/api");
-        assert_eq!(resolve_api_url(Some("  ".into()), &s), "https://studio.tayang.app/api");
+        assert_eq!(resolve_api_url(None, &s), "https://bspace.buma.internal/api");
+        assert_eq!(resolve_api_url(Some("  ".into()), &s), "https://bspace.buma.internal/api");
         assert_eq!(resolve_api_url(Some("http://localhost:8787".into()), &s), "http://localhost:8787");
-        assert_eq!(db.get_settings(&home).api_url, "https://studio.tayang.app/api", "not stored");
+        assert_eq!(db.get_settings(&home).api_url, "https://bspace.buma.internal/api", "not stored");
         s = db.update_settings(serde_json::json!({"apiUrl": "https://mine.test"})).unwrap();
         assert_eq!(resolve_api_url(None, &s), "https://mine.test");
         assert_eq!(resolve_api_url(Some("http://x".into()), &s), "http://x");
@@ -426,7 +426,7 @@ mod tests {
             .unwrap();
         }
         let s = Db::open(&path).unwrap().get_settings(std::path::Path::new("/h"));
-        assert_eq!((s.fps, s.api_url.as_str()), (60, "https://studio.tayang.app/api"));
+        assert_eq!((s.fps, s.api_url.as_str()), (60, "https://bspace.buma.internal/api"));
     }
 
     #[tokio::test]
@@ -506,14 +506,14 @@ mod tests {
     #[tokio::test]
     async fn install_extracts_caches_and_skips_existing_files() {
         let z = zip_bytes(&[
-            ("tayang.json", b"{}"),
+            ("buma.json", b"{}"),
             ("src/index.ts", b"export {}"),
             ("AGENTS.md", b"from template"),
         ]);
         let (s, f) = setup(&z, &z);
         std::fs::write(s.folder.join("AGENTS.md"), "mine").unwrap();
         std::fs::write(s.folder.join("CLAUDE.md"), "mine").unwrap();
-        std::fs::create_dir_all(s.folder.join(".tayang")).unwrap();
+        std::fs::create_dir_all(s.folder.join(".buma")).unwrap();
         let ok = install_template(&s.db, &f, "https://api.test", &s.templates, "p1").await.unwrap();
         assert!(ok);
         assert_eq!(std::fs::read(s.folder.join("src").join("index.ts")).unwrap(), b"export {}");
@@ -524,7 +524,7 @@ mod tests {
         assert!(!again);
         // A cached zip is not downloaded again.
         std::fs::remove_dir_all(s.folder.join("src")).unwrap();
-        std::fs::remove_file(s.folder.join("tayang.json")).unwrap();
+        std::fs::remove_file(s.folder.join("buma.json")).unwrap();
         let calls_before = f.calls.lock().unwrap().len();
         assert!(install_template(&s.db, &f, "https://api.test", &s.templates, "p1").await.unwrap());
         assert_eq!(f.calls.lock().unwrap().len(), calls_before);
@@ -533,7 +533,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_clone_installs_through_the_original_templates_url() {
-        let z = zip_bytes(&[("tayang.json", b"{}"), ("src/index.ts", b"export {}")]);
+        let z = zip_bytes(&[("buma.json", b"{}"), ("src/index.ts", b"export {}")]);
         let (s, f) = setup(&z, &z);
         let original = s.db.get_style("atlas").unwrap().unwrap();
         let clone = Style { id: "mine-9".into(), source: StyleSource::Mine, based_on: Some("atlas".into()), ..original };
@@ -559,8 +559,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_clone_takes_the_originals_current_template_after_an_update() {
-        let old = zip_bytes(&[("tayang.json", b"{}"), ("src/old.ts", b"1")]);
-        let new = zip_bytes(&[("tayang.json", b"{}"), ("src/new.ts", b"2")]);
+        let old = zip_bytes(&[("buma.json", b"{}"), ("src/old.ts", b"1")]);
+        let new = zip_bytes(&[("buma.json", b"{}"), ("src/new.ts", b"2")]);
         // The built-in (and the server) are at the new template; the clone froze the old one.
         let (s, f) = setup(&new, &new);
         clone_of_atlas(&s, Some("atlas"), StyleTemplate { sha256: sha256_hex(&old), size: old.len() as u64, version: 1 });
@@ -570,8 +570,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_clone_falls_back_to_its_cached_snapshot_when_the_download_fails() {
-        let old = zip_bytes(&[("tayang.json", b"{}"), ("src/old.ts", b"1")]);
-        let new = zip_bytes(&[("tayang.json", b"{}"), ("src/new.ts", b"2")]);
+        let old = zip_bytes(&[("buma.json", b"{}"), ("src/old.ts", b"1")]);
+        let new = zip_bytes(&[("buma.json", b"{}"), ("src/new.ts", b"2")]);
         let (s, mut f) = setup(&new, &new);
         clone_of_atlas(&s, Some("atlas"), StyleTemplate { sha256: sha256_hex(&old), size: old.len() as u64, version: 1 });
         std::fs::create_dir_all(&s.templates).unwrap();
@@ -588,7 +588,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_clone_whose_original_is_gone_uses_its_own_snapshot_and_id() {
-        let z = zip_bytes(&[("tayang.json", b"{}"), ("src/index.ts", b"export {}")]);
+        let z = zip_bytes(&[("buma.json", b"{}"), ("src/index.ts", b"export {}")]);
         let (s, mut f) = setup(&z, &z);
         clone_of_atlas(&s, Some("atlas"), StyleTemplate { sha256: sha256_hex(&z), size: z.len() as u64, version: 1 });
         // Sync now keeps an original a clone is based on; an older version could have dropped it.
@@ -601,7 +601,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_based_on_that_is_not_a_plain_built_in_id_is_ignored() {
-        let z = zip_bytes(&[("tayang.json", b"{}"), ("src/index.ts", b"export {}")]);
+        let z = zip_bytes(&[("buma.json", b"{}"), ("src/index.ts", b"export {}")]);
         for bad in ["..", "../atlas", "a/b", "a b", ""] {
             let (s, mut f) = setup(&z, &z);
             clone_of_atlas(&s, Some(bad), StyleTemplate { sha256: sha256_hex(&z), size: z.len() as u64, version: 1 });

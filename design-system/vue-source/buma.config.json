@@ -1,0 +1,11 @@
+{
+  "framework": "vue",
+  "registry": "/Users/p-rama.msugiyanto/Documents/buma/buma-registry/dist",
+  "tokens": "@buma-dev/styles",
+  "aliases": {
+    "components": "@/components",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "utils": "@/lib/utils"
+  }
+}

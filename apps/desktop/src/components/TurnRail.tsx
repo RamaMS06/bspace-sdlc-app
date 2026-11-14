@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ChatMessage } from '@tayang/shared';
+import type { ChatMessage } from '@bspace-sdlc-app/shared';
 import { i18n } from '@/i18n';
 
 /** What a user message says, for the preview and the label: text, @mentions, attached file names. */
@@ -178,7 +178,7 @@ export function TurnRail({
               <span
                 className="block h-[2px] w-5 origin-right rounded-full transition-[transform,background-color] duration-[120ms] motion-reduce:transition-none"
                 style={{
-                  background: isActive ? '#EDEDED' : isHover ? '#A3A3A3' : '#404040',
+                  background: isActive ? 'var(--foreground)' : isHover ? 'var(--text-2)' : 'var(--hairline-strong)',
                   transform: `scaleX(${isActive ? 1 : isHover ? 0.8 : 0.6})`,
                 }}
               />

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
-import type { MessagePart, Style } from '@tayang/shared';
+import type { MessagePart, Style } from '@bspace-sdlc-app/shared';
 import { listStyles } from '@/lib/ipc';
 import { useChat } from '@/state/chat';
 

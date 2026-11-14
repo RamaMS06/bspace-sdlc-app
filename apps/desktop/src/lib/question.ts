@@ -1,4 +1,4 @@
-import type { AgentQuestion } from '@tayang/shared';
+import type { AgentQuestion } from '@bspace-sdlc-app/shared';
 
 /** One choice of a select field. */
 export interface Choice {
@@ -7,7 +7,7 @@ export interface Choice {
   description?: string;
 }
 
-/** One field of an agent's question, as Tayang draws it. */
+/** One field of an agent's question, as Buma draws it. */
 export interface QuestionField {
   key: string;
   title: string;

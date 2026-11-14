@@ -1,43 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Copy, PanelRight, Send, SquareTerminal } from 'lucide-react';
-import type { AgentId, Chat, MessagePart, Project } from '@tayang/shared';
+import { PanelRight } from 'lucide-react';
+import type { AgentId, Chat, MessagePart, Project } from '@bspace-sdlc-app/shared';
 import { TraceButton } from '@/components/TraceDialog';
-import { Button } from '@/components/Button';
 import { Composer } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
 import { QuestionCard } from '@/components/QuestionCard';
 import { ResizeHandle } from '@/components/ResizeHandle';
-import { Preview } from '@/screens/preview/Preview';
 import { FileTree } from '@/components/workspace/FileTree';
 import { Workspace } from '@/components/workspace/Workspace';
-import { ScheduleDialog } from '@/components/ScheduleDialog';
-import { PostDialog } from '@/components/PostDialog';
 import { ScrollToBottom } from '@/components/ScrollToBottom';
 import { TurnRail } from '@/components/TurnRail';
 import { StepBar } from '@/components/StepBar';
 import { stylesFor, useStyles } from '@/components/TemplateChip';
 import { styleContext } from '@/lib/mentions';
-import { getChat, listProjects, mediaProbe, mediaRender, renderCommand, updateProject, type RenderCommand } from '@/lib/ipc';
-import { LANGUAGE_NAMES } from '@/i18n';
+import { getChat, listProjects } from '@/lib/ipc';
+import { FeaturePipeline } from '@/components/FeaturePipeline';
 import { projectSendOptions } from '@/lib/openProject';
 import { useApp } from '@/state/app';
 import { headPermission, headQuestion, useChat, type SendOpts } from '@/state/chat';
 import { useUsage } from '@/state/usage';
 import { FILES, PREVIEW, useFittedLayout, useLayout } from '@/state/layout';
 import { useProjectTabs, useWorkspace } from '@/state/workspace';
-import { setRenderArgv, useRender } from '@/state/render';
-import { advanceProject } from '@/lib/projectStatus';
 import { cn } from '@/lib/utils';
-import { track, trackError } from '@/lib/analytics';
 
 const NO_MESSAGES: never[] = [];
 /** How often the file sidebar reads its folders again while the agent works. */
 const TREE_REFRESH_MS = 4000;
-/** One argv as a shell-looking line: arguments with spaces or quotes are double-quoted. */
-const shellDisplay = (argv: string[]) =>
-  argv.map((a) => (/[\s"']/.test(a) ? `"${a.replace(/(["\\])/g, '\\$1')}"` : a)).join(' ');
 
 export function ChatProject({ chatId, draft }: { chatId: string; draft?: string }) {
   const { t } = useTranslation();
@@ -45,18 +35,12 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
   const [chat, setChat] = useState<Chat | null>(null);
   const agent = chat?.agentId ?? defaultAgent;
   const [project, setProject] = useState<Project | null>(null);
-  const [scheduling, setScheduling] = useState(false);
-  const [posting, setPosting] = useState(false);
-  const [rendering, setRendering] = useState(false);
-  const [renderError, setRenderError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const [runs, setRuns] = useState<RenderCommand | null>(null);
   const messages = useChat((s) => s.messages[chatId]) ?? NO_MESSAGES;
   const streaming = useChat((s) => !!s.streaming[chatId]);
   const permission = useChat((s) => headPermission(s, chatId));
   const question = useChat((s) => headQuestion(s, chatId));
   const fitted = useFittedLayout(true);
-  const renderRunning = useRender((s) => (project ? !!s.runs[project.id] : false));
   const projectsVersion = useApp((s) => s.projectsVersion);
   const seenVersion = useRef(projectsVersion);
   const styles = useStyles();
@@ -94,23 +78,6 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
       alive = false;
     };
   }, [projectsVersion, project?.id]);
-
-  // A project with a tayang.json renders with its own command: show it before the user presses Render.
-  useEffect(() => {
-    if (!project) return;
-    let alive = true;
-    renderCommand(project.id)
-      .then((c) => {
-        // The chat spots the agent running this exact command as a render.
-        setRenderArgv(project.id, c?.render ?? null);
-        if (alive) setRuns(c);
-      })
-      .catch(() => alive && setRuns(null));
-    return () => {
-      alive = false;
-    };
-    // the agent may add tayang.json or node_modules during a turn, and a render installs: refetch on both
-  }, [project?.id, reloadKey]);
 
   useEffect(() => {
     useUsage.getState().setChatAgent(agent);
@@ -154,92 +121,19 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
     void useChat.getState().send(chatId, parts, opts);
   };
 
-  /** Sends a failed render to the agent; false when the chat can't take a message now. */
-  const askAgentToFixRender = (message: string): boolean => {
-    if (!project || useChat.getState().streaming[chatId]) return false;
-    const visible = t('chat.renderFailedAsk');
-    const command = runs?.render.length ? [...(runs.install?.length ? [runs.install] : []), runs.render].map(shellDisplay).join(' && ') : null;
-    const detail = [
-      visible,
-      '',
-      "Tayang's Render video button failed with this error:",
-      '```',
-      message.trim(),
-      '```',
-      ...(command ? [`It ran: ${command}`] : []),
-      'Find the cause and fix the project so it renders. If the video is not built yet, say so and build it first. Then tell the user it is ready to render.',
-    ].join('\n');
-    const promptParts: MessagePart[] = [{ type: 'text', text: detail }];
-    const opts = projectSendOptions(project, agent, promptParts);
-    void useChat.getState().send(chatId, [{ type: 'text', text: visible }], { ...opts, promptParts: opts.promptParts ?? promptParts });
-    return true;
-  };
-
-  const renderVideo = async () => {
-    if (!project || rendering) return;
-    setRendering(true);
-    setRenderError(null);
-    useRender.getState().start(project.id, { source: 'tayang' });
-    try {
-      await mediaRender(project.id);
-      const info = await mediaProbe(project.id).catch(() => null);
-      await advanceProject(project.id, 'rendered');
-      track('video rendered', { by: 'tayang', duration_sec: info?.durationSec ?? null, format: project.format });
-      setProject(await updateProject(project.id, { durationSec: info?.durationSec ?? null }));
-      useApp.getState().bumpProjects();
-      setReloadKey((k) => k + 1);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      trackError(e, 'render');
-      // The agent made the project, so it is the one to fix it: tell it what failed, in this chat.
-      const asked = askAgentToFixRender(message);
-      setRenderError(`${t('chat.couldntRender', { message })}${asked ? ` · ${t('chat.renderSentToAgent')}` : ''}`);
-    } finally {
-      setRendering(false);
-      useRender.getState().end(project.id);
-    }
-  };
-
   return (
     <div className="flex h-full min-w-0 flex-col">
       <header data-tauri-drag-region className="flex h-16 shrink-0 items-center gap-6 border-b border-border px-6">
         <div className="flex min-w-0 flex-col">
           <span className="truncate text-[15px] font-medium">{project?.title ?? t('chat.title')}</span>
-          {project && (
-            <span className="text-xs text-text-3">
-              {t(`kinds.${project.kind}`)} · {project.format} · {LANGUAGE_NAMES[project.language]}
-            </span>
-          )}
+          {project && <span className="text-xs text-text-3">{t('pipeline.feature')}</span>}
         </div>
         {project && (
           <div className="@container/steps ml-auto flex min-w-0 flex-1 justify-end overflow-hidden">
-            <StepBar status={project.status} rendering={renderRunning} />
+            <StepBar status={project.status} />
           </div>
         )}
-        {project && (
-          <Button variant="secondary" onClick={() => setScheduling(true)}>
-            {t('schedule.action')}
-          </Button>
-        )}
-        {project && (
-          <Button
-            variant="secondary"
-            disabled={project.status !== 'rendered' && !project.socialPostId}
-            title={project.status !== 'rendered' ? t('post.renderFirst') : undefined}
-            onClick={() => setPosting(true)}
-          >
-            <Send size={14} aria-hidden="true" />
-            {project.socialPostId ? t('post.postedLabel') : t('post.action')}
-          </Button>
-        )}
-        <Button
-          variant="primary"
-          disabled={!project || rendering || streaming}
-          className={project ? '' : 'ml-auto'}
-          onClick={() => void renderVideo()}
-        >
-          {rendering ? t('chat.rendering') : t('chat.render')}
-        </Button>
+        {!project && <span className="ml-auto" />}
         <TraceButton chatId={chatId} />
         {project && (
           <button
@@ -258,28 +152,11 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
           </button>
         )}
       </header>
-      <ScheduleDialog open={scheduling} onOpenChange={setScheduling} project={project} onSaved={setProject} />
-      {project && (
-        <PostDialog
-          open={posting}
-          onOpenChange={setPosting}
-          project={project}
-          onPosted={setProject}
-          agentBusy={streaming}
-          onAskAgent={() => void send([{ type: 'text', text: t('post.askAgentPrompt') }])}
-        />
-      )}
-      {runs && runs.render.length > 0 && <RenderCommandLine command={[...(runs.install?.length ? [runs.install] : []), runs.render].map(shellDisplay).join(' && ')} />}
-      {renderError && (
-        <p role="alert" className="m-0 border-b border-border px-6 py-2 text-xs text-orange-light">
-          {renderError}
-        </p>
-      )}
 
       <div className="flex min-h-0 flex-1">
         <section aria-label={t('chat.conversation')} className="flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
-          <div ref={scrollRef} className="no-scrollbar h-full overflow-y-auto px-6 py-6">
+          <div ref={scrollRef} className="no-scrollbar h-full overflow-y-auto overflow-x-hidden px-6 py-6">
             <MessageList messages={messages} streaming={streaming} sendOptions={sendOptions} scrollRef={scrollRef}>
               {question && (
                 <QuestionCard
@@ -320,6 +197,8 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
         <section
           id="chat-preview"
           aria-label={t('chat.preview')}
+          // A narrow window has no room for the preview: it hides (like Claude Desktop's side panels).
+          hidden={fitted.narrow}
           className="relative shrink-0 border-l border-border"
           style={{ width: fitted.preview }}
         >
@@ -337,15 +216,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
             <Workspace
               projectId={project.id}
               reloadKey={reloadKey}
-              preview={
-                <Preview
-                  projectId={project.id}
-                  chatId={chatId}
-                  reloadKey={reloadKey}
-                  onRender={() => void renderVideo()}
-                  rendering={rendering}
-                />
-              }
+              preview={<FeaturePipeline project={project} />}
             />
           ) : (
             <div data-testid="preview-slot" />
@@ -373,43 +244,6 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
           </aside>
         )}
       </div>
-    </div>
-  );
-}
-
-/**
- * What Render will run for a project with a tayang.json, shown before the user presses it: one quiet
- * line, cut short when long (the whole command on hover and in the copy).
- */
-function RenderCommandLine({ command }: { command: string }) {
-  const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    if (!navigator.clipboard) return;
-    navigator.clipboard.writeText(command).then(
-      () => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      },
-      () => {},
-    );
-  };
-  return (
-    <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-6 text-xs text-text-3">
-      <SquareTerminal size={13} strokeWidth={1.75} aria-hidden="true" className="shrink-0" />
-      <span className="shrink-0">{t('chat.renderCommand')}</span>
-      <code title={command} className="min-w-0 truncate font-mono text-[11px] text-text-2">
-        {command}
-      </code>
-      <button
-        type="button"
-        aria-label={copied ? t('chat.commandCopied') : t('chat.copyCommand')}
-        title={copied ? t('chat.commandCopied') : t('chat.copyCommand')}
-        onClick={copy}
-        className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded text-text-3 hover:bg-raised hover:text-foreground"
-      >
-        {copied ? <Check size={12} aria-hidden="true" /> : <Copy size={12} aria-hidden="true" />}
-      </button>
     </div>
   );
 }

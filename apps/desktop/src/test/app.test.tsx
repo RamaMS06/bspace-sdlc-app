@@ -1,8 +1,6 @@
-import userEvent from '@testing-library/user-event';
-import { ComingSoon } from '@/screens/ComingSoon';
 import { act, render, screen } from '@testing-library/react';
 import { vi } from 'vitest';
-import type { Settings } from '@tayang/shared';
+import type { Settings } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   getSettings: vi.fn(),
@@ -25,27 +23,24 @@ vi.mock('@/lib/ipc', () => ({
 vi.mock('@/lib/events', () => ({
   onQuestion: vi.fn(async () => () => {}),
   onAgentAction: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(), onPermission: vi.fn() }));
-const engine = vi.hoisted(() => ({ stop: vi.fn() }));
-vi.mock('@/state/autopilot', () => ({ startAutopilot: vi.fn(() => engine.stop) }));
-vi.mock('@/lib/buildJobs', () => ({ settleLateRenders: vi.fn(), recheckDoneBuildJobs: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('@/lib/buildJobs', () => ({ recheckDoneBuildJobs: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('@/lib/projectStatus', () => ({ backfillProjectStatus: vi.fn().mockResolvedValue(undefined) }));
 
 import { getSettings, syncStyles, systemLocale, updateSettings } from '@/lib/ipc';
 import App from '@/App';
-import { startAutopilot } from '@/state/autopilot';
 import { recheckDoneBuildJobs } from '@/lib/buildJobs';
 import { backfillProjectStatus } from '@/lib/projectStatus';
 import { useApp } from '@/state/app';
 
 const base: Settings = {
-  workingFolder: '/tmp/Tayang',
+  workingFolder: '/tmp/Buma',
   defaultAgent: 'claude',
   frameCheck: true,
   language: 'id',
   format: '9:16',
   fps: 30,
   onboarded: false,
-  apiUrl: 'https://studio.tayang.app/api',
+  apiUrl: 'https://bspace.buma.internal/api',
   installId: '',
   shareInstallStats: true,
   autoMode: false,
@@ -67,19 +62,10 @@ describe('App start', () => {
     expect(await screen.findByText('Get started')).toBeInTheDocument();
   });
 
-  it('shows the plans screen full window, like onboarding (no sidebar)', async () => {
-    vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true });
-    const { container } = render(<App />);
-    await screen.findByText('What are we making?', { selector: 'h1' });
-    act(() => useApp.getState().navigate({ name: 'plans', from: 'settings' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'Let Tayang do the posting' })).toBeInTheDocument();
-    expect(container.querySelector('#app-sidebar')).toBeNull();
-  });
-
   it('goes to a new chat when onboarded', async () => {
     vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true });
     render(<App />);
-    expect(await screen.findByText('What are we making?', { selector: 'h1' })).toBeInTheDocument();
+    expect(await screen.findByText('What are we building?', { selector: 'h1' })).toBeInTheDocument();
     expect(useApp.getState().route.name).toBe('chat-new');
   });
 
@@ -87,7 +73,7 @@ describe('App start', () => {
     vi.mocked(recheckDoneBuildJobs).mockClear();
     vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true, buildJobsChecked: false });
     render(<App />);
-    await screen.findByText('What are we making?', { selector: 'h1' });
+    await screen.findByText('What are we building?', { selector: 'h1' });
     expect(recheckDoneBuildJobs).toHaveBeenCalledWith(false);
   });
 
@@ -95,42 +81,10 @@ describe('App start', () => {
     vi.mocked(backfillProjectStatus).mockClear();
     vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true, projectStatusChecked: false });
     render(<App />);
-    await screen.findByText('What are we making?', { selector: 'h1' });
+    await screen.findByText('What are we building?', { selector: 'h1' });
     expect(backfillProjectStatus).toHaveBeenCalledWith(false);
   });
 
-  it('starts the autopilot engine once onboarded, and stops it on unmount', async () => {
-    vi.mocked(startAutopilot).mockClear();
-    vi.mocked(getSettings).mockResolvedValue(base);
-    const first = render(<App />);
-    await screen.findByText('Get started');
-    expect(startAutopilot).not.toHaveBeenCalled();
-    first.unmount();
-    useApp.setState({ settings: null });
-    vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true });
-    const { unmount } = render(<App />);
-    await vi.waitFor(() => expect(startAutopilot).toHaveBeenCalledTimes(1));
-    unmount();
-    expect(engine.stop).toHaveBeenCalled();
-  });
-
-  it('opens the Autopilot screen and its wizard, not the coming soon page', async () => {
-    vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true });
-    render(<App />);
-    await vi.waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat-new' }));
-    act(() => useApp.getState().navigate({ name: 'autopilot' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'Autopilot' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Autopilot is coming soon' })).toBeNull();
-    act(() => useApp.getState().navigate({ name: 'autopilot-wizard' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'New autopilot' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Autopilot is coming soon' })).toBeNull();
-  });
-
-  it('the coming soon page, for when the flag is off, sends the user to the Calendar', async () => {
-    render(<ComingSoon feature="autopilot" />);
-    await userEvent.click(screen.getByRole('button', { name: 'Open the Calendar' }));
-    expect(useApp.getState().route).toEqual({ name: 'calendar' });
-  });
 });
 
 describe('App interface language', () => {
@@ -197,7 +151,7 @@ describe('App built-in styles', () => {
     vi.mocked(syncStyles).mockClear().mockRejectedValueOnce(new Error('offline'));
     vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true });
     render(<App />);
-    expect(await screen.findByText('What are we making?', { selector: 'h1' })).toBeInTheDocument();
+    expect(await screen.findByText('What are we building?', { selector: 'h1' })).toBeInTheDocument();
     expect(syncStyles).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   });

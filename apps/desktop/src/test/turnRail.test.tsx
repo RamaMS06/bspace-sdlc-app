@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { ChatMessage } from '@tayang/shared';
+import type { ChatMessage } from '@bspace-sdlc-app/shared';
 import { MessageList } from '@/components/MessageList';
 import { TurnRail } from '@/components/TurnRail';
 

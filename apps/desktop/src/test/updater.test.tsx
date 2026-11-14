@@ -108,7 +108,7 @@ describe('UpdateBanner', () => {
     const { container } = render(<UpdateBanner />);
     expect(container).toBeEmptyDOMElement();
     await act(() => useUpdater.getState().check());
-    expect(screen.getByText('Tayang Studio 0.2.0 is out')).toBeInTheDocument();
+    expect(screen.getByText('BSpace SDLC 0.2.0 is out')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Update' }));
     expect(await screen.findByRole('button', { name: 'Restart to update' })).toBeInTheDocument();
   });

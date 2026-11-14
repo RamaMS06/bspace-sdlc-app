@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AuthErrorCode, AuthStart, AuthStatus } from '@tayang/shared';
+import type { AuthErrorCode, AuthStart, AuthStatus } from '@bspace-sdlc-app/shared';
 import { authCancel, authErrorCode, authLogout, authStart, authStatus, onAuthChanged } from '@/lib/auth';
 import { forgetAccount, identifyAccount, track } from '@/lib/analytics';
 import { useApp } from '@/state/app';

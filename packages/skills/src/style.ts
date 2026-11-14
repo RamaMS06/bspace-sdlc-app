@@ -1,4 +1,4 @@
-import type { Style, StyleAspect, VideoKind, VideoLanguage } from '@tayang/shared';
+import type { Style, StyleAspect, VideoKind, VideoLanguage } from '@bspace-sdlc-app/shared';
 
 export const VIDEO_KINDS: VideoKind[] = ['explainer', 'promo', 'quote', 'news', 'tutorial', 'data', 'event'];
 const ASPECTS: StyleAspect[] = ['camera', 'pacing', 'type', 'color', 'captions', 'transitions'];
@@ -26,17 +26,17 @@ const STYLE_FIT: Record<string, string> = {
   'cartoon-3d-what-if': '"What if you…" escalations',
 };
 
-/** What every topic must be: something Tayang can make in code. Shared by the ideas and autopilot prompts. */
+/** What every topic must be: something Buma can make in code. Shared by the ideas and autopilot prompts. */
 export const MOTION_RULES = [
-  '- Tayang makes videos built entirely in code, as motion design or animation: kinetic type, charts and data, maps and globes, illustrated or cartoon 3D worlds, diagrams.',
+  '- Buma makes videos built entirely in code, as motion design or animation: kinetic type, charts and data, maps and globes, illustrated or cartoon 3D worlds, diagrams.',
   "- Never suggest anything that needs filming, a camera, real footage, screen recordings, stock video of real people, a presenter, or a real person's likeness or voice.",
   '- Pick motion-design-friendly topics: explainers, "why" and "how" questions, data and comparisons, history and geography, science what-ifs, product or promo messages told with type and illustration.',
 ];
 export const FACTS_RULE = '- Facts must be real and checkable. No made-up numbers.';
 
-/** How the agent starts a picked video: Tayang's local endpoint (see the desktop's ai_proxy.rs). */
+/** How the agent starts a picked video: Buma's local endpoint (see the desktop's ai_proxy.rs). */
 export const VIDEO_CALL =
-  `curl -s -X POST "$TAYANG_AI_URL/video" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d '{"title":"<the idea title>","kind":"<kind>","lengthSec":<seconds>,"styleId":"<style id or empty>","notes":"<or empty>"}'`;
+  `curl -s -X POST "$BUMA_AI_URL/video" -H "Authorization: Bearer $BUMA_AI_TOKEN" -d '{"title":"<the idea title>","kind":"<kind>","lengthSec":<seconds>,"styleId":"<style id or empty>","notes":"<or empty>"}'`;
 
 export function buildTopicIdeasPrompt(
   kinds: VideoKind[],
@@ -57,7 +57,7 @@ export function buildTopicIdeasPrompt(
     'How to reply:',
     `1. Start with one short, friendly sentence in ${lang}, as normal text.`,
     '2. Then ask the user to pick one with your tool for asking the user (Claude Code: AskUserQuestion; opencode: question; Codex: request_user_input): one question, one option per idea, the title as the option and one line on why it works as a motion video as its description. Without such a tool, list the 3 ideas numbered and ask the user to reply with a number.',
-    '3. When the user picks one (or writes their own), start it, then end your turn: Tayang makes the video in a new chat.',
+    '3. When the user picks one (or writes their own), start it, then end your turn: Buma makes the video in a new chat.',
     `   ${VIDEO_CALL}`,
     '   `notes`: only what the user said that the title does not say, in their words; never your own choices; or empty.',
     '4. Never write JSON or markup for the choice.',
@@ -142,7 +142,7 @@ export function buildStudyStylePrompt(url: string, outDir: string): string {
     '   - "engine": "remotion" when the look needs a real 3D world, 3D or 2.5D characters, depth, lighting or a moving 3D camera (build it with Remotion plus three.js via @remotion/three); "hyperframes" when it is flat 2D motion graphics, kinetic type or illustration.',
     '   - "build": a concrete technical recipe a developer can follow to rebuild this look with that engine: how the world and characters are made (geometry, materials, toon or flat shading, outlines), lighting, the camera rig and its moves (lens, speed), how captions are drawn (font style, size as % of frame height, stroke, position) and how transitions are done. Be specific; this is what decides whether the copy looks right.',
     '   - "palette": 5 to 8 of the main colours as #RRGGBB, measured from the frames.',
-    '5. Delete any single frames you took (keep the sheets folder). Leave source.* in place; Tayang makes its own contact sheets and a short preview from it, then deletes it.',
+    '5. Delete any single frames you took (keep the sheets folder). Leave source.* in place; Buma makes its own contact sheets and a short preview from it, then deletes it.',
     'Copy the look, never the footage: no text, logos, characters\' names, music or clips from the source in the prompt or the recipe. The contact sheets are only for comparing the look.',
   ].join('\n');
 }

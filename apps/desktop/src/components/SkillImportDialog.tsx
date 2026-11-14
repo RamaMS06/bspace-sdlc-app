@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { FileUp, Link2, TerminalSquare } from 'lucide-react';
 import { Button } from '@/components/Button';
-import { Oyen } from '@/components/Oyen';
+import { StatusIcon } from '@/components/StatusIcon';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -150,7 +150,7 @@ export function SkillImportDialog({ open, onOpenChange, onAdded }: { open: boole
                       <span className="flex flex-wrap items-center gap-2">
                         <span className="font-mono text-[13px] font-medium">{s.name}</span>
                         {s.scriptCount > 0 && (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-deep-orange px-1.5 py-px text-[10px] font-medium text-orange-light">
+                          <span className="inline-flex items-center gap-1 rounded-full border border-primary-border px-1.5 py-px text-[10px] font-medium text-primary-text">
                             <TerminalSquare size={10} aria-hidden="true" />
                             {t('skills.runsCode')}
                           </span>
@@ -172,14 +172,14 @@ export function SkillImportDialog({ open, onOpenChange, onAdded }: { open: boole
         )}
 
         {runsCode && (
-          <div role="note" className="flex min-w-0 items-start gap-3 rounded-lg border border-deep-orange px-3 py-2.5">
-            <Oyen mood="surprised" size={24} />
+          <div role="note" className="flex min-w-0 items-start gap-3 rounded-lg border border-primary-border px-3 py-2.5">
+            <StatusIcon kind="error" size={24} />
             <span className="text-[13px] text-text-2">{t('skills.codeWarning')}</span>
           </div>
         )}
 
         {error && (
-          <p role="alert" className="m-0 break-words text-[13px] text-orange-light">
+          <p role="alert" className="m-0 break-words text-[13px] text-error">
             {error}
           </p>
         )}

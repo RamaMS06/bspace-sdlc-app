@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { Chat, ChatMessage, FileInfo, Project, ProjectStatus } from '@tayang/shared';
+import type { Chat, ChatMessage, FileInfo, Project, ProjectStatus } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   setProjectStatus: vi.fn(),

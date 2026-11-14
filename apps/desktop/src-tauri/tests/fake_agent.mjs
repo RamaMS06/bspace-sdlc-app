@@ -19,7 +19,7 @@
 //                 offers form elicitation; reports "answer <JSON result>", or "no-elicitation"
 //   mode       -> reports "mode <current mode id>"
 //   usage      -> a usage_update (context and cost), then end_turn with the turn's token usage
-//   whoami     -> reports "whoami <JSON {meta, env}>": the session/new `_meta` and TAYANG_STUDIO
+//   whoami     -> reports "whoami <JSON {meta, env}>": the session/new `_meta` and BSPACE_SDLC_APP
 //   any prompt with an image block -> text "image <mimeType> <data>"
 //
 // session/new reports `modes` (default, acceptEdits, plan, auto); --no-auto-mode leaves "auto"
@@ -29,7 +29,7 @@
 // --bad-set-mode-default fails set_mode "default"; --hang-set-mode never answers set_mode.
 // Every accepted set_mode is followed by a current_mode_update before its answer, unless
 // --no-mode-update (the real adapter only reports a mode it clamped). --late-set-mode answers
-// set_mode "auto" after 600 ms (no update), i.e. after a short Tayang timeout.
+// set_mode "auto" after 600 ms (no update), i.e. after a short Buma timeout.
 // With the --hang argument, initialize is never answered.
 // With the --needs-auth argument, session/new fails with -32000 "Authentication required".
 import { createInterface } from "node:readline";
@@ -185,7 +185,7 @@ async function runPrompt(params) {
       setTimeout(() => process.exit(1), 50);
       return new Promise(() => {});
     case "whoami":
-      text(`whoami ${JSON.stringify({ meta: sessionMeta, env: process.env.TAYANG_STUDIO ?? null })}`);
+      text(`whoami ${JSON.stringify({ meta: sessionMeta, env: process.env.BSPACE_SDLC_APP ?? null })}`);
       return "end_turn";
     case "pids": {
       const helper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
@@ -197,7 +197,7 @@ async function runPrompt(params) {
         cancelWaiter = resolve;
       });
     case "fs-outside": {
-      const target = path.join(sessionCwd, "..", `tayang-outside-${process.pid}.txt`);
+      const target = path.join(sessionCwd, "..", `buma-outside-${process.pid}.txt`);
       const res = await request("fs/write_text_file", { sessionId, path: target, content: "nope" });
       text(res.error ? `fs-error: ${res.error.message}` : "fs-ok");
       return "end_turn";

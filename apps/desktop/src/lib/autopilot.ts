@@ -1,4 +1,4 @@
-import type { Autopilot, AutopilotFrequency } from '@tayang/shared';
+import type { Autopilot, AutopilotFrequency } from '@bspace-sdlc-app/shared';
 import { i18n, locale } from '@/i18n';
 
 /** Video lengths an autopilot offers, in seconds. */

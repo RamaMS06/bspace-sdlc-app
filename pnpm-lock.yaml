@@ -17,13 +17,16 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@bspace-sdlc-app/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@bspace-sdlc-app/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
       '@fontsource/ibm-plex-mono':
         specifier: ^5.3.0
         version: 5.3.0
-      '@fontsource/lora':
-        specifier: ^5.3.0
-        version: 5.3.0
-      '@fontsource/plus-jakarta-sans':
+      '@fontsource/poppins':
         specifier: ^5.3.0
         version: 5.3.0
       '@tauri-apps/api':
@@ -47,12 +50,6 @@ importers:
       '@tauri-apps/plugin-updater':
         specifier: 2.14.0
         version: 2.14.0
-      '@tayang/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
-      '@tayang/skills':
-        specifier: workspace:*
-        version: link:../../packages/skills
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -68,6 +65,9 @@ importers:
       jsonrepair:
         specifier: 3.15.0
         version: 3.15.0
+      lottie-web:
+        specifier: ^5.13.0
+        version: 5.13.0
       lucide-react:
         specifier: ^1.66.0
         version: 1.66.0(@types/react@19.3.0)(react@19.3.1)
@@ -164,7 +164,7 @@ importers:
 
   packages/skills:
     dependencies:
-      '@tayang/shared':
+      '@bspace-sdlc-app/shared':
         specifier: workspace:*
         version: link:../shared
 
@@ -420,11 +420,8 @@ packages:
   '@fontsource/ibm-plex-mono@5.3.0':
     resolution: {integrity: sha512-eTgnZjZEGk1QtD3ZstF+Vclo2HLAni8YMy34/DxllwZvyz1lR/1RF/xTiAquOBO7MvqBx8D2Ig2WCPMVfdZu7Q==}
 
-  '@fontsource/lora@5.3.0':
-    resolution: {integrity: sha512-OK1g1z01rHVPqO5aw/FOIoDqc46KKYZdgL3NOLkxLWDk6QhDHhdr/h2BV1cke6gTvR1tzpDfdKyUkGsC+sQLeQ==}
-
-  '@fontsource/plus-jakarta-sans@5.3.0':
-    resolution: {integrity: sha512-9WRw3G74Ve4cyPApAZSXLPY5DiLOZXDn7Q7dIBjFBpA0Pj56ljDItEdy2UUajjJxRuTg2HkMLO5C3K2nAQORWg==}
+  '@fontsource/poppins@5.3.0':
+    resolution: {integrity: sha512-cms1nM7U6SN8epIV1WMVOV8VsA645aSm3wHfzIQnkk188U341ThbJGSl2Sv54V29gnDbT2arMPfLzvVIIVCceQ==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -1967,6 +1964,9 @@ packages:
   longest-streak@3.1.0:
     resolution: {integrity: sha512-9Ri+o0JYgehTaVBBDoMqIl8GXtbWg711O3srftcHhZ0dqnETqLaoIK0x17fUw9rFSlK/0NlsKe0Ahhyl5pXE2g==}
 
+  lottie-web@5.13.0:
+    resolution: {integrity: sha512-+gfBXl6sxXMPe8tKQm7qzLnUy5DUPJPKIyRHwtpCpyUEYjHYRJC/5gjUvdkuO2c3JllrPtHXH5UJJK8LRYl5yQ==}
+
   lru-cache@11.5.3:
     resolution: {integrity: sha512-U4N8FgzmWxc8k1VH8Kr6lQg18U7Fjvby6wXHVRX/ZZ7IwWbRMgrRbP0Wrb5q5NVinryp4SQampHKdvtecItxUg==}
     engines: {node: 20 || >=22}
@@ -2405,6 +2405,7 @@ packages:
 
   tldts-core@7.4.20:
     resolution: {integrity: sha512-C630TWXZCZmLq0F2bW4QqwnaaxCQ/svpAqvJwnC4JvgEM5ohhBnGsEzTLSOXcN+xjz+kEaHS5uoWIw2klnqd0A==}
+    deprecated: Partial release, see https://github.com/remusao/tldts/issues/2735. Use >=7.4.22.
 
   tldts@7.4.19:
     resolution: {integrity: sha512-48dH6aSpQnpbzDUc4vIQZ1VjB8tkK+e8c1yx05/SZK+rkssgjEOlxDd/yU8/a4vGYQ9vRgJr9dwMq9TJ0b3X2Q==}
@@ -2799,9 +2800,7 @@ snapshots:
 
   '@fontsource/ibm-plex-mono@5.3.0': {}
 
-  '@fontsource/lora@5.3.0': {}
-
-  '@fontsource/plus-jakarta-sans@5.3.0': {}
+  '@fontsource/poppins@5.3.0': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -4318,6 +4317,8 @@ snapshots:
       lightningcss-win32-x64-msvc: 1.33.0
 
   longest-streak@3.1.0: {}
+
+  lottie-web@5.13.0: {}
 
   lru-cache@11.5.3: {}
 

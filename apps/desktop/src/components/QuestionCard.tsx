@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { AgentId, AgentQuestion, QuestionResponse } from '@tayang/shared';
+import type { AgentId, AgentQuestion, QuestionResponse } from '@bspace-sdlc-app/shared';
 import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
 import { Checkbox } from '@/components/ui/checkbox';

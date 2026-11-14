@@ -1,261 +1,189 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Archive } from 'lucide-react';
-import type { AgentInfo, Job, JobStatus, Project } from '@tayang/shared';
-import { AgentLogo } from '@/components/AgentLogo';
+import { Plus } from 'lucide-react';
+import type { AgentId, AgentInfo, Settings as SettingsT } from '@bspace-sdlc-app/shared';
+import { AddConnectionDialog } from '@/components/AddConnectionDialog';
+import { AgentUsage } from '@/components/AgentUsage';
+import { ApiSetupDialog } from '@/components/ApiSetupDialog';
 import { Button } from '@/components/Button';
-import { Oyen, type OyenMood } from '@/components/Oyen';
-import { AGENT_NAMES, CLOSED_NOTE } from '@/lib/agents';
-import { onAgentUpdate } from '@/lib/events';
-import { deleteJob, detectAgents, getChat, listProjects, setJobsArchived } from '@/lib/ipc';
-import { settleLateRenders } from '@/lib/buildJobs';
-import { sendInProjectChat } from '@/lib/openProject';
-import { localized, stored } from '@/lib/stored';
-import { ago } from '@/lib/time';
-import { cn } from '@/lib/utils';
+import { AgentRoute } from '@/components/FailoverCard';
+import { CombosTab } from '@/components/Combos';
+import { useFailover } from '@/state/failover';
+import { UsageTab } from '@/components/UsageTab';
+import { BumaLoading } from '@/components/buma/Loading';
+import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { detectAgents, updateSettings } from '@/lib/ipc';
+import { MULTI_ACCOUNT, useAccounts } from '@/state/accounts';
+import { AGENT_NAMES } from '@/lib/agents';
 import { useApp } from '@/state/app';
-import { useStudy } from '@/state/study';
-import { refreshJobs, useJobs } from '@/state/jobs';
+import { useClaudeAccount } from '@/state/claudeAccount';
+import { isConnected, useConnections } from '@/state/connections';
 
-const COLUMNS: { key: 'queued' | 'working' | 'needsYou' | 'done'; mood: OyenMood; match(s: JobStatus): boolean }[] = [
-  { key: 'queued', mood: 'wink', match: (s) => s === 'queued' },
-  { key: 'working', mood: 'sleepy', match: (s) => s === 'working' },
-  { key: 'needsYou', mood: 'default', match: (s) => s === 'needs-you' || s === 'failed' },
-  { key: 'done', mood: 'happy', match: (s) => s === 'done' },
-];
+export type AgentsTab = 'usage' | 'provider' | 'combo';
 
-/** The notes of a build job whose turn ended without a video: its card offers Continue. */
-const isStoppedNote = (note: string) => note === stored('agents.noVideo') || note === stored('agents.waitingAnswer');
-
-function JobCard({ job, project, onDismiss, onArchive }: { job: Job; project: string; onDismiss(): void; onArchive?(): void }) {
-  const navigate = useApp((s) => s.navigate);
-  const { t } = useTranslation();
-  const studyRunning = useStudy((s) => s.phase === 'running' || s.phase === 'finishing');
-  const [starting, setStarting] = useState(false);
-  const failed = job.status === 'failed';
-  const working = job.status === 'working';
-  const tryDisabled = job.kind === 'study-style' && !!job.sourceUrl && (starting || studyRunning);
-  const needs = failed || job.status === 'needs-you';
-  // A build turn that ended without a video: open its chat, or tell the agent to go on and render.
-  const stopped = job.kind === 'build' && job.status === 'needs-you' && !!job.chatId && !!job.note && isStoppedNote(job.note);
-  const [continuing, setContinuing] = useState(false);
-  const goOn = async () => {
-    if (!job.chatId || !job.projectId || continuing) return;
-    setContinuing(true);
-    try {
-      // The chat may have moved to another agent since the job was written: its row says which.
-      let agent = job.agentId;
-      try {
-        agent = (await getChat(job.chatId))?.agentId ?? agent;
-      } catch {
-        /* the job's agent, then */
-      }
-      await sendInProjectChat(job.chatId, { id: job.projectId, title: job.title }, agent, t('agents.continuePrompt'));
-    } finally {
-      setContinuing(false);
-    }
-  };
-  const open = () => {
-    if (job.kind === 'study-style') {
-      if (!job.sourceUrl) {
-        navigate({ name: 'style', focusLink: true });
-        return;
-      }
-      if (starting || studyRunning) return;
-      setStarting(true);
-      // The old job goes away once the new study's job is written; a failed start leaves its own failed job.
-      // `start` marks the study running right away: show it without waiting for the agent.
-      const started = useStudy.getState().start(job.sourceUrl, job.agentId, job.id);
-      navigate({ name: 'style' });
-      void started.finally(() => setStarting(false));
-    } else if (!job.chatId) navigate({ name: 'style' });
-    else if (failed && job.note === CLOSED_NOTE) navigate({ name: 'chat', chatId: job.chatId, draft: t('agents.closedDraft') });
-    else navigate({ name: 'chat', chatId: job.chatId });
-  };
-  return (
-    <article
-      className={cn(
-        'group relative flex flex-col gap-2 overflow-hidden rounded-md border bg-card p-3',
-        failed ? 'border-deep-orange' : 'border-border',
-      )}
-    >
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-[11px] text-text-2">{AGENT_NAMES[job.agentId]}</span>
-        <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-text-3">
-          {working && <span aria-hidden="true" className="tayang-pulse size-1.5 rounded-full bg-primary" />}
-          {working ? t('agents.workingAgo', { ago: ago(job.updatedAt) }) : ago(job.updatedAt)}
-        </span>
-        {onArchive && (
-          <button
-            type="button"
-            aria-label={t('agents.archiveCard', { title: job.title })}
-            title={t('sidebar.archiveTip')}
-            onClick={onArchive}
-            className="absolute top-2 right-2 flex size-7 cursor-pointer items-center justify-center rounded-sm bg-card text-text-3 opacity-0 hover:bg-raised hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-          >
-            <Archive size={14} strokeWidth={1.5} aria-hidden="true" />
-          </button>
-        )}
-      </div>
-      <span className="text-sm leading-[1.4] font-medium">{job.kind === 'study-style' ? localized(job.title) : job.title}</span>
-      <span className="text-xs text-text-3">{project}</span>
-      {job.progress != null && (
-        <div className="flex flex-col gap-2">
-          <div className="h-1 overflow-hidden rounded-[2px] bg-raised" aria-hidden="true">
-            <div
-              className={cn('h-full', job.status === 'done' ? 'bg-text-3' : 'bg-primary')}
-              style={{ width: `${Math.max(0, Math.min(100, job.progress))}%` }}
-            />
-          </div>
-          {job.note && <span className="text-xs text-text-2">{localized(job.note)}</span>}
-        </div>
-      )}
-      {job.progress == null && job.note && !needs && <span className="text-xs text-text-2">{localized(job.note)}</span>}
-      {needs && (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-start gap-2">
-            {failed && <Oyen mood="surprised" size={24} />}
-            {job.note && <span className="text-xs leading-normal text-[#D9D9D9]">{localized(job.note)}</span>}
-          </div>
-          <div className="flex items-center gap-2 self-start">
-            <Button
-              variant="secondary"
-              className="h-8 rounded-sm px-3 text-[13px]"
-              disabled={tryDisabled}
-              title={tryDisabled && studyRunning ? t('agents.anotherStudy') : undefined}
-              onClick={open}
-            >
-              {failed ? (job.kind === 'study-style' ? t('agents.tryAgain') : t('agents.fixIt')) : stopped ? t('agents.openChat') : t('agents.review')}
-            </Button>
-            {stopped && job.projectId && (
-              <Button variant="ghost" className="h-8 rounded-sm px-3 text-[13px]" disabled={continuing} onClick={() => void goOn()}>
-                {t('agents.continue')}
-              </Button>
-            )}
-            {failed && (
-              <Button variant="ghost" className="h-8 rounded-sm px-2 text-[13px]" onClick={onDismiss}>
-                {t('agents.dismiss')}
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-      {working && (
-        <div
-          role="progressbar"
-          aria-label={t('agents.progressAria')}
-          className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-raised"
-        >
-          <div className="tayang-indeterminate h-full bg-primary" />
-        </div>
-      )}
-    </article>
-  );
-}
-
+/**
+ * Agents, a screen of its own: Usage first (what the agents used, and each one's plan limits), then
+ * Provider (the AI platforms on this computer and who is signed in) and Combo (the models chats run on).
+ */
 export function Agents() {
-  const navigate = useApp((s) => s.navigate);
   const { t } = useTranslation();
-  const jobs = useJobs((s) => s.jobs);
-  const [agents, setAgents] = useState<AgentInfo[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-
-  const load = useCallback(() => {
-    // A render that finished after its turn ended makes that job done.
-    refreshJobs()
-      .then((jobs) => settleLateRenders(Date.now(), jobs))
-      .catch(() => {});
-  }, []);
-
+  const settings = useApp((s) => s.settings);
+  const setSettings = useApp((s) => s.setSettings);
+  const asked = useApp((s) => (s.route.name === 'agents' ? s.route.tab : undefined));
+  const [tab, setTab] = useState<AgentsTab>(asked ?? 'usage');
   useEffect(() => {
-    load();
+    if (asked) setTab(asked);
+  }, [asked]);
+
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [agentsLoaded, setAgentsLoaded] = useState(false);
+  const [connecting, setConnecting] = useState<AgentId | null>(null);
+  const [apiOpen, setApiOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const claudeIn = useClaudeAccount((s) => !!s.account?.signedIn);
+  const marked = useConnections((s) => s.signedIn);
+  // Provider shows only once everything it reads is in (the agents, the Claude sign-in, the accounts),
+  // so a signed-in agent never flashes Add connection first.
+  const claudeLoaded = useClaudeAccount((s) => s.account !== null);
+  const accountsLoaded = useAccounts((s) => s.list !== null);
+  const ready = agentsLoaded && claudeLoaded && accountsLoaded;
+
+  const reloadAgents = () => detectAgents().then(setAgents, () => {});
+  // Who is signed in changed (a sign-in or sign-out): read the agents again.
+  const changed = useAccounts((s) => s.changed);
+  useEffect(() => {
+    if (changed) void reloadAgents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [changed]);
+  useEffect(() => {
     detectAgents()
       .then(setAgents)
-      .catch(() => {});
-    listProjects()
-      .then(setProjects)
-      .catch(() => {});
-    const un = onAgentUpdate(({ update }) => {
-      if (update.kind === 'done' || update.kind === 'error') load();
-    });
-    return () => void un.then((fn) => fn());
-  }, [load]);
+      .catch(() => {})
+      .finally(() => setAgentsLoaded(true));
+    void useClaudeAccount.getState().refresh();
+    void useAccounts.getState().load();
+  }, []);
 
-  // Archived cards live in Settings › Archive; a card whose status changes comes back by itself.
-  const onBoard = jobs.filter((j) => !j.archivedAt);
-  const archive = (ids: string[]) => void setJobsArchived(ids, true).then(load, load);
+  const firstAgent = useFailover((s) => s.comboOf(s.defaultCombo)?.steps[0]?.agent ?? null);
+  useEffect(() => {
+    if (settings && firstAgent && firstAgent !== settings.defaultAgent) void save({ defaultAgent: firstAgent });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstAgent]);
 
-  const projectName = (j: Job) =>
-    j.projectId ? (projects.find((p) => p.id === j.projectId)?.title ?? '') : j.kind === 'study-style' ? t('agents.styleLibrary') : '';
+  const save = async (patch: Partial<SettingsT>) => {
+    setError(null);
+    try {
+      setSettings(await updateSettings(patch));
+    } catch (e) {
+      setError(t('settings.saveError', { message: e instanceof Error ? e.message : String(e) }));
+    }
+  };
+  const pick = (next: AgentsTab) => {
+    setTab(next);
+    useApp.getState().navigate({ name: 'agents', tab: next });
+  };
 
   return (
-    <div className="flex h-full flex-col gap-6 overflow-y-auto p-8">
-      <div data-tauri-drag-region className="flex flex-wrap items-center gap-4">
-        <div className="mr-auto flex flex-col gap-1">
-          <h1 className="m-0 text-[28px] font-semibold tracking-[-0.01em]">{t('agents.title')}</h1>
-          <span className="text-sm text-text-2">{t('agents.subtitle')}</span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {agents
-            .filter((a) => a.installed)
-            .map((a) => {
-              const working = jobs.some((j) => j.agentId === a.id && j.status === 'working');
-              return (
-                <span
-                  key={a.id}
-                  className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card pr-3 pl-2 text-[13px]"
-                >
-                  <AgentLogo id={a.id} size={20} />
-                  {AGENT_NAMES[a.id]} · {working ? t('agents.working') : t('agents.idle')}
-                </span>
-              );
-            })}
-          <Button variant="ghost" className="h-9 px-3 text-[13px]" onClick={() => navigate({ name: 'settings' })}>
-            {t('agents.connectAgent')}
-          </Button>
-        </div>
+    <div className="flex h-full flex-col gap-6 overflow-y-auto p-4 sm:p-8">
+      <div data-tauri-drag-region className="flex flex-col gap-1">
+        <h1 className="m-0 text-[28px] font-semibold tracking-[-0.01em]">{t('agentsScreen.title')}</h1>
+        <span className="text-sm text-text-2">{t('agentsScreen.subtitle')}</span>
       </div>
 
-      <div className="grid items-start gap-4 overflow-x-auto" style={{ gridTemplateColumns: 'repeat(4, minmax(220px, 1fr))' }}>
-        {COLUMNS.map((col) => {
-          const cards = onBoard.filter((j) => col.match(j.status));
-          const name = t(`agents.columns.${col.key}`);
-          return (
-            <section
-              key={col.key}
-              aria-label={name}
-              className="flex min-h-[600px] flex-col gap-2 rounded-2xl border border-border bg-[#101010] p-2"
-            >
-              <div className="flex items-center gap-2 p-1">
-                <Oyen mood={col.mood} size={24} />
-                <span className="text-[13px] font-medium">{name}</span>
-                <span className="font-mono text-xs text-text-3">{cards.length}</span>
-                {col.key === 'done' && cards.length > 0 && (
+      <Tabs value={tab} onValueChange={(v) => pick(v as AgentsTab)}>
+        <TabsList variant="line" aria-label={t('agentsScreen.tabsAria')} className="h-10 w-full justify-start border-b border-border p-0">
+          <TabsTrigger value="usage" className="h-10 flex-none px-3 text-sm">
+            {t('settings.sections.usage')}
+          </TabsTrigger>
+          <TabsTrigger value="provider" className="h-10 flex-none px-3 text-sm">
+            {t('settings.sections.agents')}
+          </TabsTrigger>
+          <TabsTrigger value="combo" className="h-10 flex-none px-3 text-sm">
+            {t('combos.tab')}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {error && (
+        <p role="alert" className="m-0 text-[13px] text-error">
+          {error}
+        </p>
+      )}
+
+      {tab === 'provider' && settings && (
+        <section aria-label={t('settings.sections.agents')} className="flex max-w-[860px] flex-col gap-3">
+          <span className="text-[13px] text-text-2">{t('settings.agentsIntro')}</span>
+          {!ready ? (
+            <BumaLoading variant="data" labelText={t('settings.route.loading')} className="self-start py-6" />
+          ) : (
+            <AgentRoute
+              agents={agents}
+              actions={(a) => {
+                // One "+" on every row, always there: it adds a connection. An agent that can have several
+                // accounts and is connected gets another account; the rest open their setup.
+                const on = isConnected(a, claudeIn, marked);
+                const add = () => {
+                  if (on && MULTI_ACCOUNT.includes(a.id)) void useAccounts.getState().add(a.id);
+                  else if (a.id === 'custom') setApiOpen(true);
+                  else setConnecting(a.id);
+                };
+                return (
                   <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={t('agents.archiveAll')}
-                    title={t('agents.archiveAll')}
-                    className="ml-auto size-7 px-0 text-text-3 hover:text-foreground"
-                    onClick={() => archive(cards.map((c) => c.id))}
+                    variant="secondary"
+                    iconOnly
+                    small
+                    data-testid={`connection-${a.id}`}
+                    aria-label={t('connection.addTo', { name: AGENT_NAMES[a.id] })}
+                    title={t('connection.addTo', { name: AGENT_NAMES[a.id] })}
+                    onClick={add}
                   >
-                    <Archive size={14} aria-hidden="true" />
+                    <Plus size={14} aria-hidden="true" />
                   </Button>
-                )}
-              </div>
-              {cards.map((j) => (
-                <JobCard
-                  key={j.id}
-                  job={j}
-                  project={projectName(j)}
-                  onDismiss={() => void deleteJob(j.id).then(load, load)}
-                  onArchive={col.key === 'done' ? () => archive([j.id]) : undefined}
-                />
-              ))}
-            </section>
-          );
-        })}
-      </div>
+                );
+              }}
+            />
+          )}
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
+            <div className="mr-auto flex flex-col gap-1">
+              <label htmlFor="auto-mode" className="text-sm font-medium">
+                {t('settings.autoMode')}
+              </label>
+              <span className="text-xs text-text-3">{t('settings.autoModeHint')}</span>
+            </div>
+            <Switch id="auto-mode" checked={settings.autoMode} aria-label={t('settings.autoMode')} onCheckedChange={(v) => void save({ autoMode: v })} />
+          </div>
+          <AddConnectionDialog
+            agent={connecting}
+            info={agents.find((a) => a.id === connecting)}
+            connected={!!connecting && isConnected(agents.find((a) => a.id === connecting) ?? ({ installed: false } as AgentInfo), claudeIn, marked)}
+            onOpenChange={(o) => !o && setConnecting(null)}
+            onCheck={reloadAgents}
+          />
+          <ApiSetupDialog
+            open={apiOpen}
+            onOpenChange={setApiOpen}
+            onSaved={(next) => {
+              setSettings(next);
+              void reloadAgents();
+            }}
+          />
+        </section>
+      )}
+
+      {tab === 'combo' && (
+        <section aria-label={t('combos.tab')} className="flex max-w-[860px] flex-col gap-buma-sm">
+          {!ready ? <BumaLoading variant="data" labelText={t('settings.route.loading')} className="self-start py-6" /> : <CombosTab agents={agents} />}
+        </section>
+      )}
+
+      {tab === 'usage' && (
+        <section aria-label={t('settings.sections.usage')} className="flex max-w-[960px] flex-col gap-3">
+          <AgentUsage onEditRoute={() => pick('combo')} />
+          <h2 className="m-0 mt-2 text-sm font-medium">{t('agentUsage.limits')}</h2>
+          <UsageTab />
+        </section>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { RecentChat } from '@tayang/shared';
+import type { RecentChat } from '@bspace-sdlc-app/shared';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { listRecentChats } from '@/lib/ipc';

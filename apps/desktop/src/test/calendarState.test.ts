@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Project } from '@tayang/shared';
+import type { Project } from '@bspace-sdlc-app/shared';
 import { calendarState } from '@/lib/calendarState';
 
 const p = (extra: Partial<Project>): Project => ({

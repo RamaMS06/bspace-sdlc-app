@@ -1,4 +1,4 @@
-import type { UiLanguage } from '@tayang/shared';
+import type { UiLanguage } from '@bspace-sdlc-app/shared';
 import { detectUiLanguage, setUiLanguage } from '@/i18n';
 import { systemLocale, updateSettings } from '@/lib/ipc';
 import { useApp } from '@/state/app';

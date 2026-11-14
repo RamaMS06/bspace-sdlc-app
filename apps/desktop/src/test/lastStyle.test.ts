@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ChatMessage } from '@tayang/shared';
+import type { ChatMessage } from '@bspace-sdlc-app/shared';
 import { lastMentionedStyle } from '@/lib/mentions';
 
 const msg = (role: ChatMessage['role'], parts: ChatMessage['parts']): ChatMessage => ({

@@ -86,7 +86,7 @@ describe('Workspace', () => {
   it('shows the preview first, a file in its own tab, and keeps the preview mounted', async () => {
     vi.mocked(ipc.readProjectFile).mockResolvedValue({ kind: 'text', absPath: '/x/src/Video.tsx', size: 20, text: 'const a = 1;\nconst b = 2;' });
     render(<Workspace projectId="p" reloadKey={0} preview={preview} />);
-    expect(screen.getByRole('tab', { name: /Preview/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /Pipeline/ })).toHaveAttribute('aria-selected', 'true');
     useWorkspace.getState().open('p', 'src/Video.tsx');
     expect(await screen.findByRole('tab', { name: 'Video.tsx' })).toHaveAttribute('aria-selected', 'true');
     expect(await screen.findByTestId('code')).toHaveTextContent('const a = 1;');

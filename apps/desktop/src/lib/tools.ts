@@ -1,4 +1,4 @@
-import type { ToolStatus } from '@tayang/shared';
+import type { ToolStatus } from '@bspace-sdlc-app/shared';
 import { i18n } from '@/i18n';
 
 /**

@@ -274,20 +274,20 @@ describe('A2uiSurface', () => {
     expect(screen.getAllByText("This option can't be shown here")).toHaveLength(2);
   });
 
-  it('only shows asset images and the Tayang API, which the CSP allows', () => {
+  it('only shows asset images and the Buma API, which the CSP allows', () => {
     const urls = [
       'https://example.com/a.png',
       'javascript:alert(1)',
       'asset://localhost/w/p1/frame.png',
       'http://asset.localhost/w/p1/frame.png',
-      'https://studio.tayang.app/api/v1/styles/atlas-journey/preview',
-      'https://studio.tayang.app.evil.com/api/a.png',
-      'https://studio.tayang.app/blog/a.png',
-      'https://studio.tayang.app/api',
-      'https://studio.tayang.app/apix/a.png',
-      'https://studio.tayang.app/api/../blog/a.png',
-      'https://studio.tayang.app/api/%2e%2e/blog/a.png',
-      'https://api.tayang.app/v1/styles/atlas-journey/preview',
+      'https://bspace.buma.internal/api/v1/styles/atlas-journey/preview',
+      'https://bspace.buma.internal.evil.com/api/a.png',
+      'https://bspace.buma.internal/blog/a.png',
+      'https://bspace.buma.internal/api',
+      'https://bspace.buma.internal/apix/a.png',
+      'https://bspace.buma.internal/api/../blog/a.png',
+      'https://bspace.buma.internal/api/%2e%2e/blog/a.png',
+      'https://api.bspace.buma.internal/v1/styles/atlas-journey/preview',
       'http://localhost:8787/api/v1/styles/x/preview',
       'http://localhost:8787/v1/styles/x/preview',
       'http://127.0.0.1:8787/api/v1/styles/x/preview',
@@ -303,7 +303,7 @@ describe('A2uiSurface', () => {
     expect([...container.querySelectorAll('img')].map((i) => i.getAttribute('src'))).toEqual([
       'asset://localhost/w/p1/frame.png',
       'http://asset.localhost/w/p1/frame.png',
-      'https://studio.tayang.app/api/v1/styles/atlas-journey/preview',
+      'https://bspace.buma.internal/api/v1/styles/atlas-journey/preview',
       'http://localhost:8787/api/v1/styles/x/preview',
       'http://127.0.0.1:8787/api/v1/styles/x/preview',
     ]);
@@ -311,7 +311,7 @@ describe('A2uiSurface', () => {
     const directive = (name: string) => csp.split(';').find((d) => d.trim().startsWith(name))!.trim().split(/\s+/);
     for (const name of ['img-src', 'media-src']) {
       for (const origin of API_IMAGE_ORIGINS) expect(directive(name), name).toContain(origin);
-      expect(directive(name), name).not.toContain('https://api.tayang.app');
+      expect(directive(name), name).not.toContain('https://api.bspace.buma.internal');
     }
   });
 

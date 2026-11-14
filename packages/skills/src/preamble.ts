@@ -1,7 +1,11 @@
-import type { UiLanguage } from '@tayang/shared';
-import tayangStudio from '../agent-plugin/skills/tayang-studio/SKILL.md?raw';
+import type { UiLanguage } from '@bspace-sdlc-app/shared';
+import { PLUGIN_SKILLS } from './sdlcSkills.generated';
 
-const stripFrontmatter = (text: string): string => text.replace(/^---\n[\s\S]*?\n---\n+/, '').trim();
+const usingBspaceSdlc = PLUGIN_SKILLS['using-bspace-sdlc'] ?? '';
+
+/** A SKILL.md may start with a UTF-8 byte order mark; frontmatter parsing ignores it. */
+const noBom = (text: string) => text.replace(/^\uFEFF/, '');
+const stripFrontmatter = (text: string): string => noBom(text).replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n+/, '').trim();
 
 /** One line telling the agent which language the user reads; empty for English, the default. */
 export function languageHint(language?: UiLanguage | null): string {
@@ -10,7 +14,7 @@ export function languageHint(language?: UiLanguage | null): string {
     : '';
 }
 
-/** What the agent can't know by itself: the user's clock, and which video a project chat is about. */
+/** What the agent can't know by itself: the user's clock, and which feature a project chat is about. */
 export interface SessionFacts {
   /** IANA name, such as `Asia/Jakarta`. */
   timeZone: string;
@@ -18,7 +22,7 @@ export interface SessionFacts {
   offset: string;
   /** The user's local date and time when the chat started, such as `Wednesday 2026-11-04 17:55`. */
   localNow: string;
-  /** The Tayang id of the video a project chat is about. */
+  /** The Buma id of the feature a project chat is about. */
   projectId?: string;
 }
 
@@ -27,20 +31,20 @@ export function sessionFacts(facts?: SessionFacts | null): string {
   if (!facts) return '';
   return [
     `The user's local time zone is ${facts.timeZone} (UTC${facts.offset}). It was ${facts.localNow} when this chat started.`,
-    facts.projectId ? `This video's Tayang id is ${facts.projectId}.` : '',
+    facts.projectId ? `This feature's Buma id is ${facts.projectId}.` : '',
   ]
     .filter(Boolean)
     .join('\n');
 }
 
 /**
- * The Tayang skills as plain text, for agents that cannot load the Claude Code
+ * The SDLC entry skill (using-bspace-sdlc) as plain text, for agents that cannot load the Claude Code
  * plugin. Put it in front of the first prompt of a session.
  */
 export function buildSessionPreamble(language?: UiLanguage | null, facts?: SessionFacts | null): string {
   return [
-    'You are running inside Tayang Studio. Follow these instructions for the whole session.',
-    stripFrontmatter(tayangStudio),
+    'You are running inside BSpace SDLC. Follow these instructions for the whole session.',
+    stripFrontmatter(usingBspaceSdlc),
     languageHint(language),
     sessionFacts(facts),
     '---',
@@ -73,11 +77,14 @@ export function userSkillsText(skills: readonly UserSkill[]): string {
   ].join('\n');
 }
 
-/** The skills Tayang ships, always on: shown read-only on the Skills screen. */
-export const BUILTIN_SKILLS: readonly { id: string; description: string; body: string }[] = [
-  {
-    id: 'tayang-studio',
-    description: /^---\n[\s\S]*?^description:\s*(.*)$/m.exec(tayangStudio)?.[1]?.trim() ?? '',
-    body: stripFrontmatter(tayangStudio),
-  },
-];
+const field = (text: string, name: string) => new RegExp(`^---\\r?\\n[\\s\\S]*?^${name}:\\s*(.*?)\\r?$`, 'm').exec(noBom(text))?.[1]?.trim() ?? '';
+
+/** The skills Buma ships, always on: the bspace-sdlc-skills plugin, shown read-only on the Skills screen. */
+export const BUILTIN_SKILLS: readonly { id: string; description: string; body: string }[] = Object.entries(PLUGIN_SKILLS)
+  .map(([path, text]) => ({
+    id: field(text, 'name') || path,
+    description: field(text, 'description').replace(/^["']|["']$/g, ''),
+    body: stripFrontmatter(text),
+  }))
+  // The entry skill first, then by name.
+  .sort((a, b) => (a.id === 'using-bspace-sdlc' ? -1 : b.id === 'using-bspace-sdlc' ? 1 : a.id.localeCompare(b.id)));

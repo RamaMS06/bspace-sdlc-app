@@ -4,7 +4,7 @@ import { useRef } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChatMessage, MessagePart } from '@tayang/shared';
+import type { ChatMessage, MessagePart } from '@bspace-sdlc-app/shared';
 import { MessageList } from '@/components/MessageList';
 import { ScrollToBottom } from '@/components/ScrollToBottom';
 
@@ -24,7 +24,7 @@ describe('inline activity', () => {
     tool('1', 'Run npm install', { toolKind: 'execute' }),
     { type: 'thought', text: 'hmm' },
     tool('2', 'Run `npm test`', { toolKind: 'execute' }),
-    tool('3', 'Load skill: tayang-studio:tayang-studio', { toolKind: 'other' }),
+    tool('3', 'Load skill: bspace-sdlc-app:bspace-sdlc-app', { toolKind: 'other' }),
     text('After'),
   ]);
 
@@ -79,10 +79,10 @@ describe('inline activity', () => {
     );
     expect(screen.getByRole('button')).toHaveTextContent('Ran 1 command');
     expect(screen.getByTestId('activity-running')).toHaveTextContent(/Run\s*npm install/);
-    expect(container.querySelector('.tayang-pulse')).not.toBeNull();
+    expect(container.querySelector('.buma-pulse')).not.toBeNull();
     rerender(<MessageList streaming messages={[agent([])]} />);
     expect(screen.getByText('Working')).toBeInTheDocument();
-    expect(container.querySelector('.tayang-pulse')).not.toBeNull();
+    expect(container.querySelector('.buma-pulse')).not.toBeNull();
     rerender(<MessageList streaming messages={[agent([tool('1', 'Load skill: x')])]} />);
     expect(screen.getByText('Working')).toBeInTheDocument();
   });

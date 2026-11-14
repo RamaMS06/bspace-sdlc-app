@@ -1,4 +1,4 @@
-export type AgentId = 'claude' | 'opencode' | 'gemini' | 'codex' | 'antigravity' | 'custom';
+export type AgentId = 'claude' | 'opencode' | 'gemini' | 'codex' | 'antigravity' | 'cursor' | 'custom';
 
 export interface AgentInfo {
   id: AgentId;
@@ -7,6 +7,10 @@ export interface AgentInfo {
   version: string | null;
   acpCommand: string[];
   recommended: boolean;
+  /** The agent's own sign-in is saved on this computer (Claude: see the Claude account instead). */
+  signedIn?: boolean;
+  /** Who is signed in (an email, or what the key is for). */
+  account?: string;
 }
 
 export type OsKind = 'macos' | 'windows' | 'linux';
@@ -18,7 +22,8 @@ export interface SystemInfo {
   packageManager: PackageManager | null;
 }
 
-export type ToolId = 'node' | 'ffmpeg' | 'chrome' | 'ytdlp';
+/** What the BSpace SDLC skills need on this computer (see check_tools in src-tauri/src/system.rs). */
+export type ToolId = 'node' | 'git' | 'python' | 'figma-mcp' | 'azure-cli' | 'figma' | 'flutter' | 'word';
 
 export interface ToolStatus {
   id: ToolId;
@@ -33,7 +38,7 @@ export interface ToolStatus {
 export type VideoKind = 'explainer' | 'promo' | 'quote' | 'news' | 'tutorial' | 'data' | 'event';
 export type VideoFormat = '9:16' | '1:1' | '16:9';
 export type VideoLanguage = 'id' | 'en';
-/** Language of Tayang's own interface (not of the videos). */
+/** Language of Buma's own interface (not of the videos). */
 export type UiLanguage = 'en' | 'id';
 export type ProjectStatus = 'draft' | 'building' | 'rendered' | 'scheduled';
 
@@ -58,7 +63,7 @@ export interface Project {
   remindedAt: string | null;
   /** When the "review before it's due" reminder was shown (RFC 3339); cleared when the schedule changes. */
   reviewRemindedAt: string | null;
-  /** The auto-post this video went out with (the Tayang API's post id); missing when never posted. */
+  /** The auto-post this video went out with (the Buma API's post id); missing when never posted. */
   socialPostId?: string | null;
   durationSec: number | null;
   createdAt: string;
@@ -79,6 +84,8 @@ export interface Chat {
   agentId: AgentId;
   title: string;
   createdAt: string;
+  /** A folder the user attached to the chat: its agent works there. */
+  folder?: string | null;
 }
 
 /** A chat in the sidebar's Recent list. */
@@ -256,7 +263,7 @@ export interface Settings {
   format: VideoFormat;
   fps: number;
   onboarded: boolean;
-  /** Base URL of the optional Tayang API. Settings saves an empty field as the default URL. */
+  /** Base URL of the optional Buma API. Settings saves an empty field as the default URL. */
   apiUrl: string;
   /** Random uuid v4 made on first run (empty until then); never derived from the machine. */
   installId: string;
@@ -270,7 +277,7 @@ export interface Settings {
   uiLanguage: UiLanguage | null;
   /** Closing the window hides it to the tray (menu bar) instead of quitting. */
   backgroundMode: boolean;
-  /** Start Tayang at login; only available while backgroundMode is on. */
+  /** Start Buma at login; only available while backgroundMode is on. */
   openAtLogin: boolean;
   /** Build jobs marked done before a job could only be done with its video were checked once. */
   buildJobsChecked: boolean;
@@ -280,12 +287,12 @@ export interface Settings {
   agentModels: Partial<Record<AgentId, string>>;
   /** "Your API" (the `custom` agent): provider preset, address and model. The key stays in the keychain. */
   apiProvider?: ApiProvider | null;
-  /** Where voice-overs come from; missing: Tayang credits. API keys stay in the keychain. */
+  /** Where voice-overs come from; missing: Buma credits. API keys stay in the keychain. */
   voiceSource?: VoiceSource;
 }
 
-/** Tayang credits, the user's own ElevenLabs or Fish Audio key, or VoiceStudio running on this computer. */
-export type VoiceSource = 'tayang' | 'elevenlabs' | 'fishaudio' | 'voicestudio';
+/** Buma credits, the user's own ElevenLabs or Fish Audio key, or VoiceStudio running on this computer. */
+export type VoiceSource = 'buma' | 'elevenlabs' | 'fishaudio' | 'voicestudio';
 
 /** The voice sources that speak with the user's own API key. */
 export type VoiceKeySource = 'elevenlabs' | 'fishaudio';
@@ -330,7 +337,7 @@ export interface ApiCheck {
   detail: string | null;
 }
 
-/** Defaults; workingFolder is `<home>/Tayang`, resolved at runtime. */
+/** Defaults; workingFolder is `<home>/Buma`, resolved at runtime. */
 export const DEFAULT_SETTINGS: Omit<Settings, 'workingFolder'> = {
   defaultAgent: 'claude',
   frameCheck: true,
@@ -338,7 +345,7 @@ export const DEFAULT_SETTINGS: Omit<Settings, 'workingFolder'> = {
   format: '9:16',
   fps: 30,
   onboarded: false,
-  apiUrl: 'https://studio.tayang.app/api',
+  apiUrl: 'https://bspace.buma.internal/api',
   installId: '',
   shareInstallStats: true,
   lastPingAt: null,
@@ -428,6 +435,10 @@ export interface AgentUsage {
   message: string | null;
   /** For agents without plan limits (opencode): what they used today and over the last 7 days. */
   spend?: { today: Spend; week: Spend };
+  /** Which account of the agent these numbers are for (`default` or an extra account's id). */
+  accountId?: string;
+  /** Who is signed in to it (an email), when known. */
+  account?: string;
 }
 
 /** Replies, tokens (input, output and reasoning; cached reads left out) and cost over a period. */

@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import type { AgentUpdate, ChatMessage } from '@tayang/shared';
+import type { AgentUpdate, ChatMessage } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   getChat: vi.fn().mockResolvedValue(null),
@@ -36,7 +36,7 @@ import { BUSY_NOTE, failChatJob, useChat } from '@/state/chat';
 import { needsYou } from '@/state/jobs';
 import { setUiLanguage } from '@/i18n';
 import { renderTiming } from '@/lib/renderCheck';
-import { FOREGROUND_RULE, RENDERS_RULE } from '@tayang/skills';
+import { FOREGROUND_RULE, RENDERS_RULE } from '@bspace-sdlc-app/skills';
 
 /** What the agent got, without the session facts line a new session starts with. */
 const noFacts = <T,>(parts: T[]): T[] =>
@@ -224,7 +224,7 @@ describe('one gate while the agent replies', () => {
     expect(screen.getByRole('button', { name: 'Make this' })).toBeDisabled();
   });
 
-  it('a prompt refused because the agent is busy leaves the running turn alone', async () => {
+  it('a message sent while the agent works waits in the queue and leaves the running turn alone', async () => {
     vi.mocked(agentStart).mockClear();
     await useChat.getState().send('c1', [{ type: 'text', text: 'first' }], {
       agentId: 'claude',
@@ -234,15 +234,16 @@ describe('one gate while the agent replies', () => {
     useChat.setState((s) => ({ permissions: { ...s.permissions, c1: [perm] } }));
     vi.mocked(upsertJob).mockClear();
     vi.mocked(agentRespondPermission).mockClear();
-    vi.mocked(agentPrompt).mockRejectedValueOnce(new Error('The agent is still working on the last message'));
+    vi.mocked(agentPrompt).mockClear();
     expect(await useChat.getState().send('c1', [{ type: 'text', text: 'second' }])).toBeNull();
     const s = useChat.getState();
     expect(s.streaming.c1).toBe(true);
     expect(s.started.c1).toBe(true);
     expect(s.permissions.c1).toHaveLength(1);
+    expect(s.queued.c1!.map((q) => q.parts)).toEqual([[{ type: 'text', text: 'second' }]]);
+    expect(agentPrompt).not.toHaveBeenCalled();
     expect(agentRespondPermission).not.toHaveBeenCalled();
     expect(vi.mocked(upsertJob).mock.calls.map((c) => c[0].status)).not.toContain('failed');
-    expect(s.messages.c1!.at(-1)).toMatchObject({ role: 'system', parts: [{ type: 'text', text: BUSY_NOTE }] });
     expect(agentStart).toHaveBeenCalledTimes(1);
   });
 
@@ -341,22 +342,22 @@ describe('skills preamble', () => {
     await useChat.getState().send('c9', [{ type: 'text', text: 'go' }], { agentId: 'claude', job: { projectId: 'p7', title: 'Jalur Rempah' } });
     const lead = JSON.stringify(vi.mocked(agentPrompt).mock.calls[0]![1][0]);
     expect(lead).toMatch(/The user's local time zone is .+ \(UTC[+-]\d\d:\d\d\)\. It was \w+day \d{4}-\d\d-\d\d \d\d:\d\d when this chat started\./);
-    expect(lead).toContain("This video's Tayang id is p7.");
+    expect(lead).toContain("This feature's Buma id is p7.");
     expect(lead).not.toContain('createSurface'); // the plugin has the skills
     vi.mocked(agentPrompt).mockClear();
     await useChat.getState().send('c10', [{ type: 'text', text: 'go' }], { agentId: 'codex' });
     const text = JSON.stringify(vi.mocked(agentPrompt).mock.calls[0]![1][0]);
-    expect(text).toContain('## Scheduling videos');
+    expect(text).toContain('# Using bspace SDLC');
     expect(text).toContain('time zone is');
-    expect(text).not.toContain('Tayang id is');
+    expect(text).not.toContain('Buma id is');
   });
 
-  it('tells Claude with the plugin to run renders in the foreground, for projects made before the rule', async () => {
+  it('tells Claude with the plugin to run long work in the foreground, and nothing about renders', async () => {
     await useChat.getState().send('c9', [{ type: 'text', text: 'go' }], { agentId: 'claude', job: { projectId: 'p7', title: 'Jalur Rempah' } });
     const lead = vi.mocked(agentPrompt).mock.calls[0]![1][0]!;
     expect(lead.type === 'text' && lead.text).toContain(FOREGROUND_RULE);
-    // And to leave the final mp4 in renders/, where Tayang reads it.
-    expect(lead.type === 'text' && lead.text).toContain(RENDERS_RULE);
+    // And to leave the final mp4 in renders/, where Buma reads it.
+    expect(lead.type === 'text' && lead.text).not.toContain(RENDERS_RULE);
   });
 });
 
@@ -368,6 +369,8 @@ describe("the user's own skills", () => {
     vi.mocked(agentPrompt).mockClear();
     await useChat.getState().send('s1', [{ type: 'text', text: 'go' }], { agentId: 'codex' });
     expect(JSON.stringify(vi.mocked(agentPrompt).mock.calls[0]![1])).toContain('- hooks: Use for hooks (/d/skills/hooks/SKILL.md)');
+    // The first turn is over (otherwise the next message would wait in the queue).
+    useChat.setState((s) => ({ streaming: { ...s.streaming, s1: false } }));
     await useChat.getState().send('s1', [{ type: 'text', text: 'more' }]);
     expect(JSON.stringify(vi.mocked(agentPrompt).mock.calls[1]![1])).not.toContain('hooks:');
   });

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Autopilot, AutopilotSlot, Project } from '@tayang/shared';
+import type { Autopilot, AutopilotSlot, Project } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   approveProject: vi.fn(),

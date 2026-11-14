@@ -1,0 +1,115 @@
+@import "@buma-dev/styles/src/assets/scss/config";
+@import "@buma-dev/styles/src/assets/scss/utils";
+
+.b-chips {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: space(xs);
+  width: fit-content;
+  padding: space(xs) space(sm);
+  border-radius: 999px;
+  color: color(text, dark);
+  background-color: color(neutral, 300);
+  text-wrap: nowrap;
+  height: fit-content;
+  cursor: default;
+  @include typography(format, body);
+
+  &.disabled,
+  &:hover {
+    color: color(text, white);
+    background-color: color(background, dark);
+  }
+
+  &.disabled {
+    opacity: 0.5;
+  }
+
+  &--icon {
+    flex-shrink: 0;
+    font-size: 16px;
+    cursor: pointer;
+  }
+
+  &--icon-without-text {
+    font-size: 16px;
+    cursor: pointer;
+  }
+
+  &--primary {
+    background-color: color(tertiary, 300);
+    border: 1px solid transparent;
+    &.disabled {
+      background-color: color(tertiary, 600);
+      opacity: 0.5;
+    }
+
+    &:hover {
+      background-color: color(tertiary, 600);
+    }
+  }
+
+  &--secondary {
+    color: color(tertiary, 500);
+    border: 1px solid color(tertiary, 500);
+    background-color: transparent;
+
+    &.disabled {
+      color: color(tertiary, 600);
+      border: 1px solid color(tertiary, 600);
+      opacity: 0.5;
+      background-color: transparent;
+    }
+
+    &:hover {
+      color: color(text, dark);
+      background-color: color(tertiary, 300);
+      border: 1px solid transparent;
+    }
+  }
+
+  &--outline {
+    background-color: transparent;
+    border: 1px solid color(tertiary, 200);
+    color: color(tertiary, 500);
+    &:hover {
+      background-color: transparent;
+      border: 1px solid color(tertiary, 200);
+      color: color(tertiary, 500);
+    }
+    &.disabled {
+      background-color: transparent;
+      color: color(tertiary, 600);
+      opacity: 0.5;
+      border: 1px solid color(tertiary, 200);
+    }
+  }
+
+  &--color {
+    background-color: color(primary, 500);
+    color: color(tertiary, 0);
+    border: 1px solid transparent;
+    &.disabled {
+      background-color: color(primary, 500);
+      opacity: 0.5;
+    }
+
+    &:hover {
+      background-color: color(primary, 600);
+    }
+  }
+
+  &--small {
+    padding: space(xxs) space(xs);
+    font-size: 12px;
+    border-radius: 12px;
+    height: 24px;
+  }
+
+  .close-icon {
+    margin-left: 4px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+}

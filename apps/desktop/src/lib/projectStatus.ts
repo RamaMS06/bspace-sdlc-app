@@ -1,4 +1,4 @@
-import type { MessagePart, ProjectStatus } from '@tayang/shared';
+import type { MessagePart, ProjectStatus } from '@bspace-sdlc-app/shared';
 import { listChats, listMessages, listProjects, setProjectStatus, updateSettings } from '@/lib/ipc';
 import { finishedRender } from '@/lib/renderCheck';
 import { useApp } from '@/state/app';

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import type { Chat, Project } from '@tayang/shared';
+import type { Chat, Project } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   getChat: vi.fn(),

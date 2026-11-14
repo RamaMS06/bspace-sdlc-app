@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import type { RecentChat } from '@tayang/shared';
+import type { RecentChat } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   listRecentChats: vi.fn(),
@@ -35,48 +35,69 @@ describe('Sidebar', () => {
   });
 
   it('marks the active item, shows New chat and recent chats', async () => {
-    render(<Sidebar active="videos" />);
-    expect(screen.getByRole('link', { name: /^Videos/ })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('link', { name: /^Chat/ })).not.toHaveAttribute('aria-current', 'page');
-    expect(screen.getByText('New chat')).toBeInTheDocument();
+    render(<Sidebar active="workflow" />);
+    expect(screen.getByRole('link', { name: /^Workflow/ })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: /^New/ })).not.toHaveAttribute('aria-current', 'page');
+    // New is the menu item: there is no separate New chat button.
+    expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
     expect(await screen.findByText('Kenapa rupiah melemah?')).toBeInTheDocument();
     expect(screen.getByText('Ide konten minggu ini')).toBeInTheDocument();
     expect(screen.getByText('Promo Kopi Senja')).toBeInTheDocument();
     expect(screen.getByText('Recent')).toBeInTheDocument();
   });
 
-  it('shows the needs-you count on Agents only when above zero', () => {
+  it('shows the needs-you count on Workflow only when above zero', () => {
     useApp.setState({ needsYouCount: 2 });
     const { unmount } = render(<Sidebar active="chat" />);
-    expect(screen.getByRole('link', { name: /^Agents/ })).toHaveTextContent('2');
+    expect(screen.getByRole('link', { name: /^Workflow/ })).toHaveTextContent('2');
     unmount();
     useApp.setState({ needsYouCount: 0 });
     render(<Sidebar active="chat" />);
-    expect(screen.getByRole('link', { name: /^Agents/ })).not.toHaveTextContent(/\d/);
+    expect(screen.getByRole('link', { name: /^Workflow/ })).not.toHaveTextContent(/\d/);
   });
 
-  it('has Autopilot between Style and Agents, and it opens the Autopilot screen', async () => {
-    useApp.setState({ route: { name: 'videos' }, leaveGuard: null });
-    render(<Sidebar active="autopilot" />);
-    const names = screen.getAllByRole('link').map((l) => l.textContent);
-    expect(names.indexOf('Autopilot')).toBe(names.indexOf('Style') + 1);
-    expect(names.indexOf('Agents')).toBe(names.indexOf('Autopilot') + 1);
-    expect(screen.getByRole('link', { name: 'Autopilot' })).toHaveAttribute('aria-current', 'page');
-    await userEvent.click(screen.getByRole('link', { name: 'Autopilot' }));
-    expect(useApp.getState().route).toEqual({ name: 'autopilot' });
+  it('lists New, Workflow, Agents and Skills in that order; Workflow and Agents open their screens', async () => {
+    render(<Sidebar active="workflow" />);
+    const names = screen.getAllByRole('link').map((l) => l.getAttribute('aria-label') ?? l.textContent ?? '');
+    const at = (re: RegExp) => names.findIndex((n) => re.test(n));
+    expect(at(/^Workflow/)).toBe(at(/^New/) + 1);
+    expect(at(/^Agents/)).toBe(at(/^Workflow/) + 1);
+    expect(at(/^Skills/)).toBe(at(/^Agents/) + 1);
+    expect(names.some((n) => /^Features/.test(n))).toBe(false);
+    await userEvent.click(screen.getByRole('link', { name: /^Workflow/ }));
+    expect(useApp.getState().route).toEqual({ name: 'workflow' });
+    await userEvent.click(screen.getByRole('link', { name: /^Agents/ }));
+    expect(useApp.getState().route).toEqual({ name: 'agents' });
   });
 });
 
 describe('leave guard', () => {
   it('a guard that says no keeps the route; removing it lets navigation through', () => {
-    useApp.setState({ route: { name: 'autopilot-wizard' }, leaveGuard: null });
+    useApp.setState({ route: { name: 'settings' }, leaveGuard: null });
     const guard = vi.fn(() => false);
     useApp.getState().setLeaveGuard(guard);
-    useApp.getState().navigate({ name: 'videos' });
-    expect(guard).toHaveBeenCalledWith({ name: 'videos' });
-    expect(useApp.getState().route).toEqual({ name: 'autopilot-wizard' });
+    useApp.getState().navigate({ name: 'features' });
+    expect(guard).toHaveBeenCalledWith({ name: 'features' });
+    expect(useApp.getState().route).toEqual({ name: 'settings' });
     useApp.getState().setLeaveGuard(null);
-    useApp.getState().navigate({ name: 'videos' });
-    expect(useApp.getState().route).toEqual({ name: 'videos' });
+    useApp.getState().navigate({ name: 'features' });
+    expect(useApp.getState().route).toEqual({ name: 'features' });
+  });
+});
+
+describe('sidebar account', () => {
+  it('always shows who is signed in to Azure DevOps, and opens Settings › Account', async () => {
+    const { useDevops } = await import('@/state/devops');
+    useDevops.setState({ status: { signedIn: true, profile: { org: 'buma', id: 'u', displayName: 'Rama Sugiyanto', email: 'rama@buma.co.id' } } });
+    render(<Sidebar active="chat" />);
+    const row = await screen.findByTestId('sidebar-account');
+    expect(row).toHaveTextContent('RS');
+    expect(row).toHaveTextContent('Rama Sugiyanto');
+    expect(row).toHaveTextContent('rama@buma.co.id');
+    expect(screen.queryByTestId('sidebar-ai')).not.toBeInTheDocument();
+    await userEvent.click(row);
+    expect(useApp.getState().route).toEqual({ name: 'settings', tab: 'account' });
+    await userEvent.click(screen.getByTestId('sidebar-settings'));
+    expect(useApp.getState().route).toEqual({ name: 'settings' });
   });
 });

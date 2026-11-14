@@ -14,7 +14,7 @@ pub const TICK_EVENT: &str = "scheduler://tick";
 /// Event the tray's "Pause all autopilots" item emits to the main window; the autopilot engine pauses them all.
 pub const PAUSE_ALL_EVENT: &str = "autopilot://pause-all";
 pub const TICK_SECS: u64 = 30;
-const TRAY_ID: &str = "tayang";
+const TRAY_ID: &str = "buma";
 /// Black template silhouette: macOS tints it for light and dark menu bars.
 #[cfg(target_os = "macos")]
 const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
@@ -50,8 +50,8 @@ pub struct TrayLabels {
 
 pub fn tray_labels(lang: Option<UiLanguage>) -> TrayLabels {
     match lang {
-        Some(UiLanguage::Id) => TrayLabels { open: "Buka Tayang", pause_all: "Jeda semua autopilot", quit: "Keluar" },
-        _ => TrayLabels { open: "Open Tayang", pause_all: "Pause all autopilots", quit: "Quit" },
+        Some(UiLanguage::Id) => TrayLabels { open: "Buka Buma", pause_all: "Jeda semua autopilot", quit: "Keluar" },
+        _ => TrayLabels { open: "Open Buma", pause_all: "Pause all autopilots", quit: "Quit" },
     }
 }
 
@@ -154,7 +154,7 @@ pub fn sync_tray<R: Runtime>(app: &AppHandle<R>, settings: &Settings) -> Result<
             let _ = tray.set_menu(Some(menu));
         }
     } else if let Err(e) = try_build_tray(app, settings) {
-        eprintln!("Tayang: couldn't create the tray icon, background mode is off: {e}");
+        eprintln!("Buma: couldn't create the tray icon, background mode is off: {e}");
         return Err(e);
     }
     Ok(())
@@ -248,14 +248,14 @@ mod tests {
     #[test]
     fn a_hidden_launch_is_recognised() {
         let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert!(launched_hidden(&args(&["tayang", "--hidden"])));
-        assert!(!launched_hidden(&args(&["tayang"])));
+        assert!(launched_hidden(&args(&["buma", "--hidden"])));
+        assert!(!launched_hidden(&args(&["buma"])));
     }
 
     #[test]
     fn tray_labels_follow_the_interface_language() {
         assert_eq!(tray_labels(Some(UiLanguage::Id)).quit, "Keluar");
-        assert_eq!(tray_labels(Some(UiLanguage::En)).open, "Open Tayang");
+        assert_eq!(tray_labels(Some(UiLanguage::En)).open, "Open Buma");
         assert_eq!(tray_labels(None), tray_labels(Some(UiLanguage::En)));
     }
 

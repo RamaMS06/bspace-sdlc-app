@@ -1,5 +1,5 @@
 {
-  "name": "tayang-studio",
+  "name": "bspace-sdlc-app",
   "version": "0.0.10",
   "private": true,
   "type": "module",
@@ -10,12 +10,17 @@
   "scripts": {
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "dev:desktop": "pnpm --filter @tayang/desktop tauri dev --config src-tauri/tauri.dev.conf.json",
+    "dev:desktop": "pnpm --filter @bspace-sdlc-app/desktop tauri dev --config src-tauri/tauri.dev.conf.json",
     "version:set": "node scripts/version.mjs",
-    "usage": "node scripts/usage-report.mjs"
+    "usage": "node scripts/usage-report.mjs",
+    "tokens": "node scripts/tokens.mjs",
+    "tokens:check": "node scripts/tokens.mjs --check",
+    "buma:pull": "node scripts/buma-pull.mjs",
+    "skills:sync": "node scripts/sync-sdlc-skills.mjs"
   },
   "devDependencies": {
     "typescript": "^5",
     "vitest": "^4"
-  }
+  },
+  "author": "p-rama.msugiyanto"
 }

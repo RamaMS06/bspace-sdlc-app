@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
-import type { AgentUpdate, FileInfo, Job, Project, ProjectStatus } from '@tayang/shared';
+import type { AgentUpdate, FileInfo, Job, Project, ProjectStatus } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   getChat: vi.fn().mockResolvedValue(null),
@@ -114,7 +114,7 @@ describe("a project's status follows its chat", () => {
 describe('a render inside a pipeline command is seen by its file', () => {
   const T0 = Date.parse('2026-11-04T10:00:00.000Z');
   /** The owner's screenshot: the template's whole pipeline (voice, then render) in one command. */
-  const PIPELINE = 'cd ~/Tayang/jalur-rempah-1a2b && npm run make -- --run runs/jalur-rempah 2>&1 | tail -40';
+  const PIPELINE = 'cd ~/Buma/jalur-rempah-1a2b && npm run make -- --run runs/jalur-rempah 2>&1 | tail -40';
   const mp4 = (size: number, at: number): FileInfo => ({
     path: '/w/p1/runs/jalur-rempah/out/final.mp4', name: 'final.mp4', size, modifiedAt: new Date(at).toISOString(),
   });
@@ -136,7 +136,7 @@ describe('a render inside a pipeline command is seen by its file', () => {
     vi.useRealTimers();
   });
 
-  it('the screenshot pipeline shows "Rendering video" once its mp4 appears, until it stops changing for 15 s', async () => {
+  it('the screenshot pipeline shows "Working" once its mp4 appears, until it stops changing for 15 s', async () => {
     expect(isRenderTool(PIPELINE, null)).toBe(false);
     await start();
     await tick(3000);
@@ -151,9 +151,9 @@ describe('a render inside a pipeline command is seen by its file', () => {
     vi.mocked(newestVideoInfo).mockImplementation(async () => mp4(100, Date.now()));
     await tick(3000);
     expect(run()).toMatchObject({ source: 'agent', chatId: 'c1', toolCallId: 't1' });
-    expect(vi.mocked(upsertJob).mock.calls.at(-1)![0]).toMatchObject({ status: 'working', note: 'Rendering video' });
+    expect(vi.mocked(upsertJob).mock.calls.at(-1)![0]).toMatchObject({ status: 'working', note: 'Working' });
     render(<MessageList messages={useChat.getState().messages.c1!} streaming />);
-    expect(screen.getByTestId('activity-running')).toHaveTextContent(/Rendering video/);
+    expect(screen.getByTestId('activity-running')).toHaveTextContent(/Working/);
     // It keeps growing.
     let size = 100;
     vi.mocked(newestVideoInfo).mockImplementation(async () => mp4((size += 1000), Date.now()));

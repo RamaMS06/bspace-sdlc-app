@@ -41,7 +41,7 @@ function ffmpegToMp4(cmd: string): boolean {
 }
 
 /**
- * Whether a tool call is a video render: the project's own render command from tayang.json, or one of
+ * Whether a tool call is a video render: the project's own render command from buma.json, or one of
  * the usual renderers (HyperFrames, Remotion, an npm/pnpm render script, ffmpeg writing an MP4), also
  * inside a chain (`cd p && …`) or a pipe (`… 2>&1 | tail`).
  */

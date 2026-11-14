@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { BillingStatus } from '@tayang/shared';
-import { isPaymentLink } from '@tayang/shared';
+import type { BillingStatus } from '@bspace-sdlc-app/shared';
+import { isPaymentLink } from '@bspace-sdlc-app/shared';
 import { billingErrorCode, billingReminderDue, formatDay, formatIdr, planCard } from '@/lib/billing';
 
 const status = (over: Partial<BillingStatus> = {}): BillingStatus => ({

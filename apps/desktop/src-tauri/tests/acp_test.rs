@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tayang_studio_lib::acp::{AcpManager, AcpSink, AutoMethod, PromptPart, SessionOptions, UsageLog};
-use tayang_studio_lib::types::{AgentQuestion, AgentUpdate, PermissionOptionKind, PermissionRequest, ToolCallStatus};
+use bspace_sdlc_app_lib::acp::{AcpManager, AcpSink, AutoMethod, PromptPart, SessionOptions, UsageLog};
+use bspace_sdlc_app_lib::types::{AgentQuestion, AgentUpdate, PermissionOptionKind, PermissionRequest, ToolCallStatus};
 
 #[derive(Default)]
 struct RecordingSink {
@@ -291,7 +291,7 @@ async fn fs_write_outside_cwd_is_refused() {
     let leaked: Vec<_> = std::fs::read_dir(&ws.parent)
         .unwrap()
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().starts_with("tayang-outside"))
+        .filter(|e| e.file_name().to_string_lossy().starts_with("buma-outside"))
         .collect();
     assert!(leaked.is_empty(), "file written outside cwd");
     manager.stop("c1").await.unwrap();
@@ -461,7 +461,7 @@ async fn unknown_chat_and_bad_command_are_errors() {
     let manager = AcpManager::new();
     assert!(manager.prompt("nope", vec![PromptPart::Text("hello".into())]).await.is_err());
     let sink = Arc::new(RecordingSink::default());
-    let bad = vec!["tayang-definitely-not-a-binary".to_string()];
+    let bad = vec!["buma-definitely-not-a-binary".to_string()];
     assert!(manager.start("c1", &bad, &ws.cwd, sink.clone()).await.is_err());
     assert!(manager.start("c1", &[], &ws.cwd, sink).await.is_err());
 }
@@ -527,7 +527,7 @@ async fn session_options_reach_the_agent_as_meta_and_env() {
     });
     let options = SessionOptions {
         meta: Some(meta.clone()),
-        env: vec![("TAYANG_STUDIO".into(), "1".into())],
+        env: vec![("BSPACE_SDLC_APP".into(), "1".into())],
         ..Default::default()
     };
     manager
@@ -656,7 +656,7 @@ async fn claude_auto_on_uses_the_agents_auto_mode() {
     assert_eq!(manager.set_auto("c1", true).await.unwrap(), AutoMethod::Mode);
     ask(&manager, &sink, "mode").await;
     assert_eq!(sink.texts(), vec!["mode auto".to_string()]);
-    // The agent's mode handles it, so Tayang doesn't approve on its own: the card still shows.
+    // The agent's mode handles it, so Buma doesn't approve on its own: the card still shows.
     manager.prompt("c1", vec![PromptPart::Text("ask".into())]).await.unwrap();
     let req = sink.wait_permission().await;
     manager.respond_permission(&req.request_id, None).unwrap();
@@ -684,7 +684,7 @@ async fn clamped_auto_mode_falls_back_to_approving() {
 }
 
 #[tokio::test]
-async fn only_claude_uses_set_mode_other_agents_approve_from_tayang() {
+async fn only_claude_uses_set_mode_other_agents_approve_from_buma() {
     let ws = workspace();
     // This agent lists an "auto" mode, but it isn't Claude.
     let (manager, sink) = started_auto("c1", &ws, &[], false).await;
@@ -715,7 +715,7 @@ async fn auto_falls_back_to_approving_when_set_mode_fails() {
 }
 
 #[tokio::test]
-async fn a_set_mode_that_never_answers_times_out_and_approves_from_tayang() {
+async fn a_set_mode_that_never_answers_times_out_and_approves_from_buma() {
     let ws = workspace();
     let started = Instant::now();
     let (manager, sink) = started_auto("c1", &ws, &["--hang-set-mode"], true).await;
@@ -806,7 +806,7 @@ async fn off_after_a_timed_out_set_mode_that_lands_late_sends_default() {
     let ws = workspace();
     let (manager, sink) = started_auto("c1", &ws, &["--late-set-mode"], true).await;
     assert_eq!(manager.set_auto("c1", true).await.unwrap(), AutoMethod::Approve);
-    // The agent finishes the switch after Tayang gave up waiting (no update, as the real adapter).
+    // The agent finishes the switch after Buma gave up waiting (no update, as the real adapter).
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert_eq!(manager.set_auto("c1", false).await.unwrap(), AutoMethod::Off);
     ask(&manager, &sink, "mode").await;

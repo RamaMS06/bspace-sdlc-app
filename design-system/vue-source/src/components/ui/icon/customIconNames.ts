@@ -1,0 +1,35 @@
+/** Names registered as custom SVG icons in `Icon.vue` (BIcon). */
+export const B_ICON_CUSTOM_NAMES = [
+  'foggy',
+  'rainy',
+  'muslim',
+  'inventory_box',
+  'id_card',
+  'calendar_clock',
+  'scan_delete',
+  'user_engineer',
+  'road',
+  'view_document',
+  'expand_circle_up',
+  'hauler',
+  'fuel_pump',
+  'cctv',
+  'geology_crust',
+  'speedometer',
+  'potholes',
+  'loader',
+  'search_hands_free',
+  'file_attachment_pdf',
+  'file_attachment_doc',
+  'file_attachment_csv',
+  'file_attachment_ppt',
+  'file_attachment_xls',
+  'file_attachment_jpg',
+  'file_attachment_png',
+  'file_attachment_jpeg',
+  'file_attachment_mov',
+  'file_attachment_mp4',
+  'file_attachment_heic'
+] as const
+
+export type BIconCustomName = (typeof B_ICON_CUSTOM_NAMES)[number]

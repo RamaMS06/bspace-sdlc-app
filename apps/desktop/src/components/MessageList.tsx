@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CalendarDays, File as FileIcon, Palette } from 'lucide-react';
-import { formatTimecode, type ChatMessage, type MessagePart } from '@tayang/shared';
+import { formatTimecode, type ChatMessage, type MessagePart } from '@bspace-sdlc-app/shared';
 import { Markdown } from '@/components/Markdown';
-import { Oyen } from '@/components/Oyen';
+import { StatusIcon } from '@/components/StatusIcon';
 import { STICK_EVENT } from '@/components/ScrollToBottom';
 import { ImageStrip, isImagePart, type ImagePart } from '@/components/AgentImages';
 import { ActivityGroup, isHiddenTool, WorkingLine, type ActivityItem, type LiveTurn } from '@/components/Activity';
@@ -14,20 +14,22 @@ import { confirmSchedule, isScheduleRecord, prepareSchedule, SCHEDULE_ACTION, ty
 import { useApp } from '@/state/app';
 import { useRender } from '@/state/render';
 import { messageKey, useChat, type SendOpts } from '@/state/chat';
-import { splitTopicJson, stripFramesToken } from '@tayang/skills';
+import { splitTopicJson, stripFramesToken } from '@bspace-sdlc-app/skills';
 import { extractA2ui } from '@/a2ui/parse';
 import { A2uiSurface, type A2uiAction } from '@/a2ui/render';
+import { bumaButtonClass } from '@/components/buma/Button';
+import { cn } from '@/lib/utils';
 import { applyMessages, blockSurfaceId, emptySurfaces, type SurfaceSet } from '@/a2ui/surface';
 
 function Chip({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex h-6 items-center gap-1 rounded-sm border border-deep-orange bg-tint px-2 text-[13px] font-medium text-orange-light">
+    <span className="inline-flex h-6 items-center gap-1 rounded-sm border border-primary-border bg-primary-soft px-2 text-[13px] font-medium text-primary-text">
       {children}
     </span>
   );
 }
 
-/** A style the user mentioned: a palette and its name, set apart from the orange video chip. */
+/** A style the user mentioned: a palette and its name, set apart from the green video chip. */
 function StyleChip({ name }: { name: string }) {
   return (
     <span
@@ -65,7 +67,7 @@ interface Actions {
   /** Surfaces take no input while the agent replies: one gate with the composer and agent picker. */
   locked: boolean;
   sendOptions?: SendOptions;
-  /** A pressed schedule card: Tayang checks it and asks the user in its own dialog. */
+  /** A pressed schedule card: Buma checks it and asks the user in its own dialog. */
   schedule?: (a: A2uiAction) => void;
 }
 
@@ -161,7 +163,7 @@ function deriveA2ui(messages: ChatMessage[]): A2uiState {
         st.keys[`${m.id}:${i}`] = keys;
       });
     } else {
-      // A user's answer, or the system line that records a schedule card Tayang took.
+      // A user's answer, or the system line that records a schedule card Buma took.
       for (const p of m.parts) {
         if (p.type !== 'a2ui-action') continue;
         const sid = (p.action as { action?: { surfaceId?: unknown } }).action?.surfaceId;
@@ -220,7 +222,7 @@ function AgentText({ text, messageId, part, a2ui }: { text: string; messageId: s
           onAction={(pressed) => {
             // The agent and the stored answer know the surface by the agent's own id.
             const a = { ...pressed, surfaceId: agentSurfaceId(pressed.surfaceId) };
-            // A schedule card is Tayang's to confirm, in every chat; the agent gets no turn for it.
+            // A schedule card is Buma's to confirm, in every chat; the agent gets no turn for it.
             if (a.name === SCHEDULE_ACTION) {
               schedule?.(a);
               return;
@@ -374,7 +376,7 @@ export function MessageList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [messages, inst.language]);
   const chatId = messages[0]?.chatId ?? '';
-  // A pressed schedule card: checked first (`checking`), then shown in Tayang's dialog, then written (`saving`).
+  // A pressed schedule card: checked first (`checking`), then shown in Buma's dialog, then written (`saving`).
   const [confirm, setConfirm] = useState<{ action: A2uiAction; items: PlannedItem[] } | null>(null);
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -388,7 +390,7 @@ export function MessageList({
     },
     [chatId, checking, saving],
   );
-  // The agent asked Tayang to schedule videos (POST /schedule): once its turn is over, check and confirm here.
+  // The agent asked Buma to schedule videos (POST /schedule): once its turn is over, check and confirm here.
   const pendingSchedule = useChat((s) => (chatId ? (s.actions[chatId] ?? []) : []).some((a) => a.name === 'schedule_videos'));
   useEffect(() => {
     if (!pendingSchedule || streaming || checking || saving || confirm) return;
@@ -444,18 +446,8 @@ export function MessageList({
         if (m.role === 'system') {
           return (
             <div key={messageKey(m)} className="flex items-start gap-3">
-              <Oyen mood="surprised" size={28} />
+              <StatusIcon kind="error" size={28} />
               <SystemNote text={localized(m.parts.map((p) => (p.type === 'text' ? p.text : '')).join(''))} />
-              {m.parts.some(isScheduleRecord) && (
-                <button
-                  type="button"
-                  onClick={() => useApp.getState().navigate({ name: 'calendar' })}
-                  className="mt-1 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-sm text-[13px] font-medium text-orange-light hover:underline"
-                >
-                  <CalendarDays size={14} strokeWidth={1.5} aria-hidden="true" />
-                  {t('schedule.agent.openCalendar')}
-                </button>
-              )}
             </div>
           );
         }
@@ -473,7 +465,7 @@ export function MessageList({
         }
         return (
           <div key={messageKey(m)} data-testid="agent-message" className="flex items-start gap-3">
-            <Oyen mood={working ? 'sleepy' : 'default'} size={28} />
+            <StatusIcon kind={working ? 'working' : 'agent'} size={28} />
             <div className="flex min-w-0 flex-1 flex-col gap-3">
               <Parts parts={m.parts} live={working} messageId={m.id} a2ui={a2ui} turn={working ? turn : undefined} />
             </div>
@@ -482,7 +474,7 @@ export function MessageList({
       })}
       {streaming && (!last || last.role !== 'agent') && (
         <div className="flex items-start gap-3">
-          <Oyen mood="sleepy" size={28} />
+          <StatusIcon kind="working" size={28} />
           <div className="pt-1">
             <WorkingLine turn={turn} silent />
           </div>
@@ -506,7 +498,7 @@ export function MessageList({
 const NOTE_LINES = 5;
 
 /**
- * A note from Tayang: its first line, and any further lines (one scheduled video each) as a list,
+ * A note from Buma: its first line, and any further lines (one scheduled video each) as a list,
  * the first few until the user asks for all of them.
  */
 function SystemNote({ text }: { text: string }) {

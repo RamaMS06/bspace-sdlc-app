@@ -45,7 +45,7 @@ export interface VoicesResponse {
   voices: Voice[];
 }
 
-/** `tayang.json` at the root of a style template zip. */
+/** `buma.json` at the root of a style template zip. */
 export interface TemplateManifest {
   engine: 'remotion' | 'hyperframes';
   /** argv; "{output}" is replaced with the output mp4 path. */

@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import type { AgentUpdate, PermissionRequest, Settings, ToolStatus } from '@tayang/shared';
+import type { AgentUpdate, PermissionRequest, Settings, ToolStatus } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   getSystemInfo: vi.fn(),
@@ -40,14 +40,14 @@ import { useApp } from '@/state/app';
 import { useInstall } from '@/state/install';
 
 const settings: Settings = {
-  workingFolder: '/tmp/Tayang',
+  workingFolder: '/tmp/Buma',
   defaultAgent: 'claude',
   frameCheck: true,
   language: 'id',
   format: '9:16',
   fps: 30,
   onboarded: false,
-  apiUrl: 'https://studio.tayang.app/api',
+  apiUrl: 'https://bspace.buma.internal/api',
   installId: '',
   shareInstallStats: true,
   autoMode: false,
@@ -70,18 +70,22 @@ const tool = (id: ToolStatus['id'], name: string, required: boolean, ok: boolean
   detail: '',
 });
 
-const missingFfmpeg = [
+const missingFigma = [
   tool('node', 'Node.js', true, true),
-  tool('ffmpeg', 'FFmpeg', true, false),
-  tool('chrome', 'Chrome', true, true),
-  tool('ytdlp', 'yt-dlp', false, false),
+  tool('git', 'Git', true, true),
+  tool('python', 'Python 3', true, true),
+  tool('figma-mcp', 'Figma MCP', true, false),
+  tool('figma', 'Figma', false, true),
+  tool('flutter', 'Flutter SDK', false, false),
+  tool('word', 'Microsoft Word', false, true),
 ];
+const ADD = 'claude mcp add --transport http --scope user figma https://mcp.figma.com/mcp';
 
 const request: PermissionRequest = {
   chatId: 'setup',
   requestId: 'r1',
-  title: 'Run brew install ffmpeg',
-  commands: ['brew install ffmpeg', 'ffmpeg -version'],
+  title: `Run ${ADD}`,
+  commands: [ADD, 'claude mcp list'],
   options: [
     { id: 'always', label: 'Always', kind: 'allow-always' },
     { id: 'once', label: 'Once', kind: 'allow-once' },
@@ -100,33 +104,33 @@ describe('Requirements', () => {
     useInstall.getState().reset();
     useApp.setState({ settings, route: { name: 'requirements' } });
     vi.mocked(ipc.getSystemInfo).mockResolvedValue({ os: 'macos', osVersion: '26', packageManager: 'brew' });
-    vi.mocked(ipc.checkTools).mockResolvedValue(missingFfmpeg);
+    vi.mocked(ipc.checkTools).mockResolvedValue(missingFigma);
     vi.mocked(ipc.agentStart).mockResolvedValue(false);
     vi.mocked(ipc.agentPrompt).mockResolvedValue();
     vi.mocked(ipc.agentRespondPermission).mockResolvedValue();
     vi.mocked(ipc.updateSettings).mockResolvedValue({ ...settings, onboarded: true });
   });
 
-  it('blocks start while ffmpeg is missing', async () => {
+  it('blocks continuing while Figma MCP is missing', async () => {
     render(<Requirements />);
     expect(await screen.findByText(/shows you every command your agent asks to run, and nothing it asks about runs until you allow/)).toBeInTheDocument();
-    expect(await screen.findByText('Install FFmpeg to continue')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Start my first video/ })).toBeDisabled();
+    expect(await screen.findByText('Install Figma MCP to continue')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Continue/ })).toBeDisabled();
   });
 
   it('installs through the agent, asks permission, and unlocks start after done', async () => {
     const user = userEvent.setup();
     render(<Requirements />);
-    await screen.findByText('Install FFmpeg to continue');
+    await screen.findByText('Install Figma MCP to continue');
 
-    await user.click(screen.getByRole('button', { name: 'Install FFmpeg' }));
+    await user.click(screen.getByRole('button', { name: 'Install Figma MCP' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
     expect(ipc.agentStart).toHaveBeenCalledWith('setup', 'claude');
     const parts = vi.mocked(ipc.agentPrompt).mock.calls[0]![1];
-    expect(JSON.stringify(parts)).toContain('brew install ffmpeg');
+    expect(JSON.stringify(parts)).toContain('claude mcp add');
 
     await act(async () => handlers.perm.forEach((h) => h(request)));
-    expect(screen.getAllByText(/brew install ffmpeg/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/claude mcp add/).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Allow and install' })).toBeInTheDocument();
     expect(screen.queryByText('Always')).not.toBeInTheDocument();
 
@@ -134,21 +138,31 @@ describe('Requirements', () => {
     expect(ipc.agentRespondPermission).toHaveBeenCalledWith('r1', 'once');
 
     vi.mocked(ipc.checkTools).mockResolvedValue(
-      missingFfmpeg.map((t) => (t.id === 'ffmpeg' ? tool('ffmpeg', 'FFmpeg', true, true) : t)),
+      missingFigma.map((t) => (t.id === 'figma-mcp' ? tool('figma-mcp', 'Figma MCP', true, true) : t)),
     );
     await emitUpdate({ kind: 'done', stopReason: 'end_turn' });
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /Start my first video/ })).toBeEnabled(),
+      expect(screen.getByRole('button', { name: /^Continue/ })).toBeEnabled(),
     );
+  });
+
+  it('continues with every recommended tool missing once the required ones are ready', async () => {
+    vi.mocked(ipc.checkTools).mockResolvedValue(
+      missingFigma.map((t) => (t.required ? { ...t, found: true, ok: true } : { ...t, found: false, ok: false })),
+    );
+    render(<Requirements />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Continue/ })).toBeEnabled());
+    expect(screen.queryByText(/to continue/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Install Microsoft Word' })).toBeInTheDocument();
   });
 
   it('Node is installed by the user from nodejs.org, not by the agent', async () => {
     const user = userEvent.setup();
     vi.mocked(ipc.checkTools).mockResolvedValue(
-      missingFfmpeg.map((t) => (t.id === 'node' ? tool('node', 'Node.js', true, false) : t)),
+      missingFigma.map((t) => (t.id === 'node' ? tool('node', 'Node.js', true, false) : t)),
     );
     render(<Requirements />);
-    expect(await screen.findByText('Install Node.js 22 or newer, then press Check again')).toBeInTheDocument();
+    expect(await screen.findByText('Install Node.js 20 or newer, then press Check again')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Install Node.js' }));
     expect(openUrl).toHaveBeenCalledWith('https://nodejs.org/en/download');
     expect(ipc.agentStart).not.toHaveBeenCalled();
@@ -157,32 +171,30 @@ describe('Requirements', () => {
   it('an old Node says which version it found and asks for an update', async () => {
     const user = userEvent.setup();
     vi.mocked(ipc.checkTools).mockResolvedValue(
-      missingFfmpeg.map((t) => (t.id === 'node' ? { ...tool('node', 'Node.js', true, false), found: true, version: '20.6.1' } : t)),
+      missingFigma.map((t) => (t.id === 'node' ? { ...tool('node', 'Node.js', true, false), found: true, version: '18.19.0' } : t)),
     );
     render(<Requirements />);
-    expect(await screen.findByText('Found Node.js 20.6.1 · Tayang needs 22 or newer. Update it, then press Check again')).toBeInTheDocument();
+    expect(await screen.findByText('Found Node.js 18.19.0 · Buma needs 20 or newer. Update it, then press Check again')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Update Node.js' }));
     expect(openUrl).toHaveBeenCalledWith('https://nodejs.org/en/download');
   });
 
-  it('Chrome on a Mac without Homebrew is installed by the user from google.com/chrome', async () => {
+  it('Microsoft Word is installed by the user from microsoft.com, not by the agent', async () => {
     const user = userEvent.setup();
-    vi.mocked(ipc.getSystemInfo).mockResolvedValue({ os: 'macos', osVersion: '26', packageManager: null });
     vi.mocked(ipc.checkTools).mockResolvedValue(
-      missingFfmpeg.map((t) => (t.id === 'chrome' ? tool('chrome', 'Chrome', true, false) : t)),
+      missingFigma.map((t) => (t.id === 'word' ? tool('word', 'Microsoft Word', false, false) : t)),
     );
     render(<Requirements />);
-    expect(await screen.findByText('Install Google Chrome, then press Check again')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Install Google Chrome' }));
-    expect(openUrl).toHaveBeenCalledWith('https://www.google.com/chrome/');
+    expect(await screen.findByText('Not found · needed to edit and sign off Blueprint and FTSD')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Install Microsoft Word' }));
+    expect(openUrl).toHaveBeenCalledWith('https://www.microsoft.com/microsoft-365/word');
     expect(ipc.agentStart).not.toHaveBeenCalled();
-    expect(screen.queryByText(/apt install/)).toBeNull();
   });
 
   it('shows what the agent said when the tool is still missing', async () => {
     const user = userEvent.setup();
     render(<Requirements />);
-    await user.click(await screen.findByRole('button', { name: 'Install FFmpeg' }));
+    await user.click(await screen.findByRole('button', { name: 'Install Figma MCP' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
     await emitUpdate({ kind: 'text', text: 'Please run `sudo apt install -y chromium` ' });
     await emitUpdate({ kind: 'text', text: 'in a terminal.' });
@@ -193,17 +205,17 @@ describe('Requirements', () => {
   it('cancel answers null and returns the row to Install', async () => {
     const user = userEvent.setup();
     render(<Requirements />);
-    await user.click(await screen.findByRole('button', { name: 'Install FFmpeg' }));
+    await user.click(await screen.findByRole('button', { name: 'Install Figma MCP' }));
     await act(async () => handlers.perm.forEach((h) => h(request)));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(ipc.agentRespondPermission).toHaveBeenCalledWith('r1', null);
-    expect(await screen.findByRole('button', { name: 'Install FFmpeg' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Install Figma MCP' })).toBeInTheDocument();
   });
 
   it('clears the permission card on error and offers Try again', async () => {
     const user = userEvent.setup();
     render(<Requirements />);
-    await user.click(await screen.findByRole('button', { name: 'Install FFmpeg' }));
+    await user.click(await screen.findByRole('button', { name: 'Install Figma MCP' }));
     await act(async () => handlers.perm.forEach((h) => h(request)));
     await emitUpdate({ kind: 'error', message: 'agent crashed' });
     expect(screen.queryByRole('button', { name: 'Allow and install' })).not.toBeInTheDocument();
@@ -214,12 +226,12 @@ describe('Requirements', () => {
   it('a turn that ends without the tool shows a short error, with the agent reply folded away', async () => {
     const user = userEvent.setup();
     render(<Requirements />);
-    await user.click(await screen.findByRole('button', { name: 'Install FFmpeg' }));
+    await user.click(await screen.findByRole('button', { name: 'Install Figma MCP' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
     await emitUpdate({ kind: 'text', text: 'Let me check the metadata in the uv cache. 0.12.2' });
     await emitUpdate({ kind: 'done', stopReason: 'end_turn' });
-    const alert = await screen.findByText('Tayang still can’t find it on this computer. Try again.');
-    expect(alert).toHaveTextContent('Tayang still can’t find it on this computer. Try again.');
+    const alert = await screen.findByText('Buma still can’t find it on this computer. Try again.');
+    expect(alert).toHaveTextContent('Buma still can’t find it on this computer. Try again.');
     expect(alert).not.toHaveTextContent('uv cache');
     const details = screen.getByText('What Claude Code said').closest('details')!;
     expect(details).not.toHaveAttribute('open');
@@ -229,8 +241,8 @@ describe('Requirements', () => {
   it('disables other installs while one runs', async () => {
     const user = userEvent.setup();
     render(<Requirements />);
-    await user.click(await screen.findByRole('button', { name: 'Install FFmpeg' }));
-    expect(screen.getByRole('button', { name: 'Install yt-dlp' })).toBeDisabled();
+    await user.click(await screen.findByRole('button', { name: 'Install Figma MCP' }));
+    expect(screen.getByRole('button', { name: 'Install Flutter SDK' })).toBeDisabled();
   });
 });
 
@@ -259,7 +271,7 @@ describe('Requirements multi-request', () => {
     useInstall.getState().reset();
     useApp.setState({ settings, route: { name: 'requirements' } });
     vi.mocked(ipc.getSystemInfo).mockResolvedValue({ os: 'macos', osVersion: '26', packageManager: 'brew' });
-    vi.mocked(ipc.checkTools).mockResolvedValue(missingFfmpeg);
+    vi.mocked(ipc.checkTools).mockResolvedValue(missingFigma);
     vi.mocked(ipc.agentStart).mockResolvedValue(false);
     vi.mocked(ipc.agentPrompt).mockResolvedValue();
     vi.mocked(ipc.agentCancel).mockResolvedValue();
@@ -269,12 +281,12 @@ describe('Requirements multi-request', () => {
   it('shows and answers two sequential requests in one install', async () => {
     const user = userEvent.setup();
     render(<Requirements />);
-    await user.click(await screen.findByRole('button', { name: 'Install FFmpeg' }));
+    await user.click(await screen.findByRole('button', { name: 'Install Figma MCP' }));
     await act(async () => handlers.perm.forEach((h) => h(request)));
     await user.click(screen.getByRole('button', { name: 'Allow and install' }));
     expect(ipc.agentRespondPermission).toHaveBeenLastCalledWith('r1', 'once');
 
-    await act(async () => handlers.perm.forEach((h) => h({ ...request, requestId: 'r2', commands: ['ffmpeg -version'] })));
+    await act(async () => handlers.perm.forEach((h) => h({ ...request, requestId: 'r2', commands: ['claude mcp list'] })));
     await user.click(screen.getByRole('button', { name: 'Allow and install' }));
     expect(ipc.agentRespondPermission).toHaveBeenLastCalledWith('r2', 'once');
   });
@@ -282,15 +294,15 @@ describe('Requirements multi-request', () => {
   it('queues two parallel requests and answers both in order', async () => {
     const user = userEvent.setup();
     render(<Requirements />);
-    await user.click(await screen.findByRole('button', { name: 'Install FFmpeg' }));
+    await user.click(await screen.findByRole('button', { name: 'Install Figma MCP' }));
     await act(async () => {
       handlers.perm.forEach((h) => h(request));
-      handlers.perm.forEach((h) => h({ ...request, requestId: 'r2', commands: ['ffmpeg -version'] }));
+      handlers.perm.forEach((h) => h({ ...request, requestId: 'r2', commands: ['claude mcp list'] }));
     });
     expect(screen.getAllByRole('button', { name: 'Allow and install' })).toHaveLength(1);
     await user.click(screen.getByRole('button', { name: 'Allow and install' }));
     expect(ipc.agentRespondPermission).toHaveBeenLastCalledWith('r1', 'once');
-    expect(await screen.findByText('ffmpeg -version')).toBeInTheDocument();
+    expect(await screen.findByText('claude mcp list')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Allow and install' }));
     expect(ipc.agentRespondPermission).toHaveBeenLastCalledWith('r2', 'once');
     expect(ipc.agentRespondPermission).toHaveBeenCalledTimes(2);
@@ -299,7 +311,7 @@ describe('Requirements multi-request', () => {
   it('answers queued requests with null when the turn ends', async () => {
     const user = userEvent.setup();
     render(<Requirements />);
-    await user.click(await screen.findByRole('button', { name: 'Install FFmpeg' }));
+    await user.click(await screen.findByRole('button', { name: 'Install Figma MCP' }));
     await act(async () => {
       handlers.perm.forEach((h) => h(request));
       handlers.perm.forEach((h) => h({ ...request, requestId: 'r2' }));
@@ -314,7 +326,7 @@ describe('Requirements multi-request', () => {
   it('cancel while running calls agentCancel', async () => {
     const user = userEvent.setup();
     render(<Requirements />);
-    await user.click(await screen.findByRole('button', { name: 'Install FFmpeg' }));
+    await user.click(await screen.findByRole('button', { name: 'Install Figma MCP' }));
     await act(async () => handlers.perm.forEach((h) => h(request)));
     await user.click(screen.getByRole('button', { name: 'Allow and install' }));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -330,20 +342,20 @@ describe('Requirements cancel then late events', () => {
     useInstall.getState().reset();
     useApp.setState({ settings, route: { name: 'requirements' } });
     vi.mocked(ipc.getSystemInfo).mockResolvedValue({ os: 'macos', osVersion: '26', packageManager: 'brew' });
-    vi.mocked(ipc.checkTools).mockResolvedValue(missingFfmpeg);
+    vi.mocked(ipc.checkTools).mockResolvedValue(missingFigma);
     vi.mocked(ipc.agentStart).mockResolvedValue(false);
     vi.mocked(ipc.agentPrompt).mockResolvedValue();
     vi.mocked(ipc.agentCancel).mockResolvedValue();
     vi.mocked(ipc.agentRespondPermission).mockResolvedValue();
     const user = userEvent.setup();
     render(<Requirements />);
-    await user.click(await screen.findByRole('button', { name: 'Install FFmpeg' }));
+    await user.click(await screen.findByRole('button', { name: 'Install Figma MCP' }));
     await act(async () => handlers.perm.forEach((h) => h(request)));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(ipc.agentCancel).toHaveBeenCalledWith('setup');
 
-    const ffmpeg = await screen.findByRole('button', { name: 'Install FFmpeg' });
-    expect(ffmpeg).toBeDisabled();
+    const figmaMcp = await screen.findByRole('button', { name: 'Install Figma MCP' });
+    expect(figmaMcp).toBeDisabled();
 
     // stray permission while closing is answered null
     await act(async () => handlers.perm.forEach((h) => h({ ...request, requestId: 'late' })));
@@ -352,12 +364,12 @@ describe('Requirements cancel then late events', () => {
 
     await emitUpdate({ kind: 'done', stopReason: 'cancelled' });
     expect(useInstall.getState().closing).toBe(false);
-    expect(screen.getByRole('button', { name: 'Install FFmpeg' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Install Figma MCP' })).toBeEnabled();
 
     // next install is unaffected
     vi.mocked(ipc.checkTools).mockClear();
-    await user.click(screen.getByRole('button', { name: 'Install FFmpeg' }));
-    expect(useInstall.getState().active).toBe('ffmpeg');
+    await user.click(screen.getByRole('button', { name: 'Install Figma MCP' }));
+    expect(useInstall.getState().active).toBe('figma-mcp');
     expect(ipc.checkTools).not.toHaveBeenCalled();
   });
 });

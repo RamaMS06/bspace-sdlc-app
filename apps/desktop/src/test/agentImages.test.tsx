@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import type { AgentUpdate, ChatMessage, FileInfo, MessagePart } from '@tayang/shared';
+import type { AgentUpdate, ChatMessage, FileInfo, MessagePart } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   getChat: vi.fn().mockResolvedValue(null),

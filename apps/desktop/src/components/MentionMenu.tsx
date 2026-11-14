@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import type { Project, Style } from '@tayang/shared';
+import type { Project, Style } from '@bspace-sdlc-app/shared';
 import { i18n } from '@/i18n';
 import { Command, CommandGroup, CommandItem, CommandList } from '@/components/ui/command';
 import { swatch } from '@/components/NoPreview';
@@ -101,14 +101,14 @@ export function MentionMenu({
       </CommandList>
       <div className="mt-1 flex items-center gap-2 border-t border-border px-2 pb-1 pt-2 text-xs text-text-3">
         {['↑', '↓'].map((k) => (
-          <kbd key={k} className="rounded-xs border border-hairline border-b-2 px-1 font-mono text-[11px] text-[#D9D9D9]">
+          <kbd key={k} className="rounded-xs border border-hairline border-b-2 px-1 font-mono text-[11px] text-foreground">
             {k}
           </kbd>
         ))}
         <span>{t('mention.move')}</span>
-        <kbd className="ml-2 rounded-xs border border-hairline border-b-2 px-1 font-mono text-[11px] text-[#D9D9D9]">↵</kbd>
+        <kbd className="ml-2 rounded-xs border border-hairline border-b-2 px-1 font-mono text-[11px] text-foreground">↵</kbd>
         <span>{t('mention.attach')}</span>
-        <kbd className="ml-2 rounded-xs border border-hairline border-b-2 px-1 font-mono text-[11px] text-[#D9D9D9]">Esc</kbd>
+        <kbd className="ml-2 rounded-xs border border-hairline border-b-2 px-1 font-mono text-[11px] text-foreground">Esc</kbd>
         <span>{t('mention.close')}</span>
       </div>
     </Command>

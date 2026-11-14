@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight, Clapperboard, FileText, Globe, MessageSquare, Pencil, Search, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react';
-import type { MessagePart } from '@tayang/shared';
+import type { MessagePart } from '@bspace-sdlc-app/shared';
 import { i18n } from '@/i18n';
 import { localized } from '@/lib/stored';
 import { elapsed } from '@/lib/time';
@@ -12,7 +12,7 @@ export type ThoughtPart = Extract<MessagePart, { type: 'thought' }>;
 export type ActivityItem = ToolPart | ThoughtPart;
 
 /** Skill loading is plumbing: never shown, never counted. */
-/** Tayang approved a command itself; it annotates the real tool call, so it is a note, not a tool. */
+/** Buma approved a command itself; it annotates the real tool call, so it is a note, not a tool. */
 export const isAutoNote = (p: ToolPart) => p.toolCallId.startsWith('auto-');
 
 export function isHiddenTool(p: ToolPart): boolean {
@@ -112,7 +112,7 @@ function Since({ since }: { since: number }) {
 }
 
 const PulseDot = () => (
-  <span aria-hidden="true" className="tayang-pulse inline-block size-1.5 shrink-0 rounded-full bg-primary" />
+  <span aria-hidden="true" className="buma-pulse inline-block size-1.5 shrink-0 rounded-full bg-primary" />
 );
 
 function FileChip({ name }: { name: string }) {

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import type { AgentQuestion } from '@tayang/shared';
+import type { AgentQuestion } from '@bspace-sdlc-app/shared';
 import { QuestionCard } from '@/components/QuestionCard';
 import { answerContent, answered, answerSummary, questionFields } from '@/lib/question';
 

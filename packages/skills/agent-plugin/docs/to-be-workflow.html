@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>To-be Workflow — Bspace SDLC</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root { --paper:#f5f5f5; --paper-2:#ececec; --ink:#2d3142; --muted:#4f5d75; --soft:#7a8399; --rule:rgba(45,49,66,.14); --accent:#eb6c36; --tint:rgba(235,108,54,.08); }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:var(--paper); color:var(--ink); font-family:Geist,system-ui,sans-serif; }
+    main { max-width:1180px; margin:0 auto; padding:56px 28px 40px; }
+    .eyebrow { margin:0 0 12px; color:var(--muted); font:500 12px/1 Geist Mono,monospace; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:0; font:400 clamp(42px,7vw,72px)/.95 "Instrument Serif",Georgia,serif; letter-spacing:-.02em; }
+    .intro { max-width:760px; margin:18px 0 42px; color:var(--muted); font-size:16px; line-height:1.55; }
+    .diagram { overflow-x:auto; padding:24px 0 8px; border-top:1px solid var(--rule); border-bottom:1px solid var(--rule); }
+    .mermaid { min-width:1560px; }
+    .note { margin-top:28px; padding:16px 18px; max-width:760px; border-left:3px solid var(--accent); background:var(--tint); color:var(--muted); font-size:14px; line-height:1.5; }
+    .principles { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:28px; }
+    .principle { padding:14px 16px; border:1px solid var(--rule); background:#fff; }
+    .principle b { display:block; margin-bottom:4px; }
+    .principle span { color:var(--muted); font-size:13px; line-height:1.45; }
+    .handoff { margin-top:38px; }
+    .handoff h2 { margin:0 0 8px; font:400 32px/1 "Instrument Serif",Georgia,serif; }
+    .handoff p { color:var(--muted); line-height:1.5; }
+    .table-wrap { overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; margin-top:16px; font-size:13px; background:rgba(255,255,255,.45); }
+    th, td { padding:11px 10px; border-bottom:1px solid var(--rule); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font:500 11px/1 Geist Mono,monospace; letter-spacing:.08em; text-transform:uppercase; }
+    code { font:12px Geist Mono,monospace; }
+    .artifact { margin-top:28px; padding:16px 18px; border:1px solid var(--rule); background:#fff; overflow-x:auto; }
+    .artifact h2 { margin:0 0 10px; font:400 28px/1 "Instrument Serif",Georgia,serif; }
+    .artifact pre { margin:0; font:12px/1.55 Geist Mono,monospace; }
+    .handoff-note { max-width:820px; margin-top:20px; }
+    footer { margin-top:38px; color:var(--soft); font:12px/1.4 Geist Mono,monospace; }
+    @media (max-width:760px) { main { padding:36px 18px 32px; } .principles { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">BSPACE SDLC · TARGET STATE · ARTIFACT ROUTED</p>
+    <h1>To-be workflow</h1>
+    <p class="intro">Input stakeholder menjadi artefak kecil yang dapat dilacak, lalu bergerak melewati Discover, Brainstorm, Data, Blueprint, wireframe lo-fi, hi-fi Figma, contract, implementasi, verification, dan close. Setiap tahap dapat dikerjakan user atau divisi berbeda.</p>
+
+    <section class="diagram" aria-label="To-be workflow diagram">
+      <pre class="mermaid">
+flowchart LR
+  I["Stakeholder input<br/>brief · Excel · notulen · chat"]
+  N["stakeholder-intake<br/>intake.md + manifest.yaml"]
+  P0["P0 Discover<br/>sdlc/project.md"]
+  P1["P1 Brainstorm<br/>intent.md · G1"]
+  P2["P2 Data<br/>data.md · SRC-xx"]
+  B["Blueprint<br/>Blueprint.docx · Gate B"]
+  W["Analyst / UX<br/>lo-fi wireframe · evidence"]
+  Q{"Stakeholder<br/>setuju alur?"}
+  D["Designer<br/>hi-fi Figma + design.md"]
+  F["FTSD + API<br/>FTSD.docx · openapi.yaml"]
+  S["FE developer<br/>spec.md + slice"]
+  V["Run + fidelity<br/>evidence · score.json"]
+  C["Close / release<br/>close.md"]
+
+  I --> P0
+  I -. "optional pre-P0" .-> N --> P0
+  P0 --> P1 --> P2 --> B --> W --> Q
+  Q -->|"revisi"| W
+  Q -->|"setuju"| D --> F --> S --> V --> C
+
+  classDef input fill:#ececec,stroke:#7a8399,color:#2d3142
+  classDef focal fill:#fff1e9,stroke:#eb6c36,stroke-width:2px,color:#2d3142
+  classDef step fill:#ffffff,stroke:#2d3142,color:#2d3142
+  classDef decision fill:#f5f5f5,stroke:#4f5d75,color:#2d3142
+  class I,N input
+  class W focal
+  class P0,P1,P2,B,D,F,S,V,C step
+  class Q decision
+      </pre>
+    </section>
+
+    <div class="note"><strong>Perubahan inti:</strong> `stakeholder-intake` menjadi jalur optional sebelum P0, bukan pengganti Discover atau Brainstorm. Wireframe lo-fi menjadi gate alignment sebelum designer memetakan visual hi-fi ke BUMA DS.</div>
+
+    <section class="principles" aria-label="Workflow principles">
+      <div class="principle"><b>Artifact-first</b><span>Router membaca file terakhir dan mengambil first failing gate. Memory sesi bukan routing state.</span></div>
+      <div class="principle"><b>Source-traceable</b><span>Claim intake memakai `SRC-xx`; konflik dan pertanyaan terbuka tetap terlihat.</span></div>
+      <div class="principle"><b>Modular hand-off</b><span>Role berikutnya membaca output sebelumnya; tidak perlu mengulang tahap yang sudah pass.</span></div>
+    </section>
+
+    <section class="handoff">
+      <h2>Output tiap tahap</h2>
+      <p>Nama artefak stabil. Owner dapat berpindah antar sesi, divisi, atau user tanpa kehilangan konteks.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Tahap</th><th>Owner</th><th>Input → output</th><th>Gate / hand-off</th></tr></thead>
+          <tbody>
+            <tr><td>Stakeholder intake <small>(optional)</small></td><td>Stakeholder / PM</td><td>Brief, Excel, notulen, SOP → <code>stakeholder-input/&lt;feature&gt;/intake.md</code> + <code>manifest.yaml</code></td><td>Source ID, status, conflict tercatat → P0</td></tr>
+            <tr><td>P0 Discover</td><td>Analyst / PM</td><td>Input stakeholder → <code>sdlc/project.md</code></td><td>Project, stakeholder, scope, integration lengkap → P1</td></tr>
+            <tr><td>P1 Brainstorm</td><td>Analyst</td><td><code>project.md</code> → <code>intent/&lt;ID&gt;-&lt;slug&gt;/intent.md</code></td><td>G1: approved, no open clarification → P2</td></tr>
+            <tr><td>P2 Data</td><td>Analyst / data owner</td><td>Intent fields → <code>sdlc/data.md</code></td><td>Field punya <code>SRC-xx</code> → Blueprint</td></tr>
+            <tr><td>Blueprint + Gate B</td><td>Analyst + stakeholder</td><td>Intent + data → <code>Blueprint.docx</code>, snapshot, gate</td><td>Human sign-off + current hash → lo-fi</td></tr>
+            <tr><td>Lo-fi wireframe</td><td>Analyst / UX</td><td>Blueprint + intent → grayscale Figma, evidence</td><td>Structure, fields, states, CTA disetujui stakeholder → hi-fi</td></tr>
+            <tr><td>Hi-fi design</td><td>Designer</td><td>Lo-fi + BUMA DS → Figma hi-fi, <code>design.md</code></td><td>D0, C1, GD2, P1, G2 → FTSD/API</td></tr>
+            <tr><td>FTSD + API</td><td>Analyst + BE/FE</td><td>Blueprint + design + data → <code>FTSD.docx</code>, <code>openapi.yaml</code></td><td>F1/F2 contract → slice</td></tr>
+            <tr><td>Implementation</td><td>FE developer</td><td>Figma + FTSD + API → <code>spec.md</code> + presentation code</td><td>AC coverage, component/asset mapping → verify</td></tr>
+            <tr><td>Run + fidelity</td><td>Developer / QA / designer</td><td>Implemented screen → run evidence, <code>score.json</code></td><td>Runtime pass + visual pass → close</td></tr>
+            <tr><td>Close / release</td><td>Analyst / QA / lead</td><td>All evidence → <code>close.md</code></td><td>Every AC has result → release</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="handoff-note"><strong>Contract hand-off:</strong> setiap output mencatat input source, output path atau Figma node, owner, status, dan next gate. Router hanya melanjutkan setelah gate pertama yang gagal ditangani.</p>
+    </section>
+
+    <section class="artifact">
+      <h2>Workspace hand-off</h2>
+      <pre>stakeholder-input/&lt;feature&gt;/{intake.md, manifest.yaml, sources/}
+sdlc/{project.md, data.md, Blueprint.docx, Blueprint.md, FTSD.docx, openapi.yaml}
+intent/&lt;ID&gt;-&lt;slug&gt;/{intent.md, design.md, design-evidence/, close.md}</pre>
+    </section>
+
+    <footer>Target-state preview · Bspace Attendance / Bspace SDLC · optional intake, mandatory formal gates</footer>
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad:true, securityLevel:'strict', theme:'base', themeVariables:{ fontFamily:'Geist,system-ui,sans-serif', primaryColor:'#fff', primaryTextColor:'#2d3142', primaryBorderColor:'#2d3142', lineColor:'#4f5d75', secondaryColor:'#ececec', tertiaryColor:'#f5f5f5' } });
+  </script>
+</body>
+</html>

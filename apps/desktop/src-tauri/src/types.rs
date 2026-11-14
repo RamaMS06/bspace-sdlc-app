@@ -12,6 +12,7 @@ pub enum AgentId {
     Gemini,
     Codex,
     Antigravity,
+    Cursor,
     Custom,
 }
 
@@ -24,6 +25,13 @@ pub struct AgentInfo {
     pub version: Option<String>,
     pub acp_command: Vec<String>,
     pub recommended: bool,
+    /// The agent's own sign-in is saved on this computer (its credentials file). Claude signs in
+    /// through Buma's own folder (`claude_account`), so it is false here.
+    #[serde(default)]
+    pub signed_in: bool,
+    /// Who is signed in: the email of the ChatGPT or Google account, or what the key is for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,12 +64,20 @@ pub struct SystemInfo {
 pub enum ToolId {
     #[serde(rename = "node")]
     Node,
-    #[serde(rename = "ffmpeg")]
-    Ffmpeg,
-    #[serde(rename = "chrome")]
-    Chrome,
-    #[serde(rename = "ytdlp")]
-    Ytdlp,
+    #[serde(rename = "git")]
+    Git,
+    #[serde(rename = "python")]
+    Python,
+    #[serde(rename = "figma-mcp")]
+    FigmaMcp,
+    #[serde(rename = "figma")]
+    Figma,
+    #[serde(rename = "flutter")]
+    Flutter,
+    #[serde(rename = "word")]
+    Word,
+    #[serde(rename = "azure-cli")]
+    AzureCli,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -105,7 +121,7 @@ pub enum VideoLanguage {
     En,
 }
 
-/// The language of Tayang's own interface, not of the videos it makes.
+/// The language of Buma's own interface, not of the videos it makes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UiLanguage {
@@ -154,7 +170,7 @@ pub struct Project {
     /// When the "review before it's due" reminder was shown; separate from `reminded_at`.
     #[serde(default)]
     pub review_reminded_at: Option<String>,
-    /// The auto-post this video went out with (the Tayang API's PostForMe post id).
+    /// The auto-post this video went out with (the Buma API's PostForMe post id).
     #[serde(default)]
     pub social_post_id: Option<String>,
     pub duration_sec: Option<f64>,
@@ -181,6 +197,9 @@ pub struct Chat {
     pub agent_id: AgentId,
     pub title: String,
     pub created_at: String,
+    /// A folder the user attached to this chat (composer › Add folder): its agent works there.
+    #[serde(default)]
+    pub folder: Option<String>,
 }
 
 /// A chat in the sidebar's Recent list: its project's title, and when anything last happened in it.
@@ -420,13 +439,13 @@ pub struct Job {
     pub archived_at: Option<String>,
 }
 
-/// Where voice-overs come from: Tayang credits, the user's own ElevenLabs or Fish Audio key, or
+/// Where voice-overs come from: Buma credits, the user's own ElevenLabs or Fish Audio key, or
 /// VoiceStudio on this computer (see `voice`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum VoiceSource {
     #[default]
-    Tayang,
+    Buma,
     Elevenlabs,
     Fishaudio,
     Voicestudio,
@@ -442,7 +461,7 @@ pub struct Settings {
     pub format: VideoFormat,
     pub fps: u32,
     pub onboarded: bool,
-    /// Base URL of the optional Tayang API; `TAYANG_API_URL` overrides it at read time
+    /// Base URL of the optional Buma API; `BUMA_API_URL` overrides it at read time
     /// (`styles_sync::effective_api_url`) without being stored. The Settings screen saves an
     /// empty field as the default URL.
     pub api_url: String,
@@ -462,7 +481,7 @@ pub struct Settings {
     /// Closing the window hides it to the tray instead of quitting.
     #[serde(default)]
     pub background_mode: bool,
-    /// Start Tayang when the user logs in; only meaningful while `background_mode` is on.
+    /// Start Buma when the user logs in; only meaningful while `background_mode` is on.
     #[serde(default)]
     pub open_at_login: bool,
     /// The one-time startup check of build jobs marked done without a video has run.
@@ -693,7 +712,7 @@ mod tests {
 
     #[test]
     fn tool_id_and_job_kind_literals() {
-        assert_eq!(serde_json::to_value(ToolId::Ytdlp).unwrap(), json!("ytdlp"));
+        assert_eq!(serde_json::to_value(ToolId::FigmaMcp).unwrap(), json!("figma-mcp"));
         assert_eq!(serde_json::to_value(JobKind::StudyStyle).unwrap(), json!("study-style"));
         assert_eq!(serde_json::to_value(JobStatus::NeedsYou).unwrap(), json!("needs-you"));
     }
@@ -803,7 +822,7 @@ mod tests {
             json!({"id": "i", "autopilotId": "a", "dueAt": "2026-11-05T09:00:00Z", "status": "making", "projectId": null, "error": null})
         );
         assert!(serde_json::from_value::<AutopilotInput>(json!({"posting": "automatic"})).is_err());
-        // An agent id Tayang doesn't know never gets past parsing.
+        // An agent id Buma doesn't know never gets past parsing.
         let bad = json!({
             "name": "K", "niche": "C", "language": "id", "styleId": "s", "agentId": "nonsense",
             "frequency": {"kind": "daily", "times": ["09:00"]}, "lengthSec": 30, "review": true, "posting": "manual"
@@ -848,6 +867,12 @@ pub struct AgentUsage {
     /// For agents without plan limits (opencode): what they used today and over the last 7 days.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spend: Option<SpendSummary>,
+    /// Which account of the agent these numbers are for (`default` or an extra account's id).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    /// Who is signed in to it (an email), when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
 }
 
 /// Replies, tokens (input, output and reasoning; cached reads left out) and cost over a period.

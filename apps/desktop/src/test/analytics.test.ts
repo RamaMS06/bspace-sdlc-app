@@ -12,15 +12,15 @@ describe('analytics', () => {
       event: '$exception',
       properties: {
         where: 'render',
-        $exception_list: [{ value: "Couldn't read /Users/maruf/Tayang/x/AGENTS.md" }],
-        nested: { path: 'C:\\Users\\Budi\\Tayang\\a.mp4', list: ['/home/sari/Tayang'] },
+        $exception_list: [{ value: "Couldn't read /Users/maruf/Buma/x/AGENTS.md" }],
+        nested: { path: 'C:\\Users\\Budi\\Buma\\a.mp4', list: ['/home/sari/Buma'] },
         count: 3,
       },
     } as never);
     expect(out!.properties).toEqual({
       where: 'render',
-      $exception_list: [{ value: "Couldn't read ~/Tayang/x/AGENTS.md" }],
-      nested: { path: '~\\Tayang\\a.mp4', list: ['~/Tayang'] },
+      $exception_list: [{ value: "Couldn't read ~/Buma/x/AGENTS.md" }],
+      nested: { path: '~\\Buma\\a.mp4', list: ['~/Buma'] },
       count: 3,
     });
   });

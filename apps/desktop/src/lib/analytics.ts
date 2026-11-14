@@ -97,7 +97,7 @@ export function track(event: string, properties?: Record<string, string | number
   posthog.capture(event, properties);
 }
 
-/** A Tayang account signed in: its id (never the email) and plan. */
+/** A Buma account signed in: its id (never the email) and plan. */
 export function identifyAccount(accountId: string, plan: string): void {
   if (!started || !enabled) return;
   // Already this account (a later launch): only the plan may have changed.

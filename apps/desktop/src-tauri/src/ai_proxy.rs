@@ -1,10 +1,10 @@
-//! AI images and voice for agents, paid with the user's Tayang credits. Tayang listens on
-//! 127.0.0.1 (a random port) and gives each agent session `TAYANG_AI_URL` and its own
-//! `TAYANG_AI_TOKEN`. The token is tied to that session's chat, so an agent can only save into its
-//! own folder, and the user's sign-in token never leaves Tayang.
+//! AI images and voice for agents, paid with the user's Buma credits. Buma listens on
+//! 127.0.0.1 (a random port) and gives each agent session `BUMA_AI_URL` and its own
+//! `BUMA_AI_TOKEN`. The token is tied to that session's chat, so an agent can only save into its
+//! own folder, and the user's sign-in token never leaves Buma.
 //!
-//!   POST $TAYANG_AI_URL/image  { "prompt", "aspect"?, "count"?, "out"? }
-//!   POST $TAYANG_AI_URL/voice  { "text", "language"?, "voice"?, "out"? }
+//!   POST $BUMA_AI_URL/image  { "prompt", "aspect"?, "count"?, "out"? }
+//!   POST $BUMA_AI_URL/voice  { "text", "language"?, "voice"?, "out"? }
 //!
 //! The answer is `{ "files": [...], "creditsCharged", "creditsLeft" }` with paths relative to the
 //! agent's folder, or `{ "error": "<code>", "message" }`.
@@ -53,8 +53,8 @@ impl AiProxy {
         tokens.retain(|_, c| c != chat_id);
         tokens.insert(token.clone(), chat_id.to_string());
         vec![
-            ("TAYANG_AI_URL".into(), format!("http://127.0.0.1:{}", self.port)),
-            ("TAYANG_AI_TOKEN".into(), token),
+            ("BUMA_AI_URL".into(), format!("http://127.0.0.1:{}", self.port)),
+            ("BUMA_AI_TOKEN".into(), token),
         ]
     }
 
@@ -102,12 +102,19 @@ pub fn parse_action(path: &str, b: &Value) -> Option<Result<(&'static str, Value
             }
             Ok(("create_autopilot", b.clone()))
         })()),
-        // From any chat: Tayang opens its autopilot setup chat, which knows the niches, styles,
+        // From any chat: Buma opens its autopilot setup chat, which knows the niches, styles,
         // voices and accounts to pick from. `notes` is what the user already said.
         "/autopilot-chat" => Some(Ok((
             "start_autopilot_chat",
             json!({ "notes": text("notes").map(|n| n.chars().take(600).collect::<String>()).unwrap_or_default() }),
         ))),
+        // The bspace-sdlc-skills Agent Office hook: the feature's live state, shown in Workflow.
+        "/office" => Some((|| {
+            if !b.is_object() || b.get("phases").is_none() {
+                return Err("the office state must be a JSON object with phases".into());
+            }
+            Ok(("office_state", b.clone()))
+        })()),
         _ => None,
     }
 }
@@ -204,22 +211,25 @@ async fn serve(mut s: tokio::net::TcpStream, proxy: &AiProxy, folder_for: &(dyn 
         return respond(&mut s, 400, &fail("invalid", "Send a POST with a JSON body under 64 KB")).await;
     };
     let Some(chat) = req.token.as_deref().and_then(|t| proxy.chat_for(t)) else {
-        return respond(&mut s, 401, &fail("unauthorized", "Use the TAYANG_AI_TOKEN this session was given")).await;
+        return respond(&mut s, 401, &fail("unauthorized", "Use the BUMA_AI_TOKEN this session was given")).await;
     };
-    // /video and /schedule: Tayang asks the user; the agent's turn should end there.
+    // /video and /schedule: Buma asks the user; the agent's turn should end there.
     if req.method == "POST" {
         if let Ok(body @ Value::Object(_)) = serde_json::from_slice::<Value>(&req.body) {
             match parse_action(&req.path, &body) {
                 Some(Ok((name, context))) => {
                     act(&chat, name, context);
+                    if name == "office_state" {
+                        return respond(&mut s, 200, &json!({ "ok": true })).await;
+                    }
                     let message = if name == "pick_topic" {
-                        "Tayang is starting this video in its own chat. End your turn now: the video is made there."
+                        "Buma is starting this video in its own chat. End your turn now: the video is made there."
                     } else if name == "start_autopilot_chat" {
-                        "Tayang is opening its autopilot setup chat with what the user said. End your turn now; the autopilot is set up there."
+                        "Buma is opening its autopilot setup chat with what the user said. End your turn now; the autopilot is set up there."
                     } else if name == "create_autopilot" {
-                        "Tayang is showing the user this autopilot to check and start. End your turn now; never say it is running until the user starts it."
+                        "Buma is showing the user this autopilot to check and start. End your turn now; never say it is running until the user starts it."
                     } else {
-                        "Tayang is showing the user these times to confirm. End your turn now; never say they are scheduled until the user confirms."
+                        "Buma is showing the user these times to confirm. End your turn now; never say they are scheduled until the user confirms."
                     };
                     return respond(&mut s, 200, &json!({ "ok": true, "message": message })).await;
                 }
@@ -313,14 +323,14 @@ pub fn usage_summary(u: &Value) -> Value {
         "imagesAffordable": credits,
         "voiceMinutesAffordable": credits / 7,
         "message": if credits > 0 {
-            "Use Tayang's /image and /voice for AI pictures and every voice-over"
+            "Use Buma's /image and /voice for AI pictures and every voice-over"
         } else {
             "No AI credits left: make videos without AI images or voice"
         },
     })
 }
 
-/// Runs a job against the Tayang API with `token` and saves the results into `folder`.
+/// Runs a job against the Buma API with `token` and saves the results into `folder`.
 pub async fn run_job(client: &reqwest::Client, base: &str, token: &str, job: AiJob, folder: &Path) -> Result<Value, (u16, Value)> {
     use crate::cloud::{download, send, CloudError};
     let refused = |e: CloudError| {
@@ -333,10 +343,10 @@ pub async fn run_job(client: &reqwest::Client, base: &str, token: &str, job: AiJ
             _ => 502,
         };
         let message = match e {
-            CloudError::SignedOut => "The user isn't signed in to Tayang: make this without AI images or voice",
-            CloudError::PlanRequired => "The user's Tayang plan has no AI credits: make this without AI images or voice",
+            CloudError::SignedOut => "The user isn't signed in to Buma: make this without AI images or voice",
+            CloudError::PlanRequired => "The user's Buma plan has no AI credits: make this without AI images or voice",
             CloudError::QuotaExceeded => "The user's AI credits for this month are used up: make this without AI images or voice",
-            CloudError::Unavailable => "Tayang AI isn't available right now: try once more later, else make this without it",
+            CloudError::Unavailable => "Buma AI isn't available right now: try once more later, else make this without it",
             _ => "The AI provider failed: try once more, else make this without it",
         };
         (status, fail(&e.code(), message))
@@ -348,7 +358,7 @@ pub async fn run_job(client: &reqwest::Client, base: &str, token: &str, job: AiJ
                 "signedIn": false,
                 "credits": 0,
                 "posts": 0,
-                "message": "The user isn't signed in to Tayang: there are no AI credits, so make videos without AI images or voice",
+                "message": "The user isn't signed in to Buma: there are no AI credits, so make videos without AI images or voice",
             })),
             Err(e) => Err(refused(e)),
         };
@@ -424,6 +434,10 @@ mod tests {
         assert_eq!((name, ctx), ("start_autopilot_chat", json!({ "notes": "sejarah dunia, Instagram" })));
         assert_eq!(parse_action("/autopilot-chat", &json!({})).unwrap().unwrap().1, json!({ "notes": "" }));
         assert!(parse_action("/autopilot", &json!({ "name": "Kopi", "niche": "x".repeat(9000) })).unwrap().is_err());
+        let (name, ctx) = parse_action("/office", &json!({ "phases": { "brainstorm": "done" }, "agents": [] })).unwrap().unwrap();
+        assert_eq!(name, "office_state");
+        assert_eq!(ctx["phases"]["brainstorm"], "done");
+        assert!(parse_action("/office", &json!({ "agents": [] })).unwrap().is_err());
         assert!(parse_job("/video", &json!({})).is_err());
         assert_eq!(nth_path(Path::new("a/b.jpg"), 0), PathBuf::from("a/b.jpg"));
         assert_eq!(nth_path(Path::new("a/b.jpg"), 2), PathBuf::from("a/b-3.jpg"));
@@ -481,7 +495,7 @@ mod tests {
         assert_eq!(request(proxy.port, "GET", "/image", Some(&again), "").await.0, 405);
         assert_eq!(request(proxy.port, "GET", "/usage", None, "").await.0, 401);
 
-        // The agent asks Tayang to start a video or to schedule: the app gets it, the agent a note to stop.
+        // The agent asks Buma to start a video or to schedule: the app gets it, the agent a note to stop.
         let (status, body) = post(proxy.port, "/video", Some(&again), r#"{"title":" What if the Moon vanished ","kind":"explainer","lengthSec":60,"styleId":"cartoon-3d-world"}"#).await;
         assert_eq!(status, 200);
         assert!(body["message"].as_str().unwrap().contains("End your turn"));

@@ -11,8 +11,8 @@ import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { useUsage } from '@/state/usage';
 import { useAuth } from '@/state/auth';
-import { TAYANG_USAGE_EVERY_MS, useTayangUsage } from '@/state/tayangUsage';
-import type { AgentUsage, Spend } from '@tayang/shared';
+import { BUMA_USAGE_EVERY_MS, useBumaUsage } from '@/state/bumaUsage';
+import type { AgentUsage, Spend } from '@bspace-sdlc-app/shared';
 
 export const pct = (n: number) => `${Math.round(n)}%`;
 
@@ -64,23 +64,23 @@ export function UsageMeter({ percent, label, className }: { percent: number; lab
 }
 
 /**
- * The Tayang account's AI credits and auto-posts left (gifts included), in the status bar;
+ * The Buma account's AI credits and auto-posts left (gifts included), in the status bar;
  * opens Settings › Usage. Nothing signed out, or before the first answer.
  */
-export function TayangCreditsCompact() {
+export function BumaCreditsCompact() {
   const { t } = useTranslation();
   const signedIn = useAuth((s) => !!s.status?.signedIn);
-  const usage = useTayangUsage((s) => s.usage);
+  const usage = useBumaUsage((s) => s.usage);
   const navigate = useApp((s) => s.navigate);
 
   useEffect(() => {
     if (!signedIn) {
-      useTayangUsage.getState().clear();
+      useBumaUsage.getState().clear();
       return;
     }
-    const load = () => void useTayangUsage.getState().load();
+    const load = () => void useBumaUsage.getState().load();
     load();
-    const every = setInterval(load, TAYANG_USAGE_EVERY_MS);
+    const every = setInterval(load, BUMA_USAGE_EVERY_MS);
     return () => clearInterval(every);
   }, [signedIn]);
 
@@ -89,7 +89,7 @@ export function TayangCreditsCompact() {
   if (!usage) {
     return (
       <span role="status" aria-label={t('usage.credits')} className="flex h-6 items-center gap-1.5 px-1.5">
-        <Sparkles size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-orange-light" />
+        <Sparkles size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-primary-text" />
         <Skeleton className="h-2.5 w-20" />
       </span>
     );
@@ -100,10 +100,10 @@ export function TayangCreditsCompact() {
       type="button"
       aria-label={`${t('usage.credits')}: ${line}`}
       title={t('usage.credits')}
-      onClick={() => navigate({ name: 'settings', tab: 'usage' })}
+      onClick={() => navigate({ name: 'agents', tab: 'usage' })}
       className="flex h-6 min-w-0 cursor-pointer items-center gap-1.5 rounded px-1.5 text-left hover:bg-raised/50"
     >
-      <Sparkles size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-orange-light" />
+      <Sparkles size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-primary-text" />
       <span className="min-w-0 truncate">{line}</span>
     </button>
   );

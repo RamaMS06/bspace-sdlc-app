@@ -1,10 +1,7 @@
-import { UpgradeCard } from '@/components/UpgradeCard';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Archive, Calendar, LayoutPanelLeft, Share2, MessageCircle, Palette, Plane, Plus, Smartphone, SlidersHorizontal, Sparkles } from 'lucide-react';
-import type { RecentChat } from '@tayang/shared';
-import logo from '@/assets/brand/tayang-horizontal-reversed-color.svg';
-import mark from '@/assets/brand/oyen-symbol-color.svg';
+import { AppWindow, Archive, Bot, MessageCircle, Plus, Settings, Sparkles, Workflow } from 'lucide-react';
+import type { RecentChat } from '@bspace-sdlc-app/shared';
 import { UpdateBanner } from '@/components/UpdateBanner';
 import { Button } from '@/components/Button';
 import { AllChats } from '@/components/AllChats';
@@ -15,7 +12,9 @@ import { useApp, type Route } from '@/state/app';
 import { useChat } from '@/state/chat';
 import { useJobs } from '@/state/jobs';
 import { cn } from '@/lib/utils';
-import { AUTOPILOT_ENABLED } from '@/lib/features';
+import { useDevops } from '@/state/devops';
+import { useFolders } from '@/state/folders';
+import { ChevronDown, ChevronRight, Folder } from 'lucide-react';
 
 /** Recent shows this many; See all lists every chat. */
 const RECENT = 10;
@@ -26,20 +25,16 @@ type ChatStatus = 'working' | 'needs-you' | 'idle';
 const DOT: Record<ChatStatus, string> = {
   working: 'animate-pulse bg-foreground motion-reduce:animate-none',
   'needs-you': 'bg-primary',
-  idle: 'bg-[#4A4A4A]',
+  idle: 'bg-text-3',
 };
 
-export type SidebarKey = 'chat' | 'videos' | 'social' | 'style' | 'autopilot' | 'agents' | 'skills' | 'calendar' | 'settings';
+export type SidebarKey = 'chat' | 'workflow' | 'agents' | 'skills' | 'settings';
 
-const NAV: { key: SidebarKey; icon: typeof Calendar; route: Route }[] = [
-  { key: 'chat', icon: MessageCircle, route: { name: 'chat-new' } },
-  { key: 'videos', icon: Smartphone, route: { name: 'videos' } },
-  { key: 'social', icon: Share2, route: { name: 'social' } },
-  { key: 'style', icon: Palette, route: { name: 'style' } },
-  { key: 'autopilot', icon: Plane, route: { name: 'autopilot' } },
-  { key: 'agents', icon: LayoutPanelLeft, route: { name: 'agents' } },
+const NAV: { key: SidebarKey; icon: typeof AppWindow; route: Route }[] = [
+  { key: 'chat', icon: Plus, route: { name: 'chat-new' } },
+  { key: 'workflow', icon: Workflow, route: { name: 'workflow' } },
+  { key: 'agents', icon: Bot, route: { name: 'agents' } },
   { key: 'skills', icon: Sparkles, route: { name: 'skills' } },
-  { key: 'calendar', icon: Calendar, route: { name: 'calendar' } },
 ];
 
 /** In the icon rail a control shows its name in a tooltip; in the full sidebar it shows it itself. */
@@ -66,7 +61,7 @@ function NavItem({
 }: {
   active: boolean;
   label: string;
-  icon: typeof Calendar;
+  icon: typeof AppWindow;
   onClick: () => void;
   count?: number;
   /** A word after the label (Soon); not on the rail. */
@@ -90,7 +85,7 @@ function NavItem({
           'relative flex h-8 items-center rounded-md text-[13px] font-medium no-underline transition-colors',
           rail ? 'w-9 justify-center' : 'gap-2.5 px-2.5',
           active
-            ? 'bg-raised text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
+            ? 'bg-raised text-foreground shadow-[inset_0_1px_0_var(--color-border)]'
             : 'text-text-2 hover:bg-raised/50 hover:text-foreground',
         )}
       >
@@ -158,11 +153,8 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
       .finally(() => useApp.getState().bumpProjects());
   };
 
-  // Chat goes back to the chat New chat started while it is still running; New chat always starts fresh.
-  const goChat = () => {
-    const live = useApp.getState().newChatId;
-    navigate(live && useChat.getState().streaming[live] ? { name: 'chat', chatId: live } : { name: 'chat-new' });
-  };
+  // Chats in a folder group are listed there, not in Recent.
+  const inFolder = useFolders((s) => s.byChat);
 
   const rail = collapsed;
   return (
@@ -171,35 +163,12 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
         aria-label={t('sidebar.main')}
         data-collapsed={rail || undefined}
         className={cn(
-          'flex h-full w-full flex-col overflow-hidden border-r border-border bg-sidebar pb-4 pt-4 text-foreground',
+          'flex h-full w-full flex-col overflow-hidden border-r border-border bg-sidebar pb-4 pt-3 text-foreground',
           rail ? 'items-center px-3' : 'px-3',
         )}
       >
-        {rail ? (
-          // The macOS window buttons sit over the rail's top: the logo starts below them.
-          <div className="flex justify-center pb-4 pt-11" data-tauri-drag-region>
-            <img src={mark} alt="Tayang" className="block size-7" />
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 px-2 pb-4 pt-5" data-tauri-drag-region>
-            <img src={logo} alt="Tayang" className="block h-7 w-auto" />
-            <span className="mt-1 text-[13px] text-text-3">{t('sidebar.studio')}</span>
-          </div>
-        )}
 
-        <RailTip rail={rail} label={t('sidebar.newChat')}>
-          <Button
-            variant="secondary"
-            aria-label={rail ? t('sidebar.newChat') : undefined}
-            className={cn('mb-3 h-8 text-[13px]', rail ? 'size-9 px-0' : 'w-full')}
-            onClick={() => navigate({ name: 'chat-new' })}
-          >
-            <Plus size={16} strokeWidth={1.5} aria-hidden="true" />
-            {!rail && <span className="truncate">{t('sidebar.newChat')}</span>}
-          </Button>
-        </RailTip>
-
-        <div className="flex flex-col gap-px">
+        <div className="flex flex-col gap-buma-2xs">
           {NAV.map((n) => (
             <NavItem
               key={n.key}
@@ -207,17 +176,18 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
               active={active === n.key}
               label={t(`sidebar.${n.key}` as 'sidebar.chat')}
               icon={n.icon}
-              onClick={() => (n.key === 'chat' ? goChat() : navigate(n.route))}
-              count={n.key === 'agents' && needsYou > 0 ? needsYou : undefined}
-              badge={n.key === 'autopilot' && !AUTOPILOT_ENABLED ? t('comingSoon.short') : undefined}
+              onClick={() => navigate(n.route)}
+              count={n.key === 'workflow' && needsYou > 0 ? needsYou : undefined}
             />
           ))}
         </div>
 
+        {!rail && <FolderGroups openChatId={openChatId} />}
+
         {!rail && (
-          <div data-recent className="scrollbar-on-hover mt-4 flex min-h-0 flex-col gap-px overflow-y-auto">
+          <div data-recent className="scrollbar-on-hover mt-4 flex min-h-0 flex-col gap-1 overflow-y-auto">
             <span className="px-2.5 pb-1 text-xs text-text-3">{t('sidebar.recent')}</span>
-            {recent.slice(0, RECENT).map((c) => {
+            {recent.filter((c) => !inFolder[c.id]).slice(0, RECENT).map((c) => {
               const st = status(c.id);
               const name = c.projectTitle ?? c.title;
               return (
@@ -230,7 +200,7 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
                       openChat(c);
                     }}
                     className={cn(
-                      'flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 text-[13px] text-[#D9D9D9] no-underline hover:bg-raised/50',
+                      'flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 text-[13px] text-foreground no-underline hover:bg-raised/50',
                       openChatId === c.id && 'bg-raised/50',
                       st !== 'working' && 'group-hover:pr-9 group-focus-within:pr-9',
                     )}
@@ -269,18 +239,155 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
         )}
 
         <div className={cn('mt-auto flex shrink-0 flex-col gap-2 pt-3', rail && 'items-center')}>
-          {/* i18n-ignore: an analytics id, not copy */}
-          {!rail && <UpgradeCard where="sidebar" />}
-          <NavItem
-            rail={rail}
-            active={active === 'settings'}
-            label={t('sidebar.settings')}
-            icon={SlidersHorizontal}
-            onClick={() => navigate({ name: 'settings' })}
-          />
           {!rail && <UpdateBanner />}
+          <AccountRow rail={rail} settingsActive={active === 'settings'} />
         </div>
       </nav>
     </TooltipProvider>
+  );
+}
+
+/** Two letters for an avatar: the first of the first and last name. */
+export function initialsOf(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1]![0] : '')).toUpperCase() || '?';
+}
+
+/**
+ * The sidebar footer, kept simple: who is signed in (the Azure DevOps account: initials, name and email or
+ * organization; opens Settings › Account) and, on its right, the Settings button.
+ */
+function AccountRow({ rail, settingsActive }: { rail: boolean; settingsActive: boolean }) {
+  const { t } = useTranslation();
+  const navigate = useApp((s) => s.navigate);
+  const profile = useDevops((s) => s.status?.profile ?? null);
+  useEffect(() => {
+    if (!useDevops.getState().status) void useDevops.getState().init().catch(() => {});
+  }, []);
+  const settings = (
+    <RailTip rail={rail} label={t('sidebar.settings')}>
+      <button
+        type="button"
+        data-testid="sidebar-settings"
+        aria-label={t('sidebar.settings')}
+        aria-current={settingsActive ? 'page' : undefined}
+        title={rail ? undefined : t('sidebar.settings')}
+        onClick={() => navigate({ name: 'settings' })}
+        className={cn(
+          'flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-text-2 hover:bg-raised hover:text-foreground',
+          settingsActive && 'bg-raised text-foreground',
+        )}
+      >
+        <Settings size={16} strokeWidth={1.5} aria-hidden="true" />
+      </button>
+    </RailTip>
+  );
+  if (!profile) return settings;
+  const sub = profile.email ?? `dev.azure.com/${profile.org}`;
+  const avatar = (
+    <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
+      {initialsOf(profile.displayName)}
+    </span>
+  );
+  const open = () => navigate({ name: 'settings', tab: 'account' });
+  if (rail) {
+    return (
+      <>
+        {settings}
+        <RailTip rail label={profile.displayName}>
+          <button type="button" aria-label={t('sidebar.account', { name: profile.displayName })} onClick={open} className="cursor-pointer border-0 bg-transparent p-0">
+            {avatar}
+          </button>
+        </RailTip>
+      </>
+    );
+  }
+  return (
+    <div className="flex w-full items-center gap-1 border-t border-border pt-2">
+      <button
+        type="button"
+        data-testid="sidebar-account"
+        aria-label={t('sidebar.account', { name: profile.displayName })}
+        onClick={open}
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md border-0 bg-transparent px-2 py-1.5 text-left hover:bg-raised/50"
+      >
+        {avatar}
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-[13px] font-medium text-foreground">{profile.displayName}</span>
+          <span className="truncate text-[11px] text-text-3">{sub}</span>
+        </span>
+      </button>
+      {settings}
+    </div>
+  );
+}
+
+/**
+ * Folders attached to chats, as groups: the folder's name (show or hide its chats), and + to start a chat
+ * already attached to it. Its chats are listed under it.
+ */
+function FolderGroups({ openChatId }: { openChatId: string | null }) {
+  const { t } = useTranslation();
+  const navigate = useApp((s) => s.navigate);
+  const agent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
+  const groups = useFolders((s) => s.groups);
+  if (!groups.length) return null;
+  const newChat = async (path: string) => {
+    try {
+      const id = await useFolders.getState().newChat(path, agent, t('sidebar.newChat'));
+      navigate({ name: 'chat', chatId: id });
+    } catch {
+      /* the folder may be gone; nothing to open */
+    }
+  };
+  return (
+    <div data-folders className="mt-4 flex flex-col gap-1">
+      <span className="px-2.5 pb-1 text-xs text-text-3">{t('sidebar.folders')}</span>
+      {groups.map((g) => (
+        <div key={g.path} className="flex flex-col gap-1">
+          <div className="group relative flex">
+            <button
+              type="button"
+              aria-expanded={g.open}
+              title={g.path}
+              onClick={() => useFolders.getState().toggle(g.path)}
+              className="flex h-7 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent px-2 pr-8 text-left text-[13px] font-medium text-foreground hover:bg-raised/50"
+            >
+              {g.open ? <ChevronDown size={13} aria-hidden="true" className="shrink-0 text-text-3" /> : <ChevronRight size={13} aria-hidden="true" className="shrink-0 text-text-3" />}
+              <Folder size={14} strokeWidth={1.5} aria-hidden="true" className="shrink-0 text-text-2" />
+              <span className="truncate">{g.title}</span>
+            </button>
+            <button
+              type="button"
+              aria-label={t('sidebar.newChatIn', { name: g.title })}
+              title={t('sidebar.newChatIn', { name: g.title })}
+              onClick={() => void newChat(g.path)}
+              className="absolute top-1/2 right-1 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent text-text-3 hover:bg-raised hover:text-foreground"
+            >
+              <Plus size={14} strokeWidth={1.5} aria-hidden="true" />
+            </button>
+          </div>
+          {g.open &&
+            g.chats.map((c) => (
+              <a
+                key={c.id}
+                href="#"
+                aria-current={openChatId === c.id ? 'page' : undefined}
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigate({ name: 'chat', chatId: c.id });
+                }}
+                className={cn(
+                  'flex h-7 min-w-0 items-center rounded-md pr-2.5 pl-8 text-[13px] text-foreground no-underline hover:bg-raised/50',
+                  openChatId === c.id && 'bg-raised/50',
+                )}
+              >
+                <span className="truncate">{c.title}</span>
+              </a>
+            ))}
+          {g.open && g.chats.length === 0 && <span className="pl-8 text-[12px] text-text-3">{t('sidebar.folderEmpty')}</span>}
+        </div>
+      ))}
+    </div>
   );
 }

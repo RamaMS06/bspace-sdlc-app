@@ -1,0 +1,72 @@
+@import "@buma-dev/styles/src/assets/scss/config";
+@import "@buma-dev/styles/src/assets/scss/utils";
+
+.b-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5em 1em;
+  border-radius: radius(small);
+  height: 24px;
+
+  &--icon {
+    font-size: 12px;
+    margin-right: space(xs);
+  }
+
+  &--icon-without-text {
+    font-size: 16px;
+  }
+
+  &--block {
+    width: 100%;
+    justify-content: center;
+  }
+
+  &.reverse {
+    color: color(neutral, 0);
+  }
+
+  &--success {
+    background-color: color(primary, 100);
+    color: color(primary, 500);
+    &.reverse {
+      background-color: color(primary, 500);
+    }
+  }
+  &--waiting {
+    background-color: color(secondary, 100);
+    color: color(secondary, 500);
+    &.reverse {
+      background-color: color(secondary, 500);
+    }
+  }
+  &--revise {
+    background-color: color(warning, 100);
+    color: color(warning, 600);
+    &.reverse {
+      background-color: color(warning, 600);
+      color: color(text, white);
+    }
+  }
+  &--draft {
+    background-color: color(info, 100);
+    color: color(info, 500);
+    &.reverse {
+      background-color: color(info, 500);
+    }
+  }
+  &--reject {
+    background-color: color(danger, 100);
+    color: color(danger, 500);
+    &.reverse {
+      background-color: color(danger, 500);
+    }
+  }
+  &--neutral {
+    background-color: color(neutral, 300);
+    color: color(neutral, 600);
+    &.reverse {
+      background-color: color(neutral, 500);
+    }
+  }
+}

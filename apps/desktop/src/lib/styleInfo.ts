@@ -1,4 +1,4 @@
-import type { Style } from '@tayang/shared';
+import type { Style } from '@bspace-sdlc-app/shared';
 import { i18n } from '@/i18n';
 
 /** The public thumbnail of a YouTube link (watch?v=, youtu.be/, shorts/, embed/), null for anything else. */

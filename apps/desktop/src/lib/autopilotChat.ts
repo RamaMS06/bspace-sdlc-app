@@ -1,5 +1,5 @@
-import type { AgentId, Settings } from '@tayang/shared';
-import { buildAutopilotChatPrompt } from '@tayang/skills';
+import type { AgentId, Settings } from '@bspace-sdlc-app/shared';
+import { buildAutopilotChatPrompt } from '@bspace-sdlc-app/skills';
 import { i18n } from '@/i18n';
 import { socialAccounts } from '@/lib/cloud';
 import { createChat, listNiches, listStyles, listVoices } from '@/lib/ipc';

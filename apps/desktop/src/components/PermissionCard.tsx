@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import type { AgentId, PermissionRequest } from '@tayang/shared';
+import type { AgentId, PermissionRequest } from '@bspace-sdlc-app/shared';
 import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
 import { AGENT_NAMES } from '@/lib/agents';
@@ -29,7 +29,7 @@ export function PermissionCard({
     <div className="flex flex-col gap-3 rounded-md border border-hairline bg-ink p-3">
       <div className="flex flex-col gap-1">
         <span className="text-xs text-text-3">{t('permission.askedAgent', { agent })}</span>
-        <span className="font-serif text-sm leading-normal text-[#D9D9D9]" style={{ fontFamily: 'Lora, Georgia, serif' }}>
+        <span className="text-sm leading-normal text-foreground">
           {ask ?? request.title}
         </span>
       </div>

@@ -144,7 +144,7 @@ fn dedupe(dirs: &mut Vec<PathBuf>) {
     dirs.retain(|d| !d.as_os_str().is_empty() && seen.insert(d.clone()));
 }
 
-const SHELL_MARK: &str = "__TAYANG_PATH__";
+const SHELL_MARK: &str = "__BUMA_PATH__";
 
 /// The PATH a login shell printed between two `SHELL_MARK` lines. Interactive shells may print
 /// a greeting or warnings around it, so only what sits between the marks counts.
@@ -448,7 +448,7 @@ pub fn system_info(exec: &dyn Exec) -> SystemInfo {
 
 type AgentDef = (AgentId, &'static str, &'static str, &'static [&'static str]);
 
-const AGENT_DEFS: [AgentDef; 5] = [
+const AGENT_DEFS: [AgentDef; 6] = [
     (
         AgentId::Claude,
         "Claude Code",
@@ -460,6 +460,8 @@ const AGENT_DEFS: [AgentDef; 5] = [
     (AgentId::Codex, "Codex", "codex", &["npx", "-y", "@zed-industries/codex-acp"]),
     // Antigravity CLI speaks ACP itself since 1.5.0; its installer puts `agy` in ~/.local/bin.
     (AgentId::Antigravity, "Antigravity CLI", "agy", &["agy", "acp"]),
+    // Cursor CLI speaks ACP (`cursor-agent acp`, sign-in `cursor_login`); its installer puts it in ~/.local/bin.
+    (AgentId::Cursor, "Cursor", "cursor-agent", &["cursor-agent", "acp"]),
 ];
 
 /// The command that starts this agent in ACP mode; `None` for `custom`.
@@ -534,13 +536,90 @@ pub fn agent_program(exec: &dyn Exec, id: AgentId) -> Option<PathBuf> {
     opencode_program(found, &opencode_desktop_dirs(home_dir().as_deref(), env("LOCALAPPDATA").as_deref(), env("ProgramFiles").as_deref()))
 }
 
+/// Where each agent's CLI keeps its sign-in, under the home folder: Codex's `auth.json` (ChatGPT or
+/// API key), Gemini's Google OAuth credentials, opencode's provider keys, Antigravity's Google sign-in.
+pub fn credential_files(agent: AgentId, home: &Path) -> Vec<PathBuf> {
+    match agent {
+        AgentId::Codex => vec![home.join(".codex/auth.json")],
+        AgentId::Gemini => vec![home.join(".gemini/oauth_creds.json"), home.join(".gemini/gemini-credentials.json")],
+        AgentId::Opencode => vec![home.join(".local/share/opencode/auth.json")],
+        AgentId::Antigravity => vec![home.join(".antigravity/credentials.json"), home.join(".gemini/antigravity/oauth_creds.json")],
+        AgentId::Cursor => vec![home.join(".cursor/cli-config.json")],
+        _ => Vec::new(),
+    }
+}
+
+/// The claims of a JWT (its middle part), without checking the signature: it is only read to show who
+/// signed in, from the user's own credentials file.
+fn jwt_claims(token: &str) -> Option<serde_json::Value> {
+    use base64::Engine;
+    let payload = token.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload.trim_end_matches('=')).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+fn email_of_token(token: Option<&serde_json::Value>) -> Option<String> {
+    let claims = jwt_claims(token?.as_str()?)?;
+    claims.get("email").and_then(|v| v.as_str()).map(str::to_string)
+}
+
+/// The credentials files of an extra account, inside its own folder (what `CODEX_HOME` /
+/// `XDG_DATA_HOME` point at).
+pub fn account_files_in(agent: AgentId, dir: &Path) -> Vec<PathBuf> {
+    match agent {
+        AgentId::Codex => vec![dir.join("auth.json")],
+        AgentId::Opencode => vec![dir.join("opencode/auth.json")],
+        _ => Vec::new(),
+    }
+}
+
+/// Who an extra account is signed in as, from the credentials in its own folder.
+pub fn account_in(agent: AgentId, dir: &Path) -> Option<String> {
+    let read = |p: &Path| std::fs::read_to_string(p).ok().and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok());
+    let v = read(account_files_in(agent, dir).first()?)?;
+    match agent {
+        AgentId::Codex => email_of_token(v.pointer("/tokens/id_token"))
+            .or_else(|| v.get("OPENAI_API_KEY").and_then(|k| k.as_str()).filter(|k| !k.is_empty()).map(|_| "API key".to_string())),
+        AgentId::Opencode => {
+            let names: Vec<&str> = v.as_object()?.keys().map(String::as_str).collect();
+            (!names.is_empty()).then(|| names.join(", "))
+        }
+        _ => None,
+    }
+}
+
+/// Who an agent is signed in as, read from its credentials file: Codex's ChatGPT email (or "API key"),
+/// Gemini's Google email, opencode's providers. None when nothing is saved or nothing says who.
+pub fn agent_account(agent: AgentId, home: &Path) -> Option<String> {
+    let read = |rel: &str| std::fs::read_to_string(home.join(rel)).ok().and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok());
+    match agent {
+        AgentId::Codex => {
+            let v = read(".codex/auth.json")?;
+            email_of_token(v.pointer("/tokens/id_token")).or_else(|| {
+                v.get("OPENAI_API_KEY").and_then(|k| k.as_str()).filter(|k| !k.is_empty()).map(|_| "API key".to_string())
+            })
+        }
+        AgentId::Gemini => read(".gemini/google_accounts.json")
+            .and_then(|v| v.get("active").and_then(|a| a.as_str()).map(str::to_string))
+            .or_else(|| email_of_token(read(".gemini/oauth_creds.json")?.get("id_token"))),
+        AgentId::Cursor => read(".cursor/cli-config.json")?.pointer("/authInfo/email").and_then(|e| e.as_str()).map(str::to_string),
+        AgentId::Opencode => {
+            let v = read(".local/share/opencode/auth.json")?;
+            let names: Vec<&str> = v.as_object()?.keys().map(String::as_str).collect();
+            (!names.is_empty()).then(|| names.join(", "))
+        }
+        _ => None,
+    }
+}
+
 pub fn detect_agents(exec: &dyn Exec) -> Vec<AgentInfo> {
     let defs = AGENT_DEFS;
     defs.iter()
         .map(|(id, name, bin, acp)| {
             // OpenCode Desktop counts: its bundled CLI is what runs.
             let program = if *id == AgentId::Opencode { agent_program(exec, *id) } else { exec.which(bin) };
-            let installed = program.is_some();
+            // Agents that run through `npx` (Claude, Codex) need no CLI of their own: Node is enough.
+            let installed = if acp.first() == Some(&"npx") { exec.which("npx").is_some() } else { program.is_some() };
             let version = match &program {
                 Some(p) if *id == AgentId::Opencode => exec.run(&p.to_string_lossy(), &["--version"]),
                 Some(_) => exec.run(bin, &["--version"]),
@@ -554,32 +633,62 @@ pub fn detect_agents(exec: &dyn Exec) -> Vec<AgentInfo> {
                 version,
                 acp_command: acp.iter().map(|s| s.to_string()).collect(),
                 recommended: *id == AgentId::Claude,
+                signed_in: home_dir().is_some_and(|h| credential_files(*id, &h).iter().any(|f| f.is_file())),
+                account: home_dir().and_then(|h| agent_account(*id, &h)),
             }
         })
         .collect()
 }
 
-fn chrome_found(exec: &dyn Exec, os: OsKind) -> bool {
+/// Whether an app is installed: macOS looks in /Applications, Windows under Program Files and the
+/// user's AppData. Linux has no desktop Figma or Word.
+fn app_installed(os: OsKind, mac_app: &str, windows_rel: &[&str]) -> bool {
     match os {
-        OsKind::Macos => Path::new("/Applications/Google Chrome.app").exists(),
-        OsKind::Windows => {
-            let rel = r"Google\Chrome\Application\chrome.exe";
-            ["ProgramFiles", "ProgramFiles(x86)", "LocalAppData"]
-                .iter()
-                .filter_map(std::env::var_os)
-                .any(|base| PathBuf::from(base).join(rel).exists())
+        OsKind::Macos => {
+            Path::new("/Applications").join(mac_app).exists()
+                || home_dir().is_some_and(|h| h.join("Applications").join(mac_app).exists())
         }
-        OsKind::Linux => ["google-chrome", "chromium", "chromium-browser"]
+        OsKind::Windows => ["ProgramFiles", "ProgramFiles(x86)", "LocalAppData"]
             .iter()
-            .any(|b| exec.which(b).is_some()),
+            .filter_map(std::env::var_os)
+            .any(|base| windows_rel.iter().any(|rel| PathBuf::from(&base).join(rel).exists())),
+        OsKind::Linux => false,
     }
 }
 
-pub fn check_tools(exec: &dyn Exec) -> Vec<ToolStatus> {
+/// The MCP config files an agent reads, in the order it reads them. Claude is Buma's own config folder
+/// (`CLAUDE_CONFIG_DIR`); the others use their CLI's usual files.
+pub fn mcp_config_files(agent: AgentId, claude_dir: Option<&Path>) -> Vec<PathBuf> {
+    let home = home_dir().unwrap_or_default();
+    match agent {
+        AgentId::Claude => claude_dir.map(|d| vec![d.join(".claude.json"), d.join("settings.json")]).unwrap_or_default(),
+        AgentId::Codex => vec![home.join(".codex").join("config.toml")],
+        AgentId::Gemini => vec![home.join(".gemini").join("settings.json")],
+        AgentId::Antigravity => vec![home.join(".gemini").join("antigravity").join("mcp_config.json")],
+        AgentId::Cursor => vec![home.join(".cursor").join("mcp.json")],
+        AgentId::Opencode | AgentId::Custom => vec![
+            home.join(".config").join("opencode").join("opencode.json"),
+            home.join(".config").join("opencode").join("opencode.jsonc"),
+        ],
+    }
+}
+
+/// Whether any of the agent's MCP config files names a Figma server (`mcp.figma.com`, the desktop
+/// server on 127.0.0.1:3845, or a server called figma).
+pub fn figma_mcp_configured(files: &[PathBuf]) -> bool {
+    files.iter().filter_map(|f| std::fs::read_to_string(f).ok()).any(|text| {
+        let t = text.to_lowercase();
+        t.contains("mcp.figma.com") || t.contains("127.0.0.1:3845") || t.contains("\"figma\"") || t.contains("mcp_servers.figma")
+    })
+}
+
+/// The tools the BSpace SDLC skills need. `mcp_files` are the default agent's MCP config files.
+pub fn check_tools(exec: &dyn Exec, mcp_files: &[PathBuf]) -> Vec<ToolStatus> {
     let version_of = |bin: &str, arg: &str| -> Option<String> {
         exec.which(bin)?;
         exec.run(bin, &[arg]).and_then(|s| parse_version(&s))
     };
+    let os = os_kind();
 
     let node_found = exec.which("node").is_some();
     let node_version = version_of("node", "--version");
@@ -593,44 +702,96 @@ pub fn check_tools(exec: &dyn Exec) -> Vec<ToolStatus> {
         required: true,
         found: node_found,
         version: node_version,
-        ok: node_major.is_some_and(|m| m >= 22),
-        detail: "Runs the video engine · needs 22 or newer".into(),
+        // buma-cli declares node >= 20; Claude Code and the ACP adapters need 18 or newer.
+        ok: node_major.is_some_and(|m| m >= 20),
+        detail: "Runs the agent adapters and buma-cli · needs 20 or newer".into(),
     };
 
-    let ffmpeg_found = exec.which("ffmpeg").is_some();
-    let ffmpeg = ToolStatus {
-        id: ToolId::Ffmpeg,
-        name: "FFmpeg".into(),
+    let git_version = version_of("git", "--version");
+    let git = ToolStatus {
+        id: ToolId::Git,
+        name: "Git".into(),
         required: true,
-        found: ffmpeg_found,
-        version: version_of("ffmpeg", "-version"),
-        ok: ffmpeg_found,
-        detail: "Turns frames into the final video file".into(),
+        found: exec.which("git").is_some(),
+        ok: exec.which("git").is_some(),
+        version: git_version,
+        detail: "Clones the project and the BUMA Design System packages".into(),
     };
 
-    let chrome_ok = chrome_found(exec, os_kind());
-    let chrome = ToolStatus {
-        id: ToolId::Chrome,
-        name: "Google Chrome".into(),
+    // python3 everywhere; Windows installs often only have `python` or the `py` launcher.
+    let python_bin = ["python3", "python", "py"].into_iter().find(|b| {
+        exec.which(b).is_some() && exec.run(b, &["--version"]).is_some_and(|v| v.contains("Python 3"))
+    });
+    let python = ToolStatus {
+        id: ToolId::Python,
+        name: "Python 3".into(),
         required: true,
-        found: chrome_ok,
+        found: python_bin.is_some(),
+        ok: python_bin.is_some(),
+        version: python_bin.and_then(|b| version_of(b, "--version")),
+        detail: "Runs the skills' gate checks (Blueprint, FTSD, wireframe, fidelity)".into(),
+    };
+
+    let figma_mcp_ok = figma_mcp_configured(mcp_files);
+    let figma_mcp = ToolStatus {
+        id: ToolId::FigmaMcp,
+        name: "Figma MCP".into(),
+        required: true,
+        found: figma_mcp_ok,
+        ok: figma_mcp_ok,
         version: None,
-        ok: chrome_ok,
-        detail: "Draws each frame of your video".into(),
+        detail: "Lets the agent read and draw Figma designs with the BUMA Design System".into(),
     };
 
-    let ytdlp_found = exec.which("yt-dlp").is_some();
-    let ytdlp = ToolStatus {
-        id: ToolId::Ytdlp,
-        name: "yt-dlp".into(),
+    let figma_ok = app_installed(os, "Figma.app", &[r"Figma\Figma.exe", r"Figma\app\Figma.exe"]);
+    let figma = ToolStatus {
+        id: ToolId::Figma,
+        name: "Figma".into(),
         required: false,
-        found: ytdlp_found,
-        version: version_of("yt-dlp", "--version"),
-        ok: ytdlp_found,
-        detail: "Lets you copy the style of a video from a link".into(),
+        found: figma_ok,
+        ok: figma_ok,
+        version: None,
+        detail: "Review the designs and prototypes the agent makes".into(),
     };
 
-    vec![node, ffmpeg, chrome, ytdlp]
+    let flutter_bin = ["flutter", "fvm"].into_iter().find(|b| exec.which(b).is_some());
+    let flutter = ToolStatus {
+        id: ToolId::Flutter,
+        name: "Flutter SDK".into(),
+        required: false,
+        found: flutter_bin.is_some(),
+        ok: flutter_bin.is_some(),
+        version: version_of("flutter", "--version"),
+        detail: "Slices and runs Flutter screens · BUMA pins 3.27.4 with fvm".into(),
+    };
+
+    let word_ok = app_installed(
+        os,
+        "Microsoft Word.app",
+        &[r"Microsoft Office\root\Office16\WINWORD.EXE", r"Microsoft Office\Office16\WINWORD.EXE"],
+    );
+    let word = ToolStatus {
+        id: ToolId::Word,
+        name: "Microsoft Word".into(),
+        required: false,
+        found: word_ok,
+        ok: word_ok,
+        version: None,
+        detail: "Edit and sign off the Blueprint and FTSD documents".into(),
+    };
+
+    let az_found = exec.which("az").is_some();
+    let azure_cli = ToolStatus {
+        id: ToolId::AzureCli,
+        name: "Azure CLI".into(),
+        required: false,
+        found: az_found,
+        ok: az_found,
+        version: if az_found { exec.run("az", &["version", "--query", "\"azure-cli\"", "-o", "tsv"]).and_then(|s| parse_version(&s)) } else { None },
+        detail: "Sign in to Azure DevOps with your Microsoft account".into(),
+    };
+
+    vec![node, git, python, figma_mcp, azure_cli, figma, flutter, word]
 }
 
 #[cfg(test)]
@@ -680,7 +841,7 @@ mod path_tests {
         std::fs::create_dir_all(h.join(".volta/bin")).unwrap();
         // A name no real machine has: the system folders in the list (a CI runner's /usr/local/bin has npx)
         // must not answer for it.
-        std::fs::write(h.join(".volta/bin/tayang-test-tool"), "").unwrap();
+        std::fs::write(h.join(".volta/bin/buma-test-tool"), "").unwrap();
 
         let existing = std::env::join_paths(["/usr/bin"]).unwrap();
         let dirs = search_dirs(Some(h), Some(&existing), None, &[]);
@@ -694,7 +855,7 @@ mod path_tests {
         for d in &dirs {
             assert!(path.contains(d), "{d:?} missing from PATH");
         }
-        assert_eq!(find_in(&dirs, "tayang-test-tool", &[String::new()]), Some(h.join(".volta/bin/tayang-test-tool")));
+        assert_eq!(find_in(&dirs, "buma-test-tool", &[String::new()]), Some(h.join(".volta/bin/buma-test-tool")));
     }
 
     #[test]
@@ -783,10 +944,10 @@ mod path_tests {
     #[cfg(unix)]
     #[test]
     fn parse_shell_path_reads_between_marks() {
-        let out = "Welcome to fish\n__TAYANG_PATH__\n/home/a/.local/share/nvm/v22.12.0/bin:/usr/bin:relative\n__TAYANG_PATH__\nbye";
+        let out = "Welcome to fish\n__BUMA_PATH__\n/home/a/.local/share/nvm/v22.12.0/bin:/usr/bin:relative\n__BUMA_PATH__\nbye";
         assert_eq!(parse_shell_path(out), [PathBuf::from("/home/a/.local/share/nvm/v22.12.0/bin"), PathBuf::from("/usr/bin")]);
         assert!(parse_shell_path("no marks here").is_empty());
-        assert!(parse_shell_path("__TAYANG_PATH__\n/usr/bin").is_empty());
+        assert!(parse_shell_path("__BUMA_PATH__\n/usr/bin").is_empty());
     }
 
     #[test]
@@ -842,29 +1003,57 @@ mod tests {
 
     #[test]
     fn old_node_is_not_ok() {
-        let ex = FakeExec::default().with("node", "v20.11.0");
-        let t = check_tools(&ex);
+        let ex = FakeExec::default().with("node", "v18.19.0");
+        let t = check_tools(&ex, &[]);
         let n = tool(&t, ToolId::Node);
         assert!(n.found && !n.ok && n.required);
-        assert_eq!(n.version.as_deref(), Some("20.11.0"));
-        assert_eq!(n.detail, "Runs the video engine · needs 22 or newer");
+        assert_eq!(n.version.as_deref(), Some("18.19.0"));
     }
 
     #[test]
     fn new_node_is_ok() {
-        let ex = FakeExec::default().with("node", "v22.1.0");
-        let t = check_tools(&ex);
+        let ex = FakeExec::default().with("node", "v20.20.2");
+        let t = check_tools(&ex, &[]);
         assert!(tool(&t, ToolId::Node).ok);
     }
 
     #[test]
-    fn missing_ffmpeg_is_not_found() {
+    fn sdlc_tools_required_and_recommended() {
+        let ex = FakeExec::default().with("git", "git version 2.47.1").with("python3", "Python 3.12.4");
+        let t = check_tools(&ex, &[]);
+        assert_eq!(t.len(), 8);
+        assert!(!tool(&t, ToolId::AzureCli).required);
+        let git = tool(&t, ToolId::Git);
+        assert!(git.ok && git.required);
+        assert_eq!(git.version.as_deref(), Some("2.47.1"));
+        let py = tool(&t, ToolId::Python);
+        assert!(py.ok && py.required);
+        assert_eq!(py.version.as_deref(), Some("3.12.4"));
+        let mcp = tool(&t, ToolId::FigmaMcp);
+        assert!(!mcp.ok && mcp.required);
+        assert!(!tool(&t, ToolId::Flutter).required && !tool(&t, ToolId::Flutter).found);
+        assert!(!tool(&t, ToolId::Word).required);
+    }
+
+    #[test]
+    fn python_2_does_not_count() {
+        let ex = FakeExec::default().with("python", "Python 2.7.18");
+        assert!(!tool(&check_tools(&ex, &[]), ToolId::Python).found);
+    }
+
+    #[test]
+    fn figma_mcp_is_found_in_the_agent_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        let claude = tmp.path().join(".claude.json");
+        std::fs::write(&claude, r#"{"mcpServers":{"other":{"type":"http","url":"https://example.com"}}}"#).unwrap();
+        assert!(!figma_mcp_configured(&[claude.clone()]));
+        std::fs::write(&claude, r#"{"mcpServers":{"figma":{"type":"http","url":"https://mcp.figma.com/mcp"}}}"#).unwrap();
+        assert!(figma_mcp_configured(&[claude.clone()]));
+        let codex = tmp.path().join("config.toml");
+        std::fs::write(&codex, "[mcp_servers.figma]\nurl = \"https://mcp.figma.com/mcp\"\n").unwrap();
+        assert!(figma_mcp_configured(&[tmp.path().join("missing.json"), codex]));
         let ex = FakeExec::default();
-        let t = check_tools(&ex);
-        assert_eq!(t.len(), 4);
-        let f = tool(&t, ToolId::Ffmpeg);
-        assert!(!f.found && !f.ok && f.required && f.version.is_none());
-        assert!(!tool(&t, ToolId::Ytdlp).required);
+        assert!(tool(&check_tools(&ex, &[claude]), ToolId::FigmaMcp).ok);
     }
 
     #[test]
@@ -896,15 +1085,59 @@ mod tests {
 
     #[test]
     fn detect_agents_only_claude() {
-        let ex = FakeExec::default().with("claude", "2.1.3 (Claude Code)");
+        // Node (npx) but no Claude Code CLI: Claude and Codex still run (through npx); the rest need their CLI.
+        let ex = FakeExec::default().with("npx", "10.9.0");
         let a = detect_agents(&ex);
         let ids: Vec<_> = a.iter().map(|x| x.id).collect();
-        assert_eq!(ids, [AgentId::Claude, AgentId::Opencode, AgentId::Gemini, AgentId::Codex, AgentId::Antigravity]);
-        assert!(a[0].installed && a[0].recommended);
-        assert_eq!(a[0].version.as_deref(), Some("2.1.3"));
+        assert_eq!(ids, [AgentId::Claude, AgentId::Opencode, AgentId::Gemini, AgentId::Codex, AgentId::Antigravity, AgentId::Cursor]);
+        assert!(a[0].installed && a[0].recommended && a[0].version.is_none());
         assert_eq!(a[0].acp_command, ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]);
-        assert!(a[1..].iter().all(|x| !x.installed && x.version.is_none() && !x.recommended));
+        assert!(a[3].installed, "Codex runs through npx");
+        assert!(!a[1].installed && !a[2].installed && !a[4].installed);
         assert_eq!(a[2].acp_command, ["gemini", "--experimental-acp"]);
+    }
+
+    #[test]
+    fn npx_agents_show_their_cli_version_when_it_is_there() {
+        let ex = FakeExec::default().with("npx", "10.9.0").with("claude", "2.1.3 (Claude Code)");
+        let a = detect_agents(&ex);
+        assert_eq!(a[0].version.as_deref(), Some("2.1.3"));
+        // Without Node, nothing that runs through npx can start.
+        let none = detect_agents(&FakeExec::default().with("claude", "2.1.3 (Claude Code)"));
+        assert!(!none[0].installed && !none[3].installed);
+    }
+
+    #[test]
+    fn reads_who_is_signed_in_from_credential_files() {
+        use base64::Engine;
+        let jwt = |claims: &str| format!("h.{}.s", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims));
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        std::fs::create_dir_all(h.join(".codex")).unwrap();
+        std::fs::create_dir_all(h.join(".gemini")).unwrap();
+        std::fs::create_dir_all(h.join(".local/share/opencode")).unwrap();
+        std::fs::write(h.join(".codex/auth.json"), format!(r#"{{"tokens":{{"id_token":"{}"}}}}"#, jwt(r#"{"email":"rama@buma.co.id"}"#))).unwrap();
+        assert_eq!(agent_account(AgentId::Codex, h).as_deref(), Some("rama@buma.co.id"));
+        // An API key only: it says so, never the key.
+        std::fs::write(h.join(".codex/auth.json"), r#"{"OPENAI_API_KEY":"sk-secret"}"#).unwrap();
+        assert_eq!(agent_account(AgentId::Codex, h).as_deref(), Some("API key"));
+        std::fs::write(h.join(".gemini/oauth_creds.json"), format!(r#"{{"id_token":"{}"}}"#, jwt(r#"{"email":"g@buma.co.id"}"#))).unwrap();
+        assert_eq!(agent_account(AgentId::Gemini, h).as_deref(), Some("g@buma.co.id"));
+        std::fs::write(h.join(".gemini/google_accounts.json"), r#"{"active":"active@buma.co.id","old":[]}"#).unwrap();
+        assert_eq!(agent_account(AgentId::Gemini, h).as_deref(), Some("active@buma.co.id"));
+        std::fs::write(h.join(".local/share/opencode/auth.json"), r#"{"anthropic":{"key":"k"},"openai":{"key":"k"}}"#).unwrap();
+        assert_eq!(agent_account(AgentId::Opencode, h).as_deref(), Some("anthropic, openai"));
+        assert_eq!(agent_account(AgentId::Antigravity, h), None);
+    }
+
+    #[test]
+    fn detect_cursor_cli() {
+        let ex = FakeExec::default().with("cursor-agent", "2026.01.1");
+        let a = detect_agents(&ex);
+        let c = a.iter().find(|x| x.id == AgentId::Cursor).unwrap();
+        assert!(c.installed);
+        assert_eq!(c.name, "Cursor");
+        assert_eq!(acp_command(AgentId::Cursor).unwrap(), ["cursor-agent", "acp"]);
     }
 
     #[test]

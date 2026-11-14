@@ -268,19 +268,22 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 #[derive(Debug, Clone, Default)]
 pub struct SessionOptions {
     pub meta: Option<Value>,
+    /// Sign in instead of opening a session: after `initialize`, Buma calls `authenticate` with the
+    /// agent's browser sign-in method (OAuth: ChatGPT, Google, Claude…), or the method with this id.
+    pub authenticate: Option<String>,
     pub env: Vec<(String, String)>,
     /// Start in auto mode: commands run without asking (see `AcpManager::set_auto`).
     pub auto: bool,
     /// Use the agent's own `auto` mode (`session/set_mode`) for auto mode. Only Claude's
     /// adapter has one that means "run commands without asking"; every other agent is
-    /// approved by Tayang.
+    /// approved by Buma.
     pub use_modes: bool,
-    /// How long `session/set_mode` may take before Tayang approves requests itself.
+    /// How long `session/set_mode` may take before Buma approves requests itself.
     pub mode_timeout: Option<Duration>,
     /// The model to switch to once the session is open, when the agent offers it.
     pub model: Option<String>,
     /// A log the agent writes its model errors to (opencode). Some agents log a failed model call
-    /// and then never answer the prompt; while a turn runs, Tayang reads it and ends the turn with
+    /// and then never answer the prompt; while a turn runs, Buma reads it and ends the turn with
     /// the error.
     pub error_log: Option<PathBuf>,
     /// Where each finished turn's token usage is appended, one JSON line per turn.
@@ -295,6 +298,28 @@ pub struct UsageLog {
     pub agent: String,
     /// What the chat is for: `project`, `chat`, `setup`, `study` or `autopilot`.
     pub kind: String,
+}
+
+/// The sign-in method to use from the agent's `authMethods`: the one with id `want`, else its browser
+/// sign-in (OAuth with ChatGPT, Google, Claude…) before any API key or environment method.
+pub fn pick_auth_method(methods: &[Value], want: &str) -> Option<String> {
+    let id = |m: &Value| m.get("id").and_then(Value::as_str).map(str::to_string);
+    if !want.is_empty() {
+        if let Some(m) = methods.iter().find(|m| id(m).as_deref() == Some(want)) {
+            return id(m);
+        }
+    }
+    let text = |m: &Value| format!("{} {} {}", m.get("id").and_then(Value::as_str).unwrap_or(""), m.get("name").and_then(Value::as_str).unwrap_or(""), m.get("description").and_then(Value::as_str).unwrap_or("")).to_lowercase();
+    let browser = |t: &str| ["oauth", "chatgpt", "google", "login", "sign in", "sign-in", "browser", "subscription", "account"].iter().any(|k| t.contains(k));
+    let key = |t: &str| ["api key", "api-key", "apikey", "api_key", "vertex", "env", "gateway"].iter().any(|k| t.contains(k));
+    methods
+        .iter()
+        .find(|m| {
+            let t = text(m);
+            browser(&t) && !key(&t)
+        })
+        .or_else(|| methods.iter().find(|m| !key(&text(m))))
+        .and_then(id)
 }
 
 /// One usage log line, or None when the agent reported nothing. `usage` is the prompt result's
@@ -337,7 +362,7 @@ pub fn usage_line(
 pub enum AutoMethod {
     /// The agent's own `auto` mode (`session/set_mode`).
     Mode,
-    /// Tayang answers permission requests with the allow-once option.
+    /// Buma answers permission requests with the allow-once option.
     Approve,
     /// Auto mode is off: every request is shown to the user.
     Off,
@@ -449,7 +474,7 @@ fn spawn_agent(command: &[String], cwd: &Path, env: &[(String, String)]) -> Resu
 // ---------------------------------------------------------------------------
 
 const PROTOCOL_VERSION: u64 = 1;
-/// How long `session/set_mode` may take before Tayang approves requests itself.
+/// How long `session/set_mode` may take before Buma approves requests itself.
 const SET_MODE_TIMEOUT: Duration = Duration::from_secs(10);
 const CRASH_MESSAGE: &str = "The agent stopped unexpectedly";
 /// How long a stopped agent gets to exit after SIGTERM before SIGKILL.
@@ -631,9 +656,9 @@ struct SessionCore {
     /// Answer permission requests with allow-once instead of asking the user.
     auto_approve: AtomicBool,
     /// The user wants auto mode. While the agent's own `auto` mode isn't the current mode
-    /// (it was clamped, or is still switching), Tayang approves requests itself.
+    /// (it was clamped, or is still switching), Buma approves requests itself.
     want_auto: AtomicBool,
-    /// Tayang has asked the agent for its `auto` mode (even if the answer never came, or came
+    /// Buma has asked the agent for its `auto` mode (even if the answer never came, or came
     /// late): turning auto off must then send `default`, whatever mode is tracked.
     requested_auto: AtomicBool,
     use_modes: bool,
@@ -836,7 +861,7 @@ impl SessionCore {
         }
     }
 
-    /// Whether Tayang answers permission requests itself: it is asked to, or the user wants
+    /// Whether Buma answers permission requests itself: it is asked to, or the user wants
     /// auto mode but the agent isn't in its own `auto` mode.
     fn approving(&self) -> bool {
         self.auto_approve.load(Ordering::SeqCst)
@@ -875,7 +900,7 @@ impl SessionCore {
         Ok(json!({}))
     }
 
-    async fn handshake(&self, meta: Option<Value>) -> Result<()> {
+    async fn handshake(&self, meta: Option<Value>, authenticate: Option<String>) -> Result<()> {
         let init = self
             .rpc
             .request(
@@ -886,12 +911,12 @@ impl SessionCore {
                         "fs": { "readTextFile": true, "writeTextFile": true },
                         "terminal": false,
                         // Questions with options (Claude's AskUserQuestion, opencode's question tool)
-                        // come as `elicitation/create` forms that Tayang draws.
+                        // come as `elicitation/create` forms that Buma draws.
                         "elicitation": { "form": {} },
                     },
                     "clientInfo": {
-                        "name": "tayang-studio",
-                        "title": "Tayang Studio",
+                        "name": "bspace-sdlc-app",
+                        "title": "BSpace SDLC",
                         "version": env!("CARGO_PKG_VERSION"),
                     },
                 }),
@@ -904,6 +929,18 @@ impl SessionCore {
                 "This agent speaks an unsupported protocol version ({})",
                 version.map_or_else(|| "unknown".to_string(), |v| v.to_string())
             )));
+        }
+        if let Some(want) = authenticate {
+            let methods = init.get("authMethods").and_then(Value::as_array).cloned().unwrap_or_default();
+            let Some(method) = pick_auth_method(&methods, &want) else {
+                return Err(AcpError("This agent has no sign-in to start from Buma".into()));
+            };
+            // The agent opens its sign-in page in the browser and answers once it is done.
+            self.rpc
+                .request("authenticate", json!({ "methodId": method }))
+                .await
+                .map_err(|e| AcpError(e.message))?;
+            return Ok(());
         }
         let mut new_params = json!({ "cwd": self.cwd.to_string_lossy(), "mcpServers": [] });
         if let Some(meta) = meta {
@@ -937,10 +974,9 @@ impl SessionCore {
     async fn set_model(&self, value: &str) -> Result<()> {
         let config_id = {
             let models = self.models.lock().unwrap();
-            let m = models.as_ref().ok_or_else(|| AcpError("This agent doesn't let Tayang pick its model".into()))?;
-            if !m.options.iter().any(|o| o.value == value) {
-                return Err(AcpError(format!("This agent doesn't offer the model {value}")));
-            }
+            let m = models.as_ref().ok_or_else(|| AcpError("This agent doesn't let Buma pick its model".into()))?;
+            // A model the session doesn't list (a version from the full model list, such as
+            // `claude-sonnet-5-5`) is still tried: the agent says if it refuses it.
             m.config_id.clone()
         };
         let session_id = self.session_id().to_string();
@@ -1024,17 +1060,55 @@ impl SessionCore {
                     return Ok(AutoMethod::Mode);
                 }
                 Ok(()) => eprintln!(
-                    "[agent {}] the agent did not stay in auto mode; approving requests from Tayang",
+                    "[agent {}] the agent did not stay in auto mode; approving requests from Buma",
                     self.chat_id
                 ),
                 Err(e) => eprintln!(
-                    "[agent {}] auto mode unavailable ({e}); approving requests from Tayang",
+                    "[agent {}] auto mode unavailable ({e}); approving requests from Buma",
                     self.chat_id
                 ),
             }
         }
         self.auto_approve.store(true, Ordering::SeqCst);
         Ok(AutoMethod::Approve)
+    }
+
+    /// A permission mode picked in the chat: `ask` (every request is shown), `acceptEdits`, `plan`,
+    /// `auto`, or `bypass` (nothing asks). `acceptEdits` and `plan` need the agent's own mode; `bypass`
+    /// uses the agent's `bypassPermissions` mode when it has one, and Buma approves every request too.
+    async fn set_permission_mode(&self, mode: &str) -> Result<()> {
+        match mode {
+            "auto" => self.set_auto(true).await.map(|_| ()),
+            "ask" => {
+                self.set_auto(false).await?;
+                if self.use_modes && self.has_mode("default") && self.modes.lock().unwrap().current.as_deref() != Some("default") {
+                    self.set_mode("default").await?;
+                }
+                Ok(())
+            }
+            "acceptEdits" | "plan" => {
+                if !(self.use_modes && self.has_mode(mode)) {
+                    return Err(AcpError(format!("This agent has no {mode} mode")));
+                }
+                self.set_auto(false).await?;
+                self.set_mode(mode).await
+            }
+            "bypass" => {
+                self.set_auto(false).await?;
+                if self.use_modes && self.has_mode("bypassPermissions") {
+                    self.set_mode("bypassPermissions").await?;
+                }
+                self.auto_approve.store(true, Ordering::SeqCst);
+                Ok(())
+            }
+            other => Err(AcpError(format!("Unknown mode: {other}"))),
+        }
+    }
+
+    /// The modes the agent offers (`session/new`) and the one it is in.
+    fn mode_info(&self) -> (Vec<String>, Option<String>) {
+        let m = self.modes.lock().unwrap();
+        (if self.use_modes { m.available.clone() } else { Vec::new() }, m.current.clone())
     }
 
     fn session_id(&self) -> &str {
@@ -1359,14 +1433,12 @@ impl AgentSession {
             kill_tx: Mutex::new(Some(kill_tx)),
             supervisor: Mutex::new(Some(supervisor)),
         };
-        match tokio::time::timeout(start_timeout, session.core.handshake(options.meta)).await {
+        match tokio::time::timeout(start_timeout, session.core.handshake(options.meta, options.authenticate.clone())).await {
             Ok(Ok(())) => {
                 // The model picked for this agent, when it still offers it; a failed switch keeps
                 // the agent's own default rather than failing the start.
                 if let Some(want) = options.model.as_deref() {
-                    let offered = session.core.models.lock().unwrap().as_ref().is_some_and(|m| {
-                        m.current.as_deref() != Some(want) && m.options.iter().any(|o| o.value == want)
-                    });
+                    let offered = session.core.models.lock().unwrap().as_ref().is_some_and(|m| m.current.as_deref() != Some(want));
                     if offered {
                         if let Err(e) = session.core.set_model(want).await {
                             eprintln!("[agent {}] couldn't switch to the model {want}: {e}", session.core.chat_id);
@@ -1503,7 +1575,7 @@ impl AcpManager {
     }
 
     /// Turns auto mode on or off for a running session. On: the agent's `auto`
-    /// mode when it lists one, otherwise (or when switching fails) Tayang approves
+    /// mode when it lists one, otherwise (or when switching fails) Buma approves
     /// each request with its allow-once option. Off: asking again; when the agent can't leave
     /// its auto mode that is an error and the session is stopped.
     pub async fn set_auto(&self, chat_id: &str, on: bool) -> Result<AutoMethod> {
@@ -1592,6 +1664,17 @@ impl AcpManager {
         // ACP: the client answers every open permission request with `cancelled`.
         self.permissions.cancel_session(core.uid);
         Ok(())
+    }
+
+    /// Sets the chat's permission mode (see `SessionCore::set_permission_mode`).
+    pub async fn set_permission_mode(&self, chat_id: &str, mode: &str) -> Result<()> {
+        let session = self.session(chat_id)?;
+        session.core.set_permission_mode(mode).await
+    }
+
+    /// The modes the chat's agent offers, and the current one.
+    pub fn modes(&self, chat_id: &str) -> Result<(Vec<String>, Option<String>)> {
+        Ok(self.session(chat_id)?.core.mode_info())
     }
 
     /// Kills the agent process for this chat.
@@ -1769,6 +1852,20 @@ mod tests {
         assert_eq!(raw_command(&json!({"command": ["npm", "i", "-g", "x"]})).as_deref(), Some("npm i -g x"));
         assert_eq!(raw_command(&json!({"path": "/x"})), None);
         assert_eq!(raw_command(&json!({"command": ""})), None);
+    }
+
+    #[test]
+    fn picks_the_browser_sign_in_before_an_api_key() {
+        let methods = vec![
+            json!({ "id": "gemini-api-key", "name": "Use Gemini API key" }),
+            json!({ "id": "oauth-personal", "name": "Log in with Google" }),
+            json!({ "id": "vertex-ai", "name": "Vertex AI" }),
+        ];
+        assert_eq!(pick_auth_method(&methods, "").as_deref(), Some("oauth-personal"));
+        assert_eq!(pick_auth_method(&methods, "vertex-ai").as_deref(), Some("vertex-ai"));
+        let codex = vec![json!({ "id": "apikey", "name": "Use OpenAI API key" }), json!({ "id": "chatgpt", "name": "Login with ChatGPT" })];
+        assert_eq!(pick_auth_method(&codex, "").as_deref(), Some("chatgpt"));
+        assert_eq!(pick_auth_method(&[], ""), None);
     }
 
     #[tokio::test]

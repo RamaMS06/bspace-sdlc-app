@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>blueprint-ftsd — bspace-sdlc-skills</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/doc.css">
+<script src="assets/doc.js" defer></script>
+</head>
+<body data-page="blueprint-ftsd"><div class="wrap">
+<div class="topbar"><a class="brand" href="index.html">bspace <span>sdlc</span> skills</a><span class="note">v1.0.7</span><div class="langswitch" aria-label="Language"><button type="button" data-lang="id" aria-pressed="true">ID</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div></div>
+<nav class="pages"><a href="index.html">Overview</a><span class="navgroup">Router</span><a href="using-bspace-sdlc.html">using-bspace-sdlc</a><span class="navgroup">Dokumen</span><a href="blueprint-ftsd.html" aria-current="page">blueprint-ftsd</a><span class="navgroup">Flutter</span><a href="flutter-slice-screen.html">flutter-slice-screen</a><a href="flutter-match-component.html">flutter-match-component</a><a href="flutter-resolve-assets.html">flutter-resolve-assets</a><a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a><a href="flutter-run-verify.html">flutter-run-verify</a><span class="navgroup">Vue</span><a href="vue-slice-screen.html">vue-slice-screen</a><a href="vue-resolve-assets.html">vue-resolve-assets</a><span class="navgroup">Eksekusi</span><a href="subagent-driven-development.html">subagent-driven-development</a></nav>
+  <span class="navgroup">Wireframe</span><a href="wireframe-lofi.html">wireframe-lofi</a>
+  <span class="navgroup">Design</span><a href="figma-generate-screen.html">figma-generate-screen</a>
+<h1><em>blueprint</em>-ftsd</h1>
+<p class="lede">Scaffold Blueprint (FSD) dan FTSD BUMA dari brainstorm. AI mengisi template sekali (v0.01); setelah itu docx milik analyst, designer, FE, BE dan QA di Word. AI membaca snapshot, usul lewat Comment, dan tidak pernah mengisi tanggal approval.</p>
+<div class="layer"><div class="layer-head"><span class="tag">Route contract</span><span class="note">P0 → GATE F2 · CLAUDE CODE · CLAUDE.AI · CHATGPT</span></div><div class="layer-body"><div class="tablewrap"><table class="compact"><tr><th>Bagian</th><th>Isi</th></tr><tr><td>Trigger</td><td>Analyst mulai Blueprint/FTSD, ada <code>sdlc/project.md</code>, atau revisi docx yang sudah approved.</td></tr><tr><td>Memanggil</td><td><code>using-bspace-sdlc</code> §1 Brainstorm (per fitur) dan <code>figma-generate-screen</code> (Design Figma).</td></tr><tr><td>Output</td><td><code>Blueprint.docx</code>, <code>FTSD.docx</code>, snapshot <code>.md</code> + media, <code>*.gate.json</code>, <code>openapi.yaml</code>.</td></tr><tr><td>Next</td><td>Gate F2 pass → FE slice pakai mock OpenAPI, BE implement dari Source/Logic.</td></tr></table></div></div></div>
+<h2>Alur to-be</h2>
+<pre>
+ P0 Discover ─ P1 Brainstorm ─ P2 Data ──► project.md · intent/*.md · data.md
+                    │ fill (sekali)
+                    ▼
+        Blueprint.docx v0.01 ◄── analyst edit di Word
+                    ▼ snapshot → Blueprint.md
+        Gate B: semua baris Sign Off bertanggal? ── tidak → "menunggu &lt;nama&gt;"
+                    ▼ ya → hash dicatat
+ P3 Design (Blueprint/FTSD → Figma reference → design.md)
+                    │ inspect evidence, reuse/adapt · C1 reference grep · G2
+                    │ lalu fill FTSD (sekali)
+                    ▼
+        FTSD.docx v0.01 ◄── analyst · designer · FE · BE edit
+                    ▼
+        Gate F1: Functional Approval bertanggal?
+                    ▼
+ P4b API ─ draft openapi.yaml dari field, BR, AR, action ──► BE edit
+                    ▼ contract: SCR ↔ API-xx sama
+        Gate F2: Technical Approval bertanggal?
+                    ▼
+        FE slice (mock) ║ BE implement ──► run-verify ──► close
+</pre>
+<h2>Revisi</h2>
+<pre>
+ edit docx di Word   atau   temuan Design/Dev/QA → AI tulis Comment (sebut ID)
+                    ▼
+ snapshot ─► ids old.md new.md → {"changed": [BR-01], "stale": [SCR-01, API-01]}
+                    ▼
+ gate: "changed since approval" → owner isi tanggal ulang
+ (edit hanya §Technical → F2 gugur, F1 tetap)
+</pre>
+<h2>Script</h2>
+<div class="tablewrap"><table class="compact"><tr><th>Perintah</th><th>Fungsi</th></tr>
+<tr><td><code>fill --template --md --out</code></td><td>md draft → docx dengan style, logo header, page setup BUMA. Menolak overwrite.</td></tr>
+<tr><td><code>snapshot X.docx</code></td><td>docx → <code>X.md</code> + <code>X.media/</code>. Yang dibaca AI, di-commit untuk diff PR.</td></tr>
+<tr><td><code>gate X.docx --name B|F1|F2 --table</code></td><td>Semua baris approval bertanggal dan isi tidak berubah sejak tanggal itu.</td></tr>
+<tr><td><code>ids old.md new.md</code></td><td>ID yang berubah + ID yang mengutipnya (stale).</td></tr>
+<tr><td><code>contract FTSD.md openapi.yaml</code></td><td>Setiap SCR punya operation; API-xx di FTSD = <code>x-id</code> di YAML.</td></tr>
+<tr><td><code>comment X.docx --find --text</code></td><td>Comment Word; analyst accept/reject.</td></tr></table></div>
+<h2>Host</h2>
+<div class="tablewrap"><table class="compact"><tr><th>Host</th><th>P0–P4b dokumen</th><th>Figma P3</th><th>Slice, run-verify, hook, Agent Office</th></tr>
+<tr><td>Claude Code / Codex</td><td>ya</td><td>MCP Figma</td><td>ya</td></tr>
+<tr><td>Claude.ai (upload skill zip, code execution)</td><td>ya</td><td>connector Figma</td><td>tidak</td></tr>
+<tr><td>ChatGPT (Skills, plan Business/Enterprise/Edu)</td><td>ya</td><td>connector Figma</td><td>tidak</td></tr></table></div>
+<footer>Sumber: <code>skills/blueprint-ftsd/SKILL.md</code> dan <code>docs/plan-blueprint-ftsd.md</code>.</footer>
+</div></body></html>

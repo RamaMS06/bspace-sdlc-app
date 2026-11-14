@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent Office 3D — preview</title>
+<link rel="stylesheet" href="assets/office.css">
+<style>
+#stage{position:relative;aspect-ratio:16/10;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--bg)}
+#stage canvas{border:0;border-radius:0}
+.lbl{font:9px/1.2 ui-monospace,Menlo,monospace;color:var(--neutral-300);text-shadow:0 1px 0 var(--bg);white-space:nowrap}
+.bub{font:10px/1.2 ui-monospace,Menlo,monospace;padding:1px 5px;white-space:nowrap}
+.room{font:600 11px/1.3 var(--font);text-align:center;color:var(--ink)}
+.room small{display:block;font-weight:400;font-size:9px;color:var(--muted)}
+.room.done{color:var(--ok)}.room.active{color:var(--accent)}.room.blocked{color:var(--bad)}
+#hud{position:absolute;left:8px;top:8px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:4px 10px;font-size:13px;color:var(--accent)}
+.hint{color:var(--muted);font-size:13px;margin:8px 0 0}
+#units tr{cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><h1>Agent Office 3D</h1><span class="tag">warna BUMA DS · Three.js via CDN (butuh internet) · tanpa <code>?state=</code>: skenario contoh · run dummy: <code>python3 docs/agent-office-demo.py</code></span>
+<button type="button" class="btn" id="overview">⟲ overview</button>
+<div class="seg"><button type="button" data-v="happy">Contoh alur (lancar)</button><button type="button" data-v="recover">Iterasi + error pulih</button><button type="button" data-v="blocked">Error → BLOCKED</button></div></header>
+<main>
+<div id="stage"><div id="hud" style="display:none"></div></div>
+<p class="hint">drag / panah: geser · klik kanan / ctrl+drag: putar · scroll / pinch: zoom · klik karakter atau baris Units: kamera di belakang karakter · Esc: overview</p>
+<div class="track" id="track"></div>
+<p id="needs"></p>
+</main>
+<aside>
+<div class="box"><h2>Roles</h2><div class="legend">
+<em>Manager</em><span>using-bspace-sdlc router — baca file, pilih fase</span>
+<em>Analyst</em><span>1 Brainstorm → intent.md (G1)</span>
+<em>Designer</em><span>2 Design → design.md (C1, G2)</span>
+<em>Dev</em><span>3 flutter-slice-screen, 1 worker per section</span>
+<em>Verifier</em><span>fresh context saat score gagal → verify.md</span>
+<em>Dev Vue</em><span>3 vue-slice-screen</span>
+<em>QA</em><span>4 flutter-run-verify → run:</span>
+<em>Lead</em><span>5 Close → close.md</span>
+</div><div class="iters" style="margin-top:12px">warna baju/layar: <i class="k-run">kerja</i><i class="k-info">tanya kamu</i><i class="k-bad">error</i><i class="k-ok">done</i></div></div>
+<div class="box"><h2>Units</h2><table id="units"></table></div>
+<div class="box"><h2>Iterations</h2><div class="iters" id="iters"></div></div>
+<div class="box"><h2>Log</h2><ul id="log"></ul></div>
+</aside>
+</div>
+<script src="assets/office-sim.js"></script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import {MapControls} from 'three/addons/controls/MapControls.js';
+import {CSS2DRenderer,CSS2DObject} from 'three/addons/renderers/CSS2DRenderer.js';
+
+const stage=document.getElementById('stage'),hud=document.getElementById('hud');
+// 2D world pixel (x right, y down) → 3D point, 1 px = 1 unit, h = height above the floor
+const P=(x,y,h=0)=>new THREE.Vector3(x-192,h,y-108);
+const scene=new THREE.Scene();scene.background=new THREE.Color(C.bg);
+const camera=new THREE.PerspectiveCamera(45,16/10,1,2000);
+const HOME={pos:new THREE.Vector3(0,250,260),target:new THREE.Vector3(0,0,10)};
+camera.position.copy(HOME.pos);
+const renderer=new THREE.WebGLRenderer();
+renderer.setPixelRatio(.5); // ponytail: half resolution + pixelated CSS = the retro look; raise for a crisp view
+stage.appendChild(renderer.domElement);
+const labels=new CSS2DRenderer();
+Object.assign(labels.domElement.style,{position:'absolute',top:0,left:0,pointerEvents:'none'});
+stage.appendChild(labels.domElement);
+// map-style: left drag pans across the floor, right drag rotates, arrows pan
+const controls=new MapControls(camera,renderer.domElement);controls.listenToKeyEvents(window);controls.keyPanSpeed=20;
+controls.target.copy(HOME.target);controls.enableDamping=true;
+controls.maxPolarAngle=Math.PI*.45;controls.minDistance=25;controls.maxDistance=700;
+scene.add(new THREE.HemisphereLight(C['neutral-100'],C['neutral-800'],2.2));
+const sun=new THREE.DirectionalLight(C['neutral-0'],1.6);sun.position.set(-120,260,180);scene.add(sun);
+
+function pixTex(c){const t=new THREE.CanvasTexture(c);t.magFilter=t.minFilter=THREE.NearestFilter;t.colorSpace=THREE.SRGBColorSpace;return t;}
+// floor texture = the 2D paintFloor at 1/8 scale (one texel per checker cell)
+function floorTex(w,h,st){const c=document.createElement('canvas');c.width=Math.ceil(w/8);c.height=Math.ceil(h/8);
+ const g=c.getContext('2d');g.scale(1/8,1/8);paintFloor(g,0,0,w,h,st);return pixTex(c);}
+function floor(x,y,w,h,st,lift=0){const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshLambertMaterial({map:floorTex(w,h,st)}));
+ m.rotation.x=-Math.PI/2;m.position.copy(P(x+w/2,y+h/2,lift));scene.add(m);return m;}
+// box centred on (x,y), standing on height h0; colour is a token name
+function box(x,y,h0,w,d,h,tok){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshLambertMaterial({color:C[tok]}));m.position.copy(P(x,y,h0+h/2));scene.add(m);return m;}
+function label(html,cls,pos,parent=scene){const e=document.createElement('div');e.className=cls;e.innerHTML=html;const o=new CSS2DObject(e);o.position.copy(pos);parent.add(o);return e;}
+
+// world: ROOMS from office-sim.js
+floor(0,0,384,216,'todo');
+box(192,0,0,384,2,22,'grey-850');
+const roomFloor={},stripe={},roomLbl={};
+ROOMS.forEach(r=>{roomFloor[r.k]=floor(r.x+1,1,r.w-2,109,'todo',.3);
+ box(r.x,55,0,1.5,110,10,'grey-850');stripe[r.k]=box(r.x+r.w/2,1.5,14,r.w-2,1,6,'surface');
+ roomLbl[r.k]=label(`${r.n}<small>${r.f}</small>`,'room',P(r.x+r.w/2,2,30));});
+box(384,55,0,1.5,110,10,'grey-850');
+label('Router<small>using-bspace-sdlc</small>','room',P(62,140,14));label('Pantry','room',P(336,140,14));
+box(124,177,0,1,78,6,'grey-850');box(288,177,0,1,78,6,'grey-850');
+box(373,157,0,10,6,14,'grey-700');box(298,156,0,8,8,8,'primary-600');box(335,160,0,34,8,5,'grey-800');box(335,156,0,34,2,10,'grey-700');
+// desks follow D: live mode adds a desk per unit and removes it when the unit is done
+const desks={};
+function syncDesks(){
+ for(const k in desks)if(desks[k].d!==D[k]){scene.remove(desks[k].g);delete desks[k];}
+ for(const k in D)if(!desks[k]){const [x,y]=D[k],g=new THREE.Group();
+  g.add(box(x,y-2,0,24,6,6,'secondary-600'),box(x+4,y-4,6,10,1.5,7,'grey-850'));
+  const s=new THREE.Mesh(new THREE.PlaneGeometry(8,5),new THREE.MeshBasicMaterial({color:C['neutral-600']}));
+  s.position.copy(P(x+4,y-3.2,9.5));g.add(s);scene.add(g);desks[k]={g,d:D[k],scr:s.material};}}
+
+// characters: the 2D pixel sprite as a billboard; back of the head when the camera is behind.
+// Shirt accent = status tone, so the texture key includes it.
+const texCache={};
+function tex(c,back,f){const key=(palOf(c,now).a)+back+f;if(texCache[key])return texCache[key];
+ const cv=document.createElement('canvas');cv.width=8;cv.height=12;paintSprite(cv.getContext('2d'),0,0,c,now,f,back);
+ return texCache[key]=pixTex(cv);}
+const actors={};
+function actor(c){const s=new THREE.Sprite(new THREE.SpriteMaterial({map:tex(c,0,0),alphaTest:.5}));
+ s.center.set(.5,0);s.scale.set(8,12,1);s.userData.id=c.id;const g=new THREE.Group();g.add(s);scene.add(g);
+ return actors[c.id]={g,s,data:c,name:label('','lbl',new THREE.Vector3(0,-1,3),g),bub:label('','bub',new THREE.Vector3(0,18,0),g),fx:0,fz:-1,px:c.x,py:c.y};}
+function drop(id){const a=actors[id];scene.remove(a.g);a.name.remove();a.bub.remove();delete actors[id];}
+
+let follow=null,homing=false;
+function setFollow(id){follow=id;controls.enabled=!id;homing=!id;hud.style.display=id?'':'none';}
+controls.addEventListener('start',()=>{homing=false;});
+const camTo=new THREE.Vector3(),look=new THREE.Vector3();
+
+window.draw=function(){
+ ROOMS.forEach(r=>{const st=phase[r.k],m=roomFloor[r.k].material;
+  if(m.userData.st!==st){m.userData.st=st;m.map.dispose();m.map=floorTex(r.w-2,109,st);
+   stripe[r.k].material.color.set(C[TONE[st]||'surface']);roomLbl[r.k].className='room '+st;}});
+ syncDesks();for(const k in desks)desks[k].scr.color.set(C[screenTone(k,now)||'neutral-600']);
+ for(const id in actors)if(actors[id].data!==chars[id])drop(id);
+ for(const c of Object.values(chars)){const a=actors[c.id]||actor(c),dx=c.x-a.px,dy=c.y-a.py,d=Math.hypot(dx,dy);
+  if(d>.01){a.fx=dx/d;a.fz=dy/d;}else if(c.desk){a.fx=0;a.fz=-1;}
+  a.px=c.x;a.py=c.y;const f=c.path.length?(now*8|0)%2:0;
+  a.g.position.copy(P(c.x,c.y,f));
+  const back=(camera.position.x-a.g.position.x)*a.fx+(camera.position.z-a.g.position.z)*a.fz<0;
+  a.s.material.map=tex(c,back?1:0,f);
+  a.name.textContent=c.label?c.r.n+' · '+c.label:c.r.n;
+  const b=bubbleOf(c,now);a.bub.style.display=b?'':'none';
+  if(b){a.bub.textContent=b.s;a.bub.style.background=C[BUB[b.k][0]];a.bub.style.color=C[BUB[b.k][1]];}}
+ if(follow&&!actors[follow])setFollow(null);
+ if(follow){const a=actors[follow],p=a.g.position;
+  camTo.set(p.x-a.fx*30,p.y+20,p.z-a.fz*30);look.set(p.x+a.fx*12,7,p.z+a.fz*12);
+  camera.position.lerp(camTo,.08);controls.target.lerp(look,.12);
+  hud.textContent='kamera di belakang '+a.name.textContent+' · Esc = overview';}
+ else if(homing){camera.position.lerp(HOME.pos,.08);controls.target.lerp(HOME.target,.08);if(camera.position.distanceTo(HOME.pos)<1)homing=false;}
+ controls.update();renderer.render(scene,camera);labels.render(scene,camera);};
+
+// click a character (not a drag) or a UNITS row → follow; Esc or ⟲ → overview
+const ray=new THREE.Raycaster(),ndc=new THREE.Vector2();let downAt=null;
+renderer.domElement.addEventListener('pointerdown',e=>{downAt=[e.clientX,e.clientY];});
+renderer.domElement.addEventListener('pointerup',e=>{if(!downAt||Math.hypot(e.clientX-downAt[0],e.clientY-downAt[1])>4)return;
+ const b=renderer.domElement.getBoundingClientRect();ndc.set((e.clientX-b.left)/b.width*2-1,-(e.clientY-b.top)/b.height*2+1);
+ ray.setFromCamera(ndc,camera);const hit=ray.intersectObjects(Object.values(actors).map(a=>a.s))[0];if(hit)setFollow(hit.object.userData.id);});
+document.getElementById('units').addEventListener('click',e=>{const tr=e.target.closest('tr'),id=tr&&tr.cells[0].textContent;
+ const c=Object.values(chars).find(c=>c.label===id);if(c)setFollow(c.id);});
+addEventListener('keydown',e=>{if(e.key==='Escape')setFollow(null);});
+document.getElementById('overview').onclick=()=>setFollow(null);
+
+function fit(){const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h);labels.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();}
+new ResizeObserver(fit).observe(stage);fit();
+start();
+</script>
+</body></html>

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Project } from '@tayang/shared';
+import type { Project } from '@bspace-sdlc-app/shared';
 
 const listeners: Record<string, () => void> = {};
 vi.mock('@tauri-apps/api/event', () => ({
@@ -31,7 +31,7 @@ const now = new Date('2026-11-05T10:00:10Z');
 const notified = () =>
   vi.mocked(invoke).mock.calls.map(([cmd, args]) => {
     expect(cmd).toBe('plugin:notification|notify');
-    expect((args as { options: { title: string } }).options.title).toBe('Tayang Studio');
+    expect((args as { options: { title: string } }).options.title).toBe('BSpace SDLC');
     return (args as { options: { body: string } }).options.body;
   });
 

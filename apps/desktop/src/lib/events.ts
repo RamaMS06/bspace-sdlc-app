@@ -1,5 +1,5 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { AgentQuestion, AgentUpdate, PermissionRequest } from '@tayang/shared';
+import type { AgentQuestion, AgentUpdate, PermissionRequest } from '@bspace-sdlc-app/shared';
 
 export function onAgentUpdate(
   cb: (e: { chatId: string; update: AgentUpdate }) => void,
@@ -16,10 +16,10 @@ export function onQuestion(cb: (q: AgentQuestion) => void): Promise<UnlistenFn> 
   return listen<AgentQuestion>('agent://question', (e) => cb(e.payload));
 }
 
-/** What an agent asked Tayang to do through its local endpoint: start a video, or schedule videos. */
+/** What an agent (or its plugin's hooks) sent Buma through its local endpoint, such as the Agent Office state. */
 export interface AgentAction {
   chatId: string;
-  name: 'pick_topic' | 'schedule_videos' | 'create_autopilot' | 'start_autopilot_chat';
+  name: 'pick_topic' | 'schedule_videos' | 'create_autopilot' | 'start_autopilot_chat' | 'office_state';
   context: Record<string, unknown>;
 }
 

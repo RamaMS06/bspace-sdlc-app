@@ -1,6 +1,6 @@
-//! The user's own voice for voice-overs, instead of Tayang credits: an ElevenLabs or Fish Audio
-//! API key, or VoiceStudio running on this computer (free, local). The agents still call Tayang's `/voice`
-//! (see `ai_proxy`); Tayang sends the text to the source picked in Settings › Video, so every
+//! The user's own voice for voice-overs, instead of Buma credits: an ElevenLabs or Fish Audio
+//! API key, or VoiceStudio running on this computer (free, local). The agents still call Buma's `/voice`
+//! (see `ai_proxy`); Buma sends the text to the source picked in Settings › Video, so every
 //! agent works the same way and the key never reaches an agent.
 
 use std::path::Path;
@@ -23,7 +23,7 @@ impl VoiceSource {
     /// The name agents and messages use.
     pub fn name(self) -> &'static str {
         match self {
-            Self::Tayang => "Tayang",
+            Self::Buma => "Buma",
             Self::Elevenlabs => "ElevenLabs",
             Self::Fishaudio => "Fish Audio",
             Self::Voicestudio => "VoiceStudio",
@@ -35,7 +35,7 @@ impl VoiceSource {
         match self {
             Self::Elevenlabs => Some("elevenlabs-api-key"),
             Self::Fishaudio => Some("fish-audio-api-key"),
-            Self::Tayang | Self::Voicestudio => None,
+            Self::Buma | Self::Voicestudio => None,
         }
     }
 
@@ -45,7 +45,7 @@ impl VoiceSource {
             Self::Elevenlabs => ELEVEN_BASE,
             Self::Fishaudio => FISH_BASE,
             Self::Voicestudio => VOICESTUDIO_BASE,
-            Self::Tayang => "",
+            Self::Buma => "",
         }
     }
 }
@@ -225,7 +225,7 @@ pub struct VoiceSetup {
 }
 
 /// Runs a `/voice` job with the user's own voice and saves it at `out` inside `folder`. Answers
-/// like Tayang's own voice does, with no credits charged.
+/// like Buma's own voice does, with no credits charged.
 pub async fn speak(client: &reqwest::Client, setup: &VoiceSetup, text: &str, language: Option<&str>, out: &Path, folder: &Path) -> Result<Value, (u16, Value)> {
     let key = setup.key.as_deref().unwrap_or("");
     let name = setup.source.name();
@@ -233,7 +233,7 @@ pub async fn speak(client: &reqwest::Client, setup: &VoiceSetup, text: &str, lan
         VoiceSource::Elevenlabs => eleven_speak(client, &setup.base, key, text).await,
         VoiceSource::Fishaudio => fish_speak(client, &setup.base, key, text, language).await,
         VoiceSource::Voicestudio => voicestudio_speak(client, &setup.base, text, language).await,
-        VoiceSource::Tayang => Err(VoiceError::Failed),
+        VoiceSource::Buma => Err(VoiceError::Failed),
     }
     .map_err(|e| e.refusal(name))?;
     let rel = if is_wav(&bytes) { out.with_extension("wav") } else { out.to_path_buf() };
@@ -262,12 +262,12 @@ pub fn usage_with_own_voice(usage: Option<Value>, source: VoiceSource) -> Value 
         other => format!("their {} account", other.name()),
     };
     let images = if u.get("credits").and_then(Value::as_i64).unwrap_or(0) > 0 {
-        "Tayang's /image for AI pictures"
+        "Buma's /image for AI pictures"
     } else {
         "no AI credits for pictures, so build them in code"
     };
     u["ownVoice"] = json!(true);
-    u["message"] = json!(format!("The user's own voice is on ({name}): use Tayang's /voice for every voice-over, it costs no credits; {images}"));
+    u["message"] = json!(format!("The user's own voice is on ({name}): use Buma's /voice for every voice-over, it costs no credits; {images}"));
     u
 }
 
@@ -346,7 +346,7 @@ pub async fn key_check(client: &reqwest::Client, source: VoiceSource, base: &str
     match source {
         VoiceSource::Elevenlabs => eleven_check(client, base, key).await,
         VoiceSource::Fishaudio => fish_check(client, base, key).await,
-        VoiceSource::Tayang | VoiceSource::Voicestudio => VoiceCheck::failed(VoiceError::Failed),
+        VoiceSource::Buma | VoiceSource::Voicestudio => VoiceCheck::failed(VoiceError::Failed),
     }
 }
 
@@ -513,7 +513,7 @@ mod tests {
         assert_eq!(u["ownVoice"], json!(true));
         let m = u["message"].as_str().unwrap();
         assert!(m.contains("VoiceStudio") && m.contains("costs no credits") && m.contains("build them in code"), "{m}");
-        // Signed out, or Tayang unreachable: the voice still works.
+        // Signed out, or Buma unreachable: the voice still works.
         let u = usage_with_own_voice(None, VoiceSource::Fishaudio);
         assert_eq!((u["signedIn"].clone(), u["ownVoice"].clone()), (json!(false), json!(true)));
         assert!(u["message"].as_str().unwrap().contains("their Fish Audio account"));

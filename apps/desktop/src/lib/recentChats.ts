@@ -1,4 +1,4 @@
-import type { RecentChat } from '@tayang/shared';
+import type { RecentChat } from '@bspace-sdlc-app/shared';
 import { isScratchChat } from '@/state/chat';
 
 /** The chats a person opens: no internal ones, and a project once (its most recently active chat). */

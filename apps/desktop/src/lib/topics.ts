@@ -1,5 +1,5 @@
-import type { Chat, MessagePart, NewProject, Project, Settings, Style, VideoKind } from '@tayang/shared';
-import { buildProjectBrief, SKIP_FRAME_CHECK, splitTopicJson, topicIdeaFromAction } from '@tayang/skills';
+import type { Chat, MessagePart, NewProject, Project, Settings, Style, VideoKind } from '@bspace-sdlc-app/shared';
+import { buildProjectBrief, SKIP_FRAME_CHECK, splitTopicJson, topicIdeaFromAction } from '@bspace-sdlc-app/skills';
 import { extractA2ui } from '@/a2ui/parse';
 import { copyStyleRefs, createChat, createProject, installStyleTemplate, listStyles, syncStyles, writeBrief } from '@/lib/ipc';
 import { advanceProject } from '@/lib/projectStatus';

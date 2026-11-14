@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link2, Lightbulb, Disc3 } from 'lucide-react';
-import type { AgentId, MessagePart, Project, Style, VideoKind } from '@tayang/shared';
-import { buildTopicIdeasPrompt } from '@tayang/skills';
-import oyen from '@/assets/brand/oyen-expr-default.svg';
+import { AppWindow, FolderOpen, Lightbulb } from 'lucide-react';
+import type { MessagePart, Project } from '@bspace-sdlc-app/shared';
+import { routeStart } from '@/lib/route';
+import { useFailover } from '@/state/failover';
 import { Composer, type MentionRef } from '@/components/Composer';
 import { stylesFor, TemplateChip, templateOf, useChipTemplate, useStyles } from '@/components/TemplateChip';
-import { createChat, listProjects, listStyles } from '@/lib/ipc';
+import { createChat, listProjects } from '@/lib/ipc';
 import { mentionContext, styleContext } from '@/lib/mentions';
 import { useApp } from '@/state/app';
 import { EMPTY_DRAFT, NEW_CHAT_DRAFT, useChat, type Draft } from '@/state/chat';
+import { createFeature, sdlcStart } from '@/lib/featureFlow';
+import { NewFeatureDialog } from '@/components/NewFeatureDialog';
 import { useUsage } from '@/state/usage';
 
-const KINDS: VideoKind[] = ['explainer', 'promo', 'quote', 'news', 'tutorial', 'data', 'event'];
 
 /**
  * New chat: the start screen until the first send, topic ask or attachment makes the chat. Then the
@@ -28,14 +29,17 @@ export function ChatNew() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [mention, setMention] = useState<MentionRef | null>(null);
   const [signal, setSignal] = useState(0);
+  const [newFeature, setNewFeature] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const creating = useRef<Promise<string> | null>(null);
   /** A send or topic ask is starting the chat: a second click waits for it instead of asking again. */
   const starting = useRef(false);
   /** Still on screen: a chat made after the user left must not pull them back (Recent has it). */
   const here = useRef(true);
-  const [picked, setPicked] = useState<AgentId | null>(null);
-  const agent = picked ?? settings?.defaultAgent ?? 'claude';
+  // A new chat starts on the agent route's first step that is not resting (Agents › Provider).
+  const pick = useFailover((s) => s.pickOf(null));
+  useFailover((s) => s.combos);
+  const agent = routeStart(pick)?.agent ?? settings?.defaultAgent ?? 'claude';
   const styles = useStyles();
   // A mentioned style with a starter template is the chat's template: it wins over the Style screen's.
   const chipTemplate = useChipTemplate(NEW_CHAT_DRAFT, styles);
@@ -69,10 +73,12 @@ export function ChatNew() {
   }, []);
 
   /** The chat is made on the first send (or topic ask, or attachment); once, however many ask at the same time. */
-  const ensureChat = (title: string) => {
-    creating.current ??= createChat(null, agent, title).then(
+  const ensureChat = (title: string, projectId: string | null = null) => {
+    creating.current ??= createChat(projectId, agent, title).then(
       (c) => {
         useChat.getState().adoptPendingAuto(c.id);
+        // The chat keeps the combo (or model) picked on the New chat screen.
+        useFailover.getState().adoptPick(c.id);
         useChat.getState().rememberChat(c);
         useApp.setState({ newChatId: c.id });
         return c.id;
@@ -102,38 +108,28 @@ export function ChatNew() {
     setError(null);
     try {
       const text = parts.find((p) => p.type === 'text');
-      const id = await ensureChat(text?.type === 'text' ? text.text.slice(0, 48) : t('chat.newChat'));
+      const typed = text?.type === 'text' ? text.text : '';
+      // Starting with an SDLC skill starts a feature: it gets its folder and shows on Workflow.
+      let feature: Project | null = null;
+      const name = sdlcStart(typed);
+      if (settings && name !== null && !creating.current) feature = await createFeature(name || t('chat.newFeature'), settings);
+      const id = await ensureChat(feature ? feature.title : typed.slice(0, 48) || t('chat.newChat'), feature?.id ?? null);
       const known = await stylesFor(parts, styles);
       const ctx = [...(await mentionContext(parts, [], projects, settings)), ...styleContext(parts, known)];
       // The message is in the chat as soon as send starts; the chat screen shows the rest of the turn.
       void useChat
         .getState()
-        .send(id, parts, { agentId: agent, ...(ctx.length ? { promptParts: [...ctx, ...parts] } : {}) });
+        .send(id, parts, {
+          agentId: agent,
+          ...(feature ? { job: { projectId: feature.id, title: feature.title } } : {}),
+          ...(ctx.length ? { promptParts: [...ctx, ...parts] } : {}),
+        });
       const sentStyle = parts.find((p) => p.type === 'style-mention');
       openChat(id, templateFor(sentStyle?.type === 'style-mention' ? sentStyle : null, known));
       return true;
     } catch (e) {
       setError(t('chat.couldntStartChat', { message: e instanceof Error ? e.message : String(e) }));
       return false;
-    } finally {
-      starting.current = false;
-    }
-  };
-
-  const askTopics = async () => {
-    if (!settings || starting.current) return;
-    starting.current = true;
-    setError(null);
-    try {
-      const id = await ensureChat(t('chat.topicIdeas'));
-      const synced = await listStyles().catch(() => [] as Style[]);
-      void useChat.getState().send(id, [{ type: 'text', text: t('chat.suggestTopics') }], {
-        agentId: agent,
-        promptParts: [{ type: 'text', text: buildTopicIdeasPrompt(KINDS, settings.language, synced.map((s) => ({ id: s.id, name: s.name }))) }],
-      });
-      openChat(id, templateFor());
-    } catch (e) {
-      setError(t('chat.couldntStartChat', { message: e instanceof Error ? e.message : String(e) }));
     } finally {
       starting.current = false;
     }
@@ -158,17 +154,16 @@ export function ChatNew() {
 
       <div className="flex min-h-0 flex-1 flex-col items-center px-6">
         <div className="relative flex min-h-0 w-full flex-1 justify-center">
-          <div className="no-scrollbar flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-6 overflow-y-auto py-6">
+          <div className="no-scrollbar flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden py-6">
             <div className="my-auto flex flex-col gap-6">
               <div className="flex flex-col items-start gap-3">
-                <img src={oyen} alt="Oyen" className="size-14" />
                 <h1 className="m-0 text-[28px] font-semibold tracking-[-0.01em]">{t('chat.whatMaking')}</h1>
                 <p className="m-0 text-[15px] leading-[1.6] text-text-2">{t('chat.intro')}</p>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <OptionCard icon={Lightbulb} title={t('chat.fromTopic')} body={t('chat.fromTopicBody')} onClick={() => void askTopics()} />
-                <OptionCard icon={Disc3} title={t('chat.remix')} body={t('chat.remixBody')} onClick={() => setSignal((n) => n + 1)} />
-                <OptionCard icon={Link2} title={t('chat.copyStyle')} body={t('chat.copyStyleBody')} onClick={() => navigate({ name: 'style' })} />
+                <OptionCard icon={Lightbulb} title={t('chat.fromTopic')} body={t('chat.fromTopicBody')} onClick={() => setNewFeature(true)} />
+                <OptionCard icon={FolderOpen} title={t('chat.remix')} body={t('chat.remixBody')} onClick={() => setSignal((n) => n + 1)} />
+                <OptionCard icon={AppWindow} title={t('chat.copyStyle')} body={t('chat.copyStyleBody')} onClick={() => navigate({ name: 'workflow' })} />
               </div>
             </div>
           </div>
@@ -186,12 +181,11 @@ export function ChatNew() {
             mention={mention}
             onMention={setMention}
             agentId={agent}
-            onAgentChange={setPicked}
             mentionSignal={signal}
             placeholder={t('chat.placeholderNew')}
           />
           {error && (
-            <p role="alert" className="m-0 mt-2 text-xs text-orange-light">
+            <p role="alert" className="m-0 mt-2 text-xs text-error">
               {error}
             </p>
           )}
@@ -200,6 +194,7 @@ export function ChatNew() {
           </p>
         </div>
       </div>
+      <NewFeatureDialog open={newFeature} onOpenChange={setNewFeature} />
     </div>
   );
 }

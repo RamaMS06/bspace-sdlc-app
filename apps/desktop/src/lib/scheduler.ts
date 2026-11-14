@@ -33,7 +33,7 @@ export async function canNotify(): Promise<boolean> {
 /**
  * Shows a system notification. Called through the plugin's command (not `sendNotification`, which fires
  * and forgets) so a failure can be caught. Note: on desktop the plugin always reports permission as
- * granted, so a user who turned Tayang's notifications off in the OS is not detected; the banner only
+ * granted, so a user who turned Buma's notifications off in the OS is not detected; the banner only
  * appears where the plugin does report a denial, and Settings has a test button for the rest.
  */
 export async function show(body: string): Promise<void> {
@@ -82,7 +82,7 @@ export async function runReminders(now: Date): Promise<void> {
     try {
       await show(i18n.t(`reminders.${key}`, { title: project.title }));
     } catch (e) {
-      console.error('Tayang: reminder notification failed', e);
+      console.error('Buma: reminder notification failed', e);
     }
   }
 }
@@ -96,7 +96,7 @@ export async function tick(now: Date = new Date()): Promise<void> {
     inFlight.add(h);
     void Promise.resolve()
       .then(() => h(now))
-      .catch((e) => console.error('Tayang: tick handler failed', e))
+      .catch((e) => console.error('Buma: tick handler failed', e))
       .finally(() => inFlight.delete(h));
   }
   if (remindersRunning) return;
@@ -104,7 +104,7 @@ export async function tick(now: Date = new Date()): Promise<void> {
   try {
     await runReminders(now);
   } catch (e) {
-    console.error('Tayang: reminders failed', e);
+    console.error('Buma: reminders failed', e);
   } finally {
     remindersRunning = false;
   }

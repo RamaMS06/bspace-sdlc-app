@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, ChevronsUpDown } from 'lucide-react';
-import type { VideoLanguage } from '@tayang/shared';
+import type { VideoLanguage } from '@bspace-sdlc-app/shared';
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';

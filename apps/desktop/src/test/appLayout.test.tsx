@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import type { Settings } from '@tayang/shared';
+import type { Settings } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   getSettings: vi.fn(),
@@ -32,14 +32,14 @@ import { SIDEBAR, layoutKey, useLayout } from '@/state/layout';
 import { useUsage } from '@/state/usage';
 
 const settings: Settings = {
-  workingFolder: '/tmp/Tayang',
+  workingFolder: '/tmp/Buma',
   defaultAgent: 'claude',
   frameCheck: true,
   language: 'id',
   format: '9:16',
   fps: 30,
   onboarded: true,
-  apiUrl: 'https://studio.tayang.app/api',
+  apiUrl: 'https://bspace.buma.internal/api',
   installId: '',
   shareInstallStats: true,
   autoMode: false,
@@ -100,8 +100,8 @@ describe('App sidebar resizing', () => {
     const nav = screen.getByRole('navigation', { name: 'Main' });
     expect(nav).toHaveAttribute('data-collapsed', 'true');
     // the rail: icons with names, no recent list, no wordmark
-    expect(within(nav).getByRole('link', { name: 'Videos' })).toBeInTheDocument();
-    expect(within(nav).getByRole('button', { name: 'New chat' })).toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: 'Workflow' })).toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: 'New' })).toBeInTheDocument();
     expect(within(nav).queryByText('Recent')).toBeNull();
     // usage lives in the status bar, not the rail
     expect(within(nav).queryByRole('button', { name: 'Claude Code usage' })).toBeNull();
@@ -117,7 +117,7 @@ describe('App sidebar resizing', () => {
     const { panel } = await renderApp();
     act(() => useLayout.getState().setCollapsed(true));
     expect(panel.style.width).toBe(`${SIDEBAR.rail}px`);
-    expect(screen.getByRole('link', { name: 'Agents (2)' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Workflow (2)' })).toBeInTheDocument();
     useApp.setState({ needsYouCount: 0 });
   });
 
@@ -200,12 +200,29 @@ describe('App sidebar resizing', () => {
     expect(handle).toHaveAttribute('aria-valuemax', '360');
   });
 
-  it('keeps the chat 420 px wide in a narrow window', async () => {
-    window.innerWidth = 700;
+  it('keeps the chat 420 px wide when the window is just wide enough for the sidebar', async () => {
+    window.innerWidth = 770;
     useLayout.getState().hydrate();
     const { handle, panel } = await renderApp();
     drag(handle, 232, 600);
-    expect(panel.style.width).toBe(`${700 - 420}px`);
-    expect(handle).toHaveAttribute('aria-valuemax', String(700 - 420));
+    expect(panel.style.width).toBe(`${770 - 420}px`);
+    expect(handle).toHaveAttribute('aria-valuemax', String(770 - 420));
+  });
+
+  it('opens the sidebar as a drawer over the screen in a narrow window, like Claude Desktop', async () => {
+    window.innerWidth = 500;
+    useLayout.getState().hydrate();
+    vi.mocked(getSettings).mockResolvedValue(settings);
+    render(<App />);
+    const toggle = await screen.findByRole('button', { name: 'Show sidebar' });
+    expect(screen.queryByTestId('sidebar-drawer')).toBeNull();
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    expect(screen.getByTestId('sidebar-drawer')).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Hide sidebar' }).at(-1)!);
+    });
+    expect(screen.queryByTestId('sidebar-drawer')).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { AgentId, AgentUpdate, PermissionRequest, SystemInfo, ToolId, ToolStatus } from '@tayang/shared';
-import { buildInstallPrompt, languageHint } from '@tayang/skills';
+import type { AgentId, AgentUpdate, PermissionRequest, SystemInfo, ToolId, ToolStatus } from '@bspace-sdlc-app/shared';
+import { buildInstallPrompt, languageHint } from '@bspace-sdlc-app/skills';
 import { uiLanguage } from '@/i18n';
 import { agentCancel, agentPrompt, agentRespondPermission, agentStart, checkTools } from '@/lib/ipc';
 import { i18n } from '@/i18n';
@@ -136,7 +136,7 @@ export const useInstall = create<InstallState>((set, get) => {
     agent: null,
 
     async refresh(agent) {
-      const statuses = await checkTools();
+      const statuses = await checkTools(agent);
       set({ statuses, agent });
       return statuses;
     },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Project, Settings, Style, SystemInfo } from '@tayang/shared';
+import type { Project, Settings, Style, SystemInfo } from '@bspace-sdlc-app/shared';
 import {
   FRAME_CHECK_PROMPT,
   BUILTIN_SKILLS,
@@ -13,7 +13,10 @@ import {
   buildTopicIdeasPrompt,
   installCommands,
   NODE_DOWNLOAD_URL,
-  CHROME_DOWNLOAD_URL,
+  WORD_DOWNLOAD_URL,
+  FIGMA_DOWNLOAD_URL,
+  FLUTTER_INSTALL_URL,
+  FIGMA_MCP_URL,
   manualInstallUrl,
   needsSudo,
   parseStyleResult,
@@ -27,59 +30,45 @@ const win: SystemInfo = { os: 'windows', osVersion: '11', packageManager: 'winge
 const apt: SystemInfo = { os: 'linux', osVersion: '24.04', packageManager: 'apt' };
 
 describe('install', () => {
-  it('ffmpeg on mac', () => {
-    const p = buildInstallPrompt('ffmpeg', mac, 'claude');
-    expect(p).toContain('brew install ffmpeg');
-    expect(p).toContain('ffmpeg -version');
-    expect(p).toContain('reply with only the version you see');
+  it('adds the Figma MCP server through the agent\'s own CLI', () => {
+    expect(installCommands('figma-mcp', mac, 'claude')).toEqual([`claude mcp add --transport http --scope user figma ${FIGMA_MCP_URL}`]);
+    expect(installCommands('figma-mcp', mac, 'codex')).toEqual([`codex mcp add figma --url ${FIGMA_MCP_URL}`]);
+    expect(installCommands('figma-mcp', mac, 'opencode')).toEqual([]);
+    const p = buildInstallPrompt('figma-mcp', mac, 'claude');
+    expect(p).toContain('claude mcp add');
+    expect(p).toContain('claude mcp list');
+    expect(buildInstallPrompt('figma-mcp', mac, 'opencode')).toContain(FIGMA_MCP_URL);
   });
-  it('ffmpeg on windows and linux', () => {
-    expect(buildInstallPrompt('ffmpeg', win, 'claude')).toContain('winget install --id Gyan.FFmpeg -e');
-    // Linux: a static build in ~/.local/bin, no sudo.
-    const cmds = installCommands('ffmpeg', apt, 'claude');
-    expect(cmds.join('\n')).toContain('~/.local/bin');
-    expect(cmds.some((c) => c.includes('sudo'))).toBe(false);
-    const p = buildInstallPrompt('ffmpeg', apt, 'claude');
-    expect(p).toContain('without sudo');
-    expect(p).toContain('ffprobe');
-  });
-  it('a Mac without Homebrew installs standalone binaries into ~/.local/bin', () => {
+
+  it('git and python per system', () => {
+    expect(installCommands('git', mac, 'claude')).toEqual(['brew install git']);
+    expect(installCommands('git', win, 'claude')).toEqual(['winget install --id Git.Git -e']);
+    expect(installCommands('python', apt, 'claude')).toEqual(['sudo apt install -y python3']);
     const bare: SystemInfo = { os: 'macos', osVersion: '15', packageManager: null };
-    for (const tool of ['ffmpeg', 'ytdlp'] as const) {
-      const cmds = installCommands(tool, bare, 'claude');
-      expect(cmds.join('\n')).toContain('~/.local/bin');
-      expect(cmds.some((c) => c.includes('brew') || c.includes('sudo'))).toBe(false);
-      expect(buildInstallPrompt(tool, bare, 'claude')).toContain('This Mac has no Homebrew');
-    }
-    expect(installCommands('ytdlp', bare, 'claude')).toContain(
-      'curl -L -o ~/.local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos',
-    );
+    expect(installCommands('python', bare, 'claude')).toEqual(['xcode-select --install']);
+    expect(buildInstallPrompt('git', mac, 'claude')).toContain('git --version');
   });
+
   it('linux sudo installs are handed to the user', () => {
-    expect(needsSudo('chrome', apt)).toBe(true);
-    expect(needsSudo('ffmpeg', apt)).toBe(false);
-    expect(installCommands('ytdlp', apt, 'claude')).toEqual(['pipx install yt-dlp']);
-    const p = buildInstallPrompt('chrome', apt, 'claude');
+    expect(needsSudo('git', apt)).toBe(true);
+    expect(needsSudo('git', mac)).toBe(false);
+    const p = buildInstallPrompt('python', apt, 'claude');
     expect(p).toContain('Do not run sudo yourself');
-    expect(p).toContain('Ask the user to run this command in their own terminal');
-    expect(p).toContain('sudo apt install -y chromium');
   });
-  it('other tools', () => {
-    expect(installCommands('ytdlp', mac, 'claude')).toEqual(['brew install yt-dlp']);
-    expect(installCommands('node', mac, 'claude')).toEqual(['brew install node@22']);
-    expect(installCommands('chrome', win, 'claude')).toEqual(['winget install --id Google.Chrome -e']);
-    expect(installCommands('chrome', apt, 'claude')).toEqual(['sudo apt install -y chromium']);
-    expect(NODE_DOWNLOAD_URL).toBe('https://nodejs.org/en/download');
+
+  it('flutter mentions the BUMA pinned version', () => {
+    expect(installCommands('flutter', mac, 'claude')).toEqual(['brew install --cask flutter']);
+    expect(buildInstallPrompt('flutter', mac, 'claude')).toContain('3.27.4');
   });
-  it('the user installs Node, and Chrome on a Mac without Homebrew, from the download page', () => {
+
+  it('the user installs Node, Word, and Figma or Flutter without a package manager, from a page', () => {
     const bare: SystemInfo = { os: 'macos', osVersion: '15', packageManager: null };
     expect(manualInstallUrl('node', mac)).toBe(NODE_DOWNLOAD_URL);
-    expect(manualInstallUrl('chrome', bare)).toBe(CHROME_DOWNLOAD_URL);
-    expect(CHROME_DOWNLOAD_URL).toBe('https://www.google.com/chrome/');
-    expect(installCommands('chrome', bare, 'claude')).toEqual([]);
-    expect(manualInstallUrl('chrome', mac)).toBeNull();
-    expect(manualInstallUrl('chrome', apt)).toBeNull();
-    expect(manualInstallUrl('ffmpeg', bare)).toBeNull();
+    expect(manualInstallUrl('word', win)).toBe(WORD_DOWNLOAD_URL);
+    expect(manualInstallUrl('figma', apt)).toBe(FIGMA_DOWNLOAD_URL);
+    expect(manualInstallUrl('figma', mac)).toBeNull();
+    expect(manualInstallUrl('flutter', bare)).toBe(FLUTTER_INSTALL_URL);
+    expect(manualInstallUrl('git', bare)).toBeNull();
   });
 });
 
@@ -94,7 +83,7 @@ describe('topics', () => {
     const p = buildTopicIdeasPrompt(['promo'], 'id');
     expect(p).toContain('exactly 3');
     expect(p).toContain('AskUserQuestion');
-    expect(p).toContain('$TAYANG_AI_URL/video');
+    expect(p).toContain('$BUMA_AI_URL/video');
     expect(p).toContain('lengthSec');
     expect(p).toContain('styleId');
     expect(p).toMatch(/one short, friendly sentence in Indonesian/);
@@ -149,19 +138,19 @@ describe('style', () => {
     expect(p).toContain('yt-dlp');
     expect(p).toContain('`"/out/style.json"`');
   });
-  it('study prompt downloads to a source.* file and leaves it for Tayang', () => {
+  it('study prompt downloads to a source.* file and leaves it for Buma', () => {
     const p = buildStudyStylePrompt('https://v', '/Users/a b/x');
     expect(p).toContain('-o "/Users/a b/x/source.%(ext)s"');
     expect(p).toContain('-f "bv*[height<=1080]+ba/b[height<=1080]/b"');
-    expect(p).toContain('Leave source.* in place; Tayang makes its own contact sheets and a short preview from it, then deletes it.');
+    expect(p).toContain('Leave source.* in place; Buma makes its own contact sheets and a short preview from it, then deletes it.');
     expect(p).not.toContain('Delete the downloaded video');
     expect(p).toContain('Copy the look, never the footage');
     expect(buildStudyStylePrompt('https://v', 'C:\\Users\\a b\\x')).toContain('-o "C:\\Users\\a b\\x\\source.%(ext)s"');
   });
   it('study prompt quotes folders with spaces', () => {
-    const p = buildStudyStylePrompt('https://v', '/Users/a b/Tayang/.tayang/style-study/x');
-    expect(p).toContain('into the folder `"/Users/a b/Tayang/.tayang/style-study/x"`');
-    expect(p).toContain('Write `"/Users/a b/Tayang/.tayang/style-study/x/style.json"`');
+    const p = buildStudyStylePrompt('https://v', '/Users/a b/Buma/.buma/style-study/x');
+    expect(p).toContain('into the folder `"/Users/a b/Buma/.buma/style-study/x"`');
+    expect(p).toContain('Write `"/Users/a b/Buma/.buma/style-study/x/style.json"`');
     const w = buildStudyStylePrompt('https://v', 'C:\\Users\\a b\\x');
     expect(w).toContain('`"C:\\Users\\a b\\x\\style.json"`');
   });
@@ -178,82 +167,44 @@ const STYLE: Style = {
 };
 
 describe('brief', () => {
-  it('adds the template paragraph for template styles', () => {
-    const project = { title: 'Promo', kind: 'promo', format: '9:16', language: 'id' } as Project;
-    const t: Style = {
-      ...STYLE,
-      name: 'Atlas journey',
-      source: 'builtin',
-      engine: 'remotion',
-      template: { sha256: 'a', size: 1, version: 1 },
-    };
-    const b = buildProjectBrief(project, t, { fps: 30, frameCheck: false });
-    expect(b).toContain(
-      'This project starts from the Atlas journey template. Read STYLE.md first, then run the install command in tayang.json once. Render with the command in tayang.json.',
-    );
-    expect(b).not.toContain('npx -y hyperframes');
-    expect(b).not.toContain('Use HyperFrames');
-    expect(b).toContain('Follow STYLE.md for the toolchain; install and render with the commands in tayang.json.');
-    expect(buildProjectBrief(project, STYLE, { fps: 30, frameCheck: false })).not.toContain('template');
+  const p = { title: 'Attendance', folder: '/w/attendance', slug: 'attendance' } as Parameters<typeof buildProjectBrief>[0];
+
+  it('points the agent at the SDLC entry skill and keeps work in the folder', () => {
+    const b = buildProjectBrief(p, null, { fps: 30, frameCheck: true });
+    expect(b.startsWith('# Attendance')).toBe(true);
+    expect(b).toContain('using-bspace-sdlc');
+    expect(b).toContain('/w/attendance');
+    expect(b).toContain('Keep all files in this folder');
+    expect(b).toMatch(/never write an Approved-by line/);
   });
-  it('contains style prompt and Frames checked', () => {
-    const project = { title: 'Promo', kind: 'promo', format: '9:16', language: 'id' } as Project;
-    const settings = { fps: 30, frameCheck: true } as Settings;
-    const b = buildProjectBrief(project, STYLE, settings);
-    expect(b).toContain(STYLE.prompt);
-    expect(b).toContain('[tayang:frames-checked]');
-    expect(b).toContain(FRAME_CHECK_PROMPT);
-    expect(b).toContain('npx hyperframes');
-    expect(b).toContain(
-      'When a version is ready, render it with `npx -y hyperframes@0.9.10 render --output renders/promo-<n>.mp4` so Tayang can show it.',
-    );
-    expect(FRAME_CHECK_PROMPT).toContain(FRAMES_CHECKED_TOKEN);
-  });
-  it('lists the style notes after the prompt, in order, skipping empty ones', () => {
-    const project = { title: 'Promo', kind: 'promo', format: '9:16', language: 'id' } as Project;
-    const styled: Style = {
-      ...STYLE,
-      notes: { transitions: 'Whip pans', camera: 'Slow push', color: '  ', pacing: 'Fast cuts' },
-    };
-    const b = buildProjectBrief(project, styled, { fps: 30, frameCheck: false });
-    expect(b).toContain(
-      'Style: Bold explainer\nNavy background, white heavy sans.\nCamera: Slow push\nPacing: Fast cuts\nTransitions: Whip pans',
-    );
-    expect(b).not.toContain('Color:');
-    expect(buildProjectBrief(project, STYLE, { fps: 30, frameCheck: false })).toContain(
-      'Style: Bold explainer\nNavy background, white heavy sans.\n',
-    );
-  });
-  it('leaves out the frame check when it is off', () => {
-    const project = { title: 'Promo', kind: 'promo', format: '9:16', language: 'id' } as Project;
-    const b = buildProjectBrief(project, null, { fps: 30, frameCheck: false });
-    expect(b).not.toContain(FRAME_CHECK_PROMPT);
-    expect(b).not.toContain('Quality loop');
-    expect(b).toContain('npx hyperframes');
+
+  it('has nothing about videos', () => {
+    const b = buildProjectBrief(p);
+    expect(b).not.toMatch(/video|render|hyperframes|remotion/i);
   });
 });
 
 describe('frames-checked marker', () => {
   it('is found as the token or as the old English phrase, in any language around it', () => {
-    expect(hasFramesChecked('Semua frame beres. [tayang:frames-checked]')).toBe(true);
+    expect(hasFramesChecked('Semua frame beres. [buma:frames-checked]')).toBe(true);
     expect(hasFramesChecked('Frames checked, all good')).toBe(true);
     expect(hasFramesChecked('Semua frame sudah dicek')).toBe(false);
   });
   it('is stripped from what the reader sees', () => {
     expect(stripFramesToken(`${FRAMES_CHECKED_TOKEN}\nDua teks diperbaiki.`)).toBe('Dua teks diperbaiki.');
     expect(stripFramesToken('Frames checked, all good')).toBe('Frames checked, all good');
-    expect(stripFramesToken('Selesai.\n\n[tayang:frames-checked]')).toBe('Selesai.');
+    expect(stripFramesToken('Selesai.\n\n[buma:frames-checked]')).toBe('Selesai.');
   });
   it('leaves no empty code span when the agent wraps the token in backticks', () => {
-    expect(stripFramesToken('Selesai `[tayang:frames-checked]` ya')).toBe('Selesai ya');
-    expect(stripFramesToken('Selesai.\n\n`[tayang:frames-checked]`')).toBe('Selesai.');
-    expect(stripFramesToken('Ok ``[tayang:frames-checked]``')).toBe('Ok');
+    expect(stripFramesToken('Selesai `[buma:frames-checked]` ya')).toBe('Selesai ya');
+    expect(stripFramesToken('Selesai.\n\n`[buma:frames-checked]`')).toBe('Selesai.');
+    expect(stripFramesToken('Ok ``[buma:frames-checked]``')).toBe('Ok');
   });
   it('hides a partial token at the very end of streaming text', () => {
-    expect(stripFramesToken('Selesai. [tayang:fra')).toBe('Selesai.');
-    expect(stripFramesToken('Selesai.\n`[tayang:frames-chec')).toBe('Selesai.');
+    expect(stripFramesToken('Selesai. [buma:fra')).toBe('Selesai.');
+    expect(stripFramesToken('Selesai.\n`[buma:frames-chec')).toBe('Selesai.');
     expect(stripFramesToken('Selesai. [')).toBe('Selesai.');
-    expect(stripFramesToken('Selesai [tayang:other] kok')).toBe('Selesai [tayang:other] kok');
+    expect(stripFramesToken('Selesai [buma:other] kok')).toBe('Selesai [buma:other] kok');
     expect(stripFramesToken('Array [1] x')).toBe('Array [1] x');
   });
 });
@@ -271,10 +222,13 @@ describe('user skills', () => {
     expect(userSkillsText([skill('off', false)])).toBe('');
   });
 
-  it('shows the built-in skill with its description and no frontmatter', () => {
-    const [builtin] = BUILTIN_SKILLS;
-    expect(builtin.id).toBe('tayang-studio');
-    expect(builtin.description).toMatch(/^Use whenever you are running inside Tayang Studio/);
-    expect(builtin.body.startsWith('# Tayang Studio')).toBe(true);
+  it('shows the bundled bspace-sdlc skills, entry skill first, with descriptions and no frontmatter', () => {
+    const [entry] = BUILTIN_SKILLS;
+    expect(entry!.id).toBe('using-bspace-sdlc');
+    expect(entry!.description).toMatch(/^Entry point for a BUMA feature/);
+    expect(entry!.body.startsWith('---')).toBe(false);
+    const ids = BUILTIN_SKILLS.map((s) => s.id);
+    expect(ids).toEqual(expect.arrayContaining(['stakeholder-intake', 'blueprint-ftsd', 'wireframe-lofi', 'figma-generate-screen', 'flutter-slice-screen', 'vue-slice-screen', 'flutter-run-verify']));
+    expect(BUILTIN_SKILLS.every((s) => s.description.length > 20)).toBe(true);
   });
 });

@@ -1,33 +1,33 @@
 #!/bin/sh
-# Installs Tayang Studio, the latest release, on macOS or Linux:
+# Installs BSpace SDLC, the latest release, on macOS or Linux:
 #
-#   curl -fsSL https://studio.tayang.app/install.sh | sh
+#   curl -fsSL https://bspace.buma.internal/install.sh | sh
 #
 # On Windows, run install.ps1 in PowerShell instead; from Git Bash this script hands over to it.
 #
 # Options (environment variables):
-#   TAYANG_VERSION=0.0.2        install this version instead of the latest
-#   TAYANG_INSTALL_DIR=<dir>    macOS: where the app goes (default /Applications, else ~/Applications)
-#   TAYANG_LINUX_PACKAGE=deb|rpm|appimage
+#   BUMA_VERSION=0.0.2        install this version instead of the latest
+#   BUMA_INSTALL_DIR=<dir>    macOS: where the app goes (default /Applications, else ~/Applications)
+#   BUMA_LINUX_PACKAGE=deb|rpm|appimage
 #                               Linux: the package to use (default: deb with apt, rpm with dnf,
 #                               yum or zypper, else the AppImage, which needs no sudo)
-#   TAYANG_NO_LAUNCH=1          don't open Tayang when done
+#   BUMA_NO_LAUNCH=1          don't open Buma when done
 #
 # Installed copies update themselves, so this is only needed once.
 set -eu
 
-REPO="Maru-Yasa/tayang-studio"
-BASE="${TAYANG_DOWNLOAD_BASE:-https://github.com/$REPO/releases}"
-# studio.tayang.app serves install.sh and install.ps1 (copies of the ones in this repo).
-SITE="${TAYANG_SITE:-https://studio.tayang.app}"
-RAW="${TAYANG_RAW_BASE:-https://raw.githubusercontent.com/$REPO/main}"
-APP="Tayang Studio"
-# GitHub swaps the space in "Tayang Studio" for a dot in asset names.
-ASSET="Tayang.Studio"
+REPO="<github-owner>/bspace-sdlc-app"
+BASE="${BUMA_DOWNLOAD_BASE:-https://github.com/$REPO/releases}"
+# bspace.buma.internal serves install.sh and install.ps1 (copies of the ones in this repo).
+SITE="${BUMA_SITE:-https://bspace.buma.internal}"
+RAW="${BUMA_RAW_BASE:-https://raw.githubusercontent.com/$REPO/main}"
+APP="BSpace SDLC"
+# GitHub swaps the space in "BSpace SDLC" for a dot in asset names.
+ASSET="Buma.Studio"
 
 say() { printf '%s\n' "$*"; }
 fail() {
-  printf 'Tayang install failed: %s\n' "$*" >&2
+  printf 'Buma install failed: %s\n' "$*" >&2
   exit 1
 }
 has() { command -v "$1" >/dev/null 2>&1; }
@@ -90,29 +90,29 @@ install_macos() {
   tar -xzf "$TMP/app.tar.gz" -C "$TMP/app" || fail "the download is damaged; try again"
   [ -d "$TMP/app/$APP.app" ] || fail "the download has no $APP.app"
 
-  dir="${TAYANG_INSTALL_DIR:-}"
+  dir="${BUMA_INSTALL_DIR:-}"
   if [ -z "$dir" ]; then
     if [ -w /Applications ]; then dir=/Applications; else dir="$HOME/Applications"; fi
   fi
   mkdir -p "$dir"
-  # This copy only: a dev build (Tayang Studio Dev) has the same process name.
+  # This copy only: a dev build (BSpace SDLC Dev) has the same process name.
   if pgrep -qf "$dir/$APP.app/Contents/MacOS/" 2>/dev/null; then
-    say "Tayang is open; the new version starts the next time you open it."
+    say "Buma is open; the new version starts the next time you open it."
   fi
   rm -rf "$dir/$APP.app"
-  mv "$TMP/app/$APP.app" "$dir/" || fail "couldn't write to $dir (set TAYANG_INSTALL_DIR to another folder)"
+  mv "$TMP/app/$APP.app" "$dir/" || fail "couldn't write to $dir (set BUMA_INSTALL_DIR to another folder)"
   # Only browsers mark downloads for Gatekeeper, but clear the mark in case something added it.
   xattr -dr com.apple.quarantine "$dir/$APP.app" 2>/dev/null || true
 
   say "Installed $APP $VERSION in $dir."
-  if [ -z "${TAYANG_NO_LAUNCH:-}" ]; then open "$dir/$APP.app" 2>/dev/null || true; fi
+  if [ -z "${BUMA_NO_LAUNCH:-}" ]; then open "$dir/$APP.app" 2>/dev/null || true; fi
 }
 
 linux_package() {
-  if [ -n "${TAYANG_LINUX_PACKAGE:-}" ]; then
-    case "$TAYANG_LINUX_PACKAGE" in
-      deb | rpm | appimage) printf '%s' "$TAYANG_LINUX_PACKAGE" ;;
-      *) fail "TAYANG_LINUX_PACKAGE must be deb, rpm or appimage" ;;
+  if [ -n "${BUMA_LINUX_PACKAGE:-}" ]; then
+    case "$BUMA_LINUX_PACKAGE" in
+      deb | rpm | appimage) printf '%s' "$BUMA_LINUX_PACKAGE" ;;
+      *) fail "BUMA_LINUX_PACKAGE must be deb, rpm or appimage" ;;
     esac
     return
   fi
@@ -130,7 +130,7 @@ install_linux() {
   case "$(uname -m)" in
     x86_64 | amd64) deb_arch=amd64 rpm_arch=x86_64 appimage_arch=amd64 ;;
     aarch64 | arm64) deb_arch=arm64 rpm_arch=aarch64 appimage_arch=aarch64 ;;
-    *) fail "Tayang for Linux is built for x86_64 and ARM64 (aarch64) only, not $(uname -m)" ;;
+    *) fail "Buma for Linux is built for x86_64 and ARM64 (aarch64) only, not $(uname -m)" ;;
   esac
   kind=$(linux_package)
   case "$kind" in
@@ -143,7 +143,7 @@ install_linux() {
       say "Installing (this may ask for your password)..."
       # apt-get pulls in the WebKit and tray libraries the app needs.
       as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y "$TMP/$file" || fail "apt-get couldn't install $file"
-      bin=tayang-studio
+      bin=bspace-sdlc-app
       ;;
     rpm)
       file="${ASSET}-${VERSION}-1.${rpm_arch}.rpm"
@@ -157,47 +157,47 @@ install_linux() {
       else
         as_root zypper --non-interactive install --allow-unsigned-rpm "$TMP/$file"
       fi || fail "couldn't install $file"
-      bin=tayang-studio
+      bin=bspace-sdlc-app
       ;;
     appimage)
       file="${ASSET}_${VERSION}_${appimage_arch}.AppImage"
       say "Downloading $APP $VERSION (AppImage)..."
       download "$BASE/download/v$VERSION/$file" "$TMP/$file"
       data="${XDG_DATA_HOME:-$HOME/.local/share}"
-      dir="$data/tayang-studio"
+      dir="$data/bspace-sdlc-app"
       mkdir -p "$dir" "$HOME/.local/bin" "$data/applications"
-      mv "$TMP/$file" "$dir/Tayang-Studio.AppImage"
-      chmod 755 "$dir/Tayang-Studio.AppImage"
-      ln -sf "$dir/Tayang-Studio.AppImage" "$HOME/.local/bin/tayang-studio"
+      mv "$TMP/$file" "$dir/BSpace-SDLC.AppImage"
+      chmod 755 "$dir/BSpace-SDLC.AppImage"
+      ln -sf "$dir/BSpace-SDLC.AppImage" "$HOME/.local/bin/bspace-sdlc-app"
       # The app menu entry; the AppImage updates itself in place, so the path stays the same.
-      cat >"$data/applications/tayang-studio.desktop" <<EOF
+      cat >"$data/applications/bspace-sdlc-app.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=$APP
 Comment=Make animated videos with your AI agent
-Exec="$dir/Tayang-Studio.AppImage" %U
-Icon=tayang-studio
+Exec="$dir/BSpace-SDLC.AppImage" %U
+Icon=bspace-sdlc-app
 Terminal=false
 Categories=AudioVideo;Video;
 EOF
       # The menu icon, from the repo: a missing icon is cosmetic, so a failure here is ignored.
       mkdir -p "$data/icons/hicolor/128x128/apps"
       fetch "$RAW/apps/desktop/src-tauri/icons/128x128.png" >"$TMP/icon.png" 2>/dev/null &&
-        mv "$TMP/icon.png" "$data/icons/hicolor/128x128/apps/tayang-studio.png" || true
+        mv "$TMP/icon.png" "$data/icons/hicolor/128x128/apps/bspace-sdlc-app.png" || true
       has update-desktop-database && update-desktop-database "$data/applications" >/dev/null 2>&1 || true
       if ! ldconfig -p 2>/dev/null | grep -q 'libfuse\.so\.2'; then
         say "Note: AppImages need FUSE 2 (libfuse2 on Ubuntu/Debian, fuse-libs on Fedora) to run."
       fi
       case ":$PATH:" in
         *":$HOME/.local/bin:"*) ;;
-        *) say "Add ~/.local/bin to your PATH to start it with 'tayang-studio'." ;;
+        *) say "Add ~/.local/bin to your PATH to start it with 'bspace-sdlc-app'." ;;
       esac
-      bin="$dir/Tayang-Studio.AppImage"
+      bin="$dir/BSpace-SDLC.AppImage"
       ;;
   esac
 
-  say "Installed $APP $VERSION. Find it in your app menu, or run: tayang-studio"
-  if [ -z "${TAYANG_NO_LAUNCH:-}" ] && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
+  say "Installed $APP $VERSION. Find it in your app menu, or run: bspace-sdlc-app"
+  if [ -z "${BUMA_NO_LAUNCH:-}" ] && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
     (nohup "$bin" >/dev/null 2>&1 &) || true
   fi
 }
@@ -214,15 +214,15 @@ main() {
     MINGW* | MSYS* | CYGWIN*) install_windows ;;
   esac
 
-  VERSION="${TAYANG_VERSION:-}"
+  VERSION="${BUMA_VERSION:-}"
   VERSION="${VERSION#v}"
   [ -n "$VERSION" ] || VERSION=$(latest_version)
-  TMP=$(mktemp -d 2>/dev/null || mktemp -d -t tayang)
+  TMP=$(mktemp -d 2>/dev/null || mktemp -d -t buma)
 
   case "$os" in
     Darwin) install_macos ;;
     Linux) install_linux ;;
-    *) fail "unsupported system: $os (Tayang runs on macOS, Windows and Linux)" ;;
+    *) fail "unsupported system: $os (Buma runs on macOS, Windows and Linux)" ;;
   esac
 }
 

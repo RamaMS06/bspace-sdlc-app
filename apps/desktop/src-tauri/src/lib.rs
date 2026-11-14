@@ -1,4 +1,7 @@
+pub mod accounts;
 pub mod acp;
+pub mod activity;
+pub mod model_catalog;
 pub mod ai_proxy;
 pub mod api_engine;
 pub mod auth;
@@ -8,6 +11,8 @@ pub mod cloud;
 pub mod commands;
 pub mod db;
 pub mod device;
+pub mod plugins;
+pub mod devops;
 pub mod files;
 pub mod media;
 pub mod projects;
@@ -49,9 +54,9 @@ pub fn run() {
             let home = app.path().home_dir()?;
             let data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data)?;
-            let db = db::Db::open(&data.join("tayang.db"))?;
+            let db = db::Db::open(&data.join("buma.db"))?;
             // No agent survives a restart, so nothing can still be working.
-            let _ = db.fail_stale_jobs("Tayang was closed while this was running");
+            let _ = db.fail_stale_jobs("Buma was closed while this was running");
             // Also records the real home so later settings updates resolve defaults against it.
             let settings = db.get_settings(&home);
             let working = settings.working_folder.clone();
@@ -105,6 +110,14 @@ pub fn run() {
             commands::system_locale,
             commands::detect_agents,
             commands::skills_list,
+            commands::plugins_list,
+            commands::plugin_stage_folder,
+            commands::plugin_stage_zip,
+            commands::plugin_stage_github,
+            commands::plugin_install,
+            commands::plugin_discard,
+            commands::plugin_remove,
+            commands::plugin_set_enabled,
             commands::skill_read,
             commands::skill_save,
             commands::skill_set_enabled,
@@ -129,6 +142,10 @@ pub fn run() {
             commands::claude_sign_in,
             commands::claude_sign_in_cancel,
             commands::claude_sign_out,
+            commands::devops_status,
+            commands::devops_sign_in,
+            commands::devops_microsoft_sign_in,
+            commands::devops_sign_out,
             commands::get_settings,
             commands::update_settings,
             commands::pick_folder,
@@ -190,6 +207,10 @@ pub fn run() {
             commands::agent_prompt,
             commands::agent_set_auto,
             commands::agent_cancel,
+            commands::set_chat_folder,
+            commands::set_chat_project,
+            commands::agent_set_mode,
+            commands::agent_modes,
             commands::agent_stop,
             commands::agent_respond_permission,
             commands::agent_respond_question,
@@ -205,6 +226,17 @@ pub fn run() {
             commands::media_thumbnails,
             commands::media_render,
             commands::get_agent_usage,
+            commands::agent_activity,
+            commands::agent_model_catalog,
+            commands::agent_sign_in,
+            commands::agent_install,
+            commands::accounts_list,
+            commands::account_add,
+            commands::account_remove,
+            commands::account_use,
+            commands::account_sign_out,
+            commands::account_sign_in,
+            commands::agent_failover_record,
             commands::get_chat_trace,
             commands::sync_styles,
             commands::install_style_template,
@@ -219,7 +251,7 @@ pub fn run() {
             commands::billing_status,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building Tayang Studio");
+        .expect("error while building BSpace SDLC");
     app.run(|handle, event| {
         // Clicking the dock icon brings back a window hidden by background mode.
         #[cfg(target_os = "macos")]

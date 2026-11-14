@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Job } from '@tayang/shared';
+import type { Job } from '@bspace-sdlc-app/shared';
 import { listJobs } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 

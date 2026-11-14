@@ -1,4 +1,4 @@
-//! Paid plans. Checkout and status go to the Tayang API with the stored sign-in token, which
+//! Paid plans. Checkout and status go to the Buma API with the stored sign-in token, which
 //! stays in Rust: the webview only ever sees the pay link and the plan state.
 //!
 //! Every link opened to pay is on the API itself (`<api>/pay/…`), which redirects to wherever the
@@ -163,28 +163,28 @@ mod tests {
 
     #[test]
     fn only_pay_links_on_this_api_may_open() {
-        let base = "https://studio.tayang.app/api";
+        let base = "https://bspace.buma.internal/api";
         for ok in [
-            "https://studio.tayang.app/api/pay/TYG-ABCDEFGH-1793793600",
-            "https://studio.tayang.app/api/pay/whatsapp?plan=creator",
-            "https://studio.tayang.app/api/pay/whatsapp?plan=pro&email=ana%40example.com",
-            "https://STUDIO.tayang.app:443/api/pay/x",
+            "https://bspace.buma.internal/api/pay/TYG-ABCDEFGH-1793793600",
+            "https://bspace.buma.internal/api/pay/whatsapp?plan=creator",
+            "https://bspace.buma.internal/api/pay/whatsapp?plan=pro&email=ana%40example.com",
+            "https://BSPACE.BUMA.INTERNAL:443/api/pay/x",
         ] {
             assert!(is_pay_link(ok, base), "{ok}");
         }
         for bad in [
-            "http://studio.tayang.app/api/pay/x",
-            "https://studio.tayang.app.evil.com/api/pay/x",
+            "http://bspace.buma.internal/api/pay/x",
+            "https://bspace.buma.internal.evil.com/api/pay/x",
             "https://evil.com/api/pay/x",
-            "https://studio.tayang.app/api/pay/",
-            "https://studio.tayang.app/api/pay/a/b",
-            "https://studio.tayang.app/api/pay/../v1/billing/checkout",
-            "https://studio.tayang.app/api/v1/billing/checkout",
-            "https://studio.tayang.app/pay/x",
-            "https://studio.tayang.app/api/pay/x?next=https://evil.com",
-            "https://user@studio.tayang.app/api/pay/x",
-            "https://studio.tayang.app:8443/api/pay/x",
-            "https://studio.tayang.app/api/pay/x#y",
+            "https://bspace.buma.internal/api/pay/",
+            "https://bspace.buma.internal/api/pay/a/b",
+            "https://bspace.buma.internal/api/pay/../v1/billing/checkout",
+            "https://bspace.buma.internal/api/v1/billing/checkout",
+            "https://bspace.buma.internal/pay/x",
+            "https://bspace.buma.internal/api/pay/x?next=https://evil.com",
+            "https://user@bspace.buma.internal/api/pay/x",
+            "https://bspace.buma.internal:8443/api/pay/x",
+            "https://bspace.buma.internal/api/pay/x#y",
             "https://pay.sumopod.com/p/1",
             "https://wa.me/6281234567890",
             "javascript:alert(1)",
@@ -194,7 +194,7 @@ mod tests {
         }
         // A self-hosted API: its own pay links, nobody else's.
         assert!(is_pay_link("http://localhost:8787/api/pay/whatsapp?plan=lite", "http://localhost:8787/api"));
-        assert!(!is_pay_link("https://studio.tayang.app/api/pay/whatsapp?plan=lite", "http://localhost:8787/api"));
+        assert!(!is_pay_link("https://bspace.buma.internal/api/pay/whatsapp?plan=lite", "http://localhost:8787/api"));
     }
 
     #[tokio::test]

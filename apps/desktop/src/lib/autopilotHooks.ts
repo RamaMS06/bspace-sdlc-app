@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import type { AutopilotSlot } from '@tayang/shared';
+import type { AutopilotSlot } from '@bspace-sdlc-app/shared';
 
 /**
  * Where the autopilot engine (A4) plugs into the Calendar's panel.

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BillingStatus } from '@tayang/shared';
+import type { BillingStatus } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/billing', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/billing')>()),
@@ -15,7 +15,7 @@ import { useBilling } from '@/state/billing';
 const NOW = new Date('2026-11-04T12:00:00.000Z');
 const free: BillingStatus = { plan: 'free', lastPlan: null, currentPeriodEnd: null, active: false, pending: null, lastPaidOrderId: null };
 const creator: BillingStatus = { plan: 'creator', lastPlan: 'creator', currentPeriodEnd: '2026-12-04T12:00:00.000Z', active: true, pending: null, lastPaidOrderId: null };
-const checkout = { kind: 'qris' as const, orderId: 'TYG-A', payUrl: 'https://studio.tayang.app/api/pay/TYG-A', paymentLinkUrl: 'https://pay.sumopod.com/p/1', expiresAt: '2026-11-04T13:00:00.000Z', amount: 50000 };
+const checkout = { kind: 'qris' as const, orderId: 'TYG-A', payUrl: 'https://bspace.buma.internal/api/pay/TYG-A', paymentLinkUrl: 'https://pay.sumopod.com/p/1', expiresAt: '2026-11-04T13:00:00.000Z', amount: 50000 };
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 describe('buying over WhatsApp while payments are off', () => {
-  const wa = { kind: 'whatsapp' as const, url: 'https://studio.tayang.app/api/buy/whatsapp?plan=creator' };
+  const wa = { kind: 'whatsapp' as const, url: 'https://bspace.buma.internal/api/buy/whatsapp?plan=creator' };
 
   it('shows the WhatsApp step, and moves to done once the owner activates the plan', async () => {
     vi.mocked(billing.billingCheckout).mockResolvedValue(wa);
@@ -124,13 +124,13 @@ describe('the plans flow', () => {
   it('resumes a pending payment straight into waiting, without a new checkout', async () => {
     vi.mocked(billing.billingStatus).mockResolvedValue({
       ...free,
-      pending: { orderId: 'TYG-P', plan: 'pro', payUrl: 'https://studio.tayang.app/api/pay/TYG-P', paymentLinkUrl: checkout.paymentLinkUrl, expiresAt: checkout.expiresAt },
+      pending: { orderId: 'TYG-P', plan: 'pro', payUrl: 'https://bspace.buma.internal/api/pay/TYG-P', paymentLinkUrl: checkout.paymentLinkUrl, expiresAt: checkout.expiresAt },
     });
     await useBilling.getState().enter();
     expect(useBilling.getState().flow).toMatchObject({
       phase: 'waiting',
       plan: 'pro',
-      checkout: { orderId: 'TYG-P', payUrl: 'https://studio.tayang.app/api/pay/TYG-P', paymentLinkUrl: checkout.paymentLinkUrl, expiresAt: checkout.expiresAt, amount: 90000 },
+      checkout: { orderId: 'TYG-P', payUrl: 'https://bspace.buma.internal/api/pay/TYG-P', paymentLinkUrl: checkout.paymentLinkUrl, expiresAt: checkout.expiresAt, amount: 90000 },
     });
     expect(billing.billingCheckout).not.toHaveBeenCalled();
   });
@@ -138,7 +138,7 @@ describe('the plans flow', () => {
   it('never resumes a pending link for a plan below the one running (review3 I-2)', async () => {
     vi.mocked(billing.billingStatus).mockResolvedValue({
       ...creator,
-      pending: { orderId: 'TYG-L', plan: 'lite', payUrl: 'https://studio.tayang.app/api/pay/TYG-L', paymentLinkUrl: checkout.paymentLinkUrl, expiresAt: checkout.expiresAt },
+      pending: { orderId: 'TYG-L', plan: 'lite', payUrl: 'https://bspace.buma.internal/api/pay/TYG-L', paymentLinkUrl: checkout.paymentLinkUrl, expiresAt: checkout.expiresAt },
     });
     await useBilling.getState().enter();
     expect(useBilling.getState().flow).toEqual({ phase: 'picking' });

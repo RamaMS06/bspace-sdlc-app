@@ -90,7 +90,7 @@ const PROJECT_KEYS: [&str; 18] = [
     "reviewRemindedAt", "socialPostId",
 ];
 const CHAT_SELECT: &str = "SELECT id, project_id AS projectId, agent_id AS agentId, title, \
-    created_at AS createdAt FROM chats";
+    created_at AS createdAt, folder FROM chats";
 const JOB_SELECT: &str = "SELECT id, kind, title, project_id AS projectId, chat_id AS chatId, \
     agent_id AS agentId, status, progress, note, source_url AS sourceUrl, updated_at AS updatedAt, \
     render_baseline_at AS renderBaselineAt, archived_at AS archivedAt FROM jobs";
@@ -106,15 +106,15 @@ const AUTOPILOT_SELECT: &str = "SELECT id, name, niche, language, style_id AS st
 const SLOT_SELECT: &str = "SELECT id, autopilot_id AS autopilotId, due_at AS dueAt, status, \
     project_id AS projectId, error FROM autopilot_slots";
 
-pub const DEFAULT_API_URL: &str = "https://studio.tayang.app/api";
+pub const DEFAULT_API_URL: &str = "https://bspace.buma.internal/api";
 
-/// The API moved under `/api` (https://studio.tayang.app/api). A saved address from before
+/// The API moved under `/api` (https://bspace.buma.internal/api). A saved address from before
 /// that is rewritten on read: the old production host becomes the default, a bare local dev
 /// server gets `/api`. Anything else is the user's choice and is left alone.
 fn migrate_api_url(url: &str) -> Option<String> {
     let bare = url.strip_suffix('/').unwrap_or(url);
     match bare {
-        "https://api.tayang.app" => Some(DEFAULT_API_URL.to_string()),
+        "https://api.bspace.buma.internal" => Some(DEFAULT_API_URL.to_string()),
         "http://localhost:8787" | "http://127.0.0.1:8787" => Some(format!("{bare}/api")),
         _ => None,
     }
@@ -313,6 +313,7 @@ impl Db {
         Self::migrate_projects(&conn)?;
         Self::migrate_autopilots(&conn)?;
         Self::migrate_archive(&conn)?;
+        Self::migrate_chat_folder(&conn)?;
         Ok(Db { conn: Mutex::new(conn), home: Mutex::new(Default::default()) })
     }
 
@@ -324,7 +325,7 @@ impl Db {
 
     fn default_settings(home: &Path) -> Value {
         json!({
-            "workingFolder": home.join("Tayang").to_string_lossy(),
+            "workingFolder": home.join("Buma").to_string_lossy(),
             "defaultAgent": "claude",
             "frameCheck": true,
             "language": "id",
@@ -342,7 +343,7 @@ impl Db {
             "buildJobsChecked": false,
             "projectStatusChecked": false,
             "agentModels": {},
-            "voiceSource": "tayang",
+            "voiceSource": "buma",
         })
     }
 
@@ -531,6 +532,7 @@ impl Db {
             agent_id: agent,
             title: title.to_string(),
             created_at: now(),
+            folder: None,
         };
         let vals = bind_values(&chat, &["id", "projectId", "agentId", "title", "createdAt"])?;
         self.conn().execute(
@@ -646,6 +648,18 @@ impl Db {
             rusqlite::params![v.as_str().unwrap_or_default(), chat_id],
         )?;
         self.get_chat(chat_id)
+    }
+
+    /// Attaches a folder to a chat, or detaches it (`None`).
+    pub fn set_chat_folder(&self, id: &str, folder: Option<&str>) -> Result<Option<Chat>> {
+        self.conn().execute("UPDATE chats SET folder = ?1 WHERE id = ?2", rusqlite::params![folder, id])?;
+        self.get_chat(id)
+    }
+
+    /// Moves a chat into a project (a feature started from a chat that began without one).
+    pub fn set_chat_project(&self, id: &str, project_id: &str) -> Result<Option<Chat>> {
+        self.conn().execute("UPDATE chats SET project_id = ?1 WHERE id = ?2", rusqlite::params![project_id, id])?;
+        self.get_chat(id)
     }
 
     pub fn get_chat(&self, id: &str) -> Result<Option<Chat>> {
@@ -780,6 +794,17 @@ impl Db {
     }
 
     /// Adds `archived_at` to chats and jobs in databases created before the archive.
+    /// Adds `chats.folder` (a folder attached to a chat) to databases created before it.
+    fn migrate_chat_folder(conn: &Connection) -> Result<()> {
+        let mut stmt = conn.prepare("PRAGMA table_info(chats)")?;
+        let have = stmt.query_map([], |r| r.get::<_, String>(1))?.collect::<std::result::Result<Vec<_>, _>>()?;
+        drop(stmt);
+        if !have.iter().any(|c| c == "folder") {
+            conn.execute_batch("ALTER TABLE chats ADD COLUMN folder TEXT")?;
+        }
+        Ok(())
+    }
+
     fn migrate_archive(conn: &Connection) -> Result<()> {
         for table in ["chats", "jobs"] {
             let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
@@ -1203,6 +1228,18 @@ impl Db {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_chat_keeps_the_folder_attached_to_it() {
+        let db = Db::open_in_memory().unwrap();
+        let chat = db.create_chat(None, AgentId::Claude, "Talk").unwrap();
+        assert_eq!(chat.folder, None);
+        let attached = db.set_chat_folder(&chat.id, Some("/w/app")).unwrap().unwrap();
+        assert_eq!(attached.folder.as_deref(), Some("/w/app"));
+        assert_eq!(db.get_chat(&chat.id).unwrap().unwrap().folder.as_deref(), Some("/w/app"));
+        assert_eq!(db.set_chat_folder(&chat.id, None).unwrap().unwrap().folder, None);
+        assert_eq!(db.set_chat_project(&chat.id, "p1").unwrap().unwrap().project_id.as_deref(), Some("p1"));
+    }
     use super::*;
     use serde_json::json;
     use std::collections::BTreeMap;
@@ -1220,16 +1257,16 @@ mod tests {
             features: vec!["voiceover".into()],
             credits: 310,
         };
-        assert_eq!(db.auth_account("api:https://studio.tayang.app/api"), None);
-        db.set_auth_account("api:https://studio.tayang.app/api", Some(&a)).unwrap();
-        assert_eq!(db.auth_account("api:https://studio.tayang.app/api"), Some(a.clone()));
+        assert_eq!(db.auth_account("api:https://bspace.buma.internal/api"), None);
+        db.set_auth_account("api:https://bspace.buma.internal/api", Some(&a)).unwrap();
+        assert_eq!(db.auth_account("api:https://bspace.buma.internal/api"), Some(a.clone()));
         assert_eq!(db.auth_account("api:http://localhost:8787/api"), None);
         let before = db.get_settings(&home);
         db.update_settings(json!({ "fps": 60 })).unwrap();
         assert_eq!(db.get_settings(&home).api_url, before.api_url, "settings still parse");
         assert!(!serde_json::to_string(&db.get_settings(&home)).unwrap().contains("a@b.c"));
-        db.set_auth_account("api:https://studio.tayang.app/api", None).unwrap();
-        assert_eq!(db.auth_account("api:https://studio.tayang.app/api"), None);
+        db.set_auth_account("api:https://bspace.buma.internal/api", None).unwrap();
+        assert_eq!(db.auth_account("api:https://bspace.buma.internal/api"), None);
     }
 
     fn db() -> Db {
@@ -1263,8 +1300,8 @@ mod tests {
     fn old_api_addresses_are_migrated_on_read() {
         let home = PathBuf::from("/home/u");
         for (stored, want) in [
-            ("https://api.tayang.app", DEFAULT_API_URL),
-            ("https://api.tayang.app/", DEFAULT_API_URL),
+            ("https://api.bspace.buma.internal", DEFAULT_API_URL),
+            ("https://api.bspace.buma.internal/", DEFAULT_API_URL),
             ("http://localhost:8787", "http://localhost:8787/api"),
             ("http://localhost:8787/", "http://localhost:8787/api"),
             ("http://127.0.0.1:8787", "http://127.0.0.1:8787/api"),
@@ -1272,7 +1309,7 @@ mod tests {
             // Anything else is left alone.
             ("http://localhost:8787/api", "http://localhost:8787/api"),
             ("http://localhost:8787/v2", "http://localhost:8787/v2"),
-            ("https://api.tayang.app/v1", "https://api.tayang.app/v1"),
+            ("https://api.bspace.buma.internal/v1", "https://api.bspace.buma.internal/v1"),
             ("http://localhost:8790", "http://localhost:8790"),
             ("https://mine.test", "https://mine.test"),
         ] {
@@ -1292,10 +1329,10 @@ mod tests {
         let db = db();
         let home = PathBuf::from("/home/u");
         let s = db.get_settings(&home);
-        assert_eq!(s.working_folder, home.join("Tayang").to_string_lossy());
+        assert_eq!(s.working_folder, home.join("Buma").to_string_lossy());
         assert_eq!(s.default_agent, AgentId::Claude);
         assert!(s.frame_check && !s.onboarded);
-        assert_eq!(s.api_url, "https://studio.tayang.app/api");
+        assert_eq!(s.api_url, "https://bspace.buma.internal/api");
         assert_eq!((s.language, s.format, s.fps), (VideoLanguage::Id, VideoFormat::Portrait, 30));
         assert_eq!(s.ui_language, None);
         assert!(!s.background_mode && !s.open_at_login);
@@ -1319,7 +1356,7 @@ mod tests {
         assert_eq!(again, u);
         assert!(again.onboarded);
         assert_eq!(again.default_agent, AgentId::Gemini);
-        assert_eq!(again.working_folder, home.join("Tayang").to_string_lossy());
+        assert_eq!(again.working_folder, home.join("Buma").to_string_lossy());
         assert!(db.update_settings(json!({"fps": "fast"})).is_err());
         assert!(db.update_settings(json!([1])).is_err());
         assert!(db.update_settings(json!("x")).is_err());
@@ -1333,9 +1370,9 @@ mod tests {
         let home = PathBuf::from("/home/u");
         let s = db.get_settings(&home);
         assert_eq!(s.fps, 24);
-        assert_eq!(s.working_folder, home.join("Tayang").to_string_lossy());
+        assert_eq!(s.working_folder, home.join("Buma").to_string_lossy());
         let other = PathBuf::from("/home/v");
-        assert_eq!(db.get_settings(&other).working_folder, other.join("Tayang").to_string_lossy());
+        assert_eq!(db.get_settings(&other).working_folder, other.join("Buma").to_string_lossy());
     }
 
     #[test]
@@ -1702,7 +1739,7 @@ mod tests {
     #[test]
     fn migration_adds_columns_and_drops_legacy_builtins() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("tayang.db");
+        let path = dir.path().join("buma.db");
         {
             let c = Connection::open(&path).unwrap();
             c.execute_batch(
@@ -1759,7 +1796,7 @@ mod tests {
     #[test]
     fn jobs_migration_adds_source_url_to_an_old_database() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("tayang.db");
+        let path = dir.path().join("buma.db");
         {
             let c = Connection::open(&path).unwrap();
             c.execute_batch(
@@ -1783,7 +1820,7 @@ mod tests {
     #[test]
     fn autopilots_migration_keeps_old_autopilots_and_adds_the_new_columns() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("tayang.db");
+        let path = dir.path().join("buma.db");
         {
             let c = Connection::open(&path).unwrap();
             c.execute_batch(
@@ -1803,7 +1840,7 @@ mod tests {
     #[test]
     fn projects_migration_adds_review_and_posting_columns_to_an_old_database() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("tayang.db");
+        let path = dir.path().join("buma.db");
         {
             let c = Connection::open(&path).unwrap();
             c.execute_batch(

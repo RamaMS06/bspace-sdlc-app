@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Project, Style } from '@tayang/shared';
+import type { Project, Style } from '@bspace-sdlc-app/shared';
 import { buildProjectBrief, buildStudyStylePrompt, frameCheckPrompt, parseStyleResult, STYLE_REFS_DIR } from '../src';
 
 const project = { title: 'Krakatoa', slug: 'krakatoa', kind: 'explainer', format: '9:16', language: 'en' } as Project;
@@ -62,30 +62,7 @@ describe('parseStyleResult keeps the recipe', () => {
   });
 });
 
-describe('brief for a copied style', () => {
-  it('uses the style engine instead of forcing HyperFrames, with the recipe, palette and references', () => {
-    const b = buildProjectBrief(project, copied3d, { fps: 30, frameCheck: true });
-    expect(b).not.toContain('Use HyperFrames');
-    expect(b).toContain('Build it with Remotion');
-    expect(b).toContain('npx remotion render');
-    expect(b).toContain('renders/krakatoa-<n>.mp4');
-    expect(b).toContain('How to build this look: Three.js world inside Remotion');
-    expect(b).toContain('Palette: #5BC8F5, #F2C14E, #2E7D32');
-    expect(b).toContain(`${STYLE_REFS_DIR}/sheet-01.jpg`);
-    expect(b).toContain(`${STYLE_REFS_DIR}/sheet-02.jpg`);
-    expect(b).toContain('a 4x3 grid of frames from the source video in time order');
-    expect(b).toMatch(/never copy/i);
-    expect(b).toContain('npx remotion still');
-    expect(b).toContain(`side by side with the contact sheets in ${STYLE_REFS_DIR}/`);
-    expect(b).toContain('tile=4x3');
-  });
-  it('a HyperFrames style without references keeps the HyperFrames toolchain and no reference step', () => {
-    const flat: Style = { ...copied3d, engine: 'hyperframes', build: null, palette: [], references: [] };
-    const b = buildProjectBrief(project, flat, { fps: 30, frameCheck: true });
-    expect(b).toContain('Use HyperFrames');
-    expect(b).not.toContain(STYLE_REFS_DIR);
-    expect(b).toContain('npx hyperframes');
-  });
+describe('frame check prompt', () => {
   it('frameCheckPrompt defaults to the old HyperFrames wording', () => {
     expect(frameCheckPrompt()).toContain('npx hyperframes');
     expect(frameCheckPrompt({ engine: 'remotion', references: true })).toContain('npx remotion still');

@@ -4,6 +4,9 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import App from './App';
 import './i18n';
 import './styles/tokens.css';
+import { initTheme } from './lib/theme';
+
+initTheme();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

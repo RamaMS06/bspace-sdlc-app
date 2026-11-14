@@ -79,11 +79,14 @@ pub async fn detect_agents(app: AppHandle) -> CmdResult<Vec<AgentInfo>> {
 }
 
 #[tauri::command]
-pub async fn check_tools() -> CmdResult<Vec<ToolStatus>> {
-    tauri::async_runtime::spawn_blocking(|| {
+pub async fn check_tools(app: AppHandle, agent: Option<AgentId>) -> CmdResult<Vec<ToolStatus>> {
+    // Figma MCP is checked in the config of the agent that will do the work.
+    let claude_dir = claude_config_dir(&app).ok();
+    let files = system::mcp_config_files(agent.unwrap_or(AgentId::Claude), claude_dir.as_deref());
+    tauri::async_runtime::spawn_blocking(move || {
         // The user may have just installed a tool in their terminal: read their shell's PATH again.
         system::refresh_shell_path();
-        system::check_tools(&RealExec)
+        system::check_tools(&RealExec, &files)
     })
     .await
     .map_err(err)
@@ -624,13 +627,13 @@ pub fn copy_style_refs(app: AppHandle, state: State<'_, AppState>, style_id: Str
     Ok(media::copy_style_refs(&refs, &folder)? as u32)
 }
 
-/// `<working>/.tayang/style-study/<id>`, rejected if it would leave the working folder.
+/// `<working>/.buma/style-study/<id>`, rejected if it would leave the working folder.
 pub(crate) fn study_path(working: &Path, study_id: &str) -> CmdResult<PathBuf> {
     let bad = study_id.is_empty()
         || study_id == "."
         || study_id == ".."
         || study_id.contains(['/', '\\']);
-    let dir = working.join(".tayang").join("style-study").join(study_id);
+    let dir = working.join(".buma").join("style-study").join(study_id);
     let _ = std::fs::create_dir_all(working);
     if bad || !projects::ensure_inside(working, &dir) {
         return Err("That style study id isn't valid".into());
@@ -732,10 +735,10 @@ pub fn auth_manager(app: &AppHandle, data_dir: &Path) -> Result<Arc<Auth>, Strin
     )
 }
 
-/// `TAYANG_API_URL` when it is set: it wins over the API address in Settings (a dev setup).
+/// `BUMA_API_URL` when it is set: it wins over the API address in Settings (a dev setup).
 #[tauri::command]
 pub fn api_url_override() -> Option<String> {
-    std::env::var("TAYANG_API_URL").ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+    std::env::var("BUMA_API_URL").ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
 }
 
 fn api_base(state: &AppState) -> String {
@@ -856,7 +859,7 @@ pub async fn billing_status(state: State<'_, AppState>, auth: State<'_, Arc<Auth
     after_billing(&auth, &base, crate::billing::status(auth.client(), &base, &token).await)
 }
 
-// ---- the Tayang account's credits, social accounts and auto-post ----
+// ---- the Buma account's credits, social accounts and auto-post ----
 
 /// `cloud:<code>`, the code being the kebab-case `CloudError` the UI knows.
 fn cloud_err(e: crate::cloud::CloudError) -> String {
@@ -903,7 +906,7 @@ pub async fn redeem_gift_code(state: State<'_, AppState>, auth: State<'_, Arc<Au
     after_cloud(&auth, &base, "redeem", crate::cloud::send(auth.client(), reqwest::Method::POST, &base, &token, "/v1/promos/redeem", Some(&body)).await)
 }
 
-/// The social accounts connected to this Tayang account.
+/// The social accounts connected to this Buma account.
 #[tauri::command]
 pub async fn social_accounts(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>) -> CmdResult<serde_json::Value> {
     let auth = auth.inner().clone();
@@ -1028,14 +1031,14 @@ pub async fn start_ai_proxy(handle: AppHandle) {
         let handle = for_run.clone();
         Box::pin(async move {
             let (Some(state), Some(auth)) = (handle.try_state::<AppState>(), handle.try_state::<Arc<Auth>>()) else {
-                return Err((503, serde_json::json!({ "error": "unavailable", "message": "Tayang is still starting" })));
+                return Err((503, serde_json::json!({ "error": "unavailable", "message": "Buma is still starting" })));
             };
             let auth = auth.inner().clone();
             let base = api_base(&state);
             let token = auth.token(&base).await;
-            // The user's own voice (Settings › Video) speaks instead of Tayang's, signed in or not.
+            // The user's own voice (Settings › Video) speaks instead of Buma's, signed in or not.
             let settings = state.db.get_settings(&state.home);
-            let own_voice = settings.voice_source != crate::types::VoiceSource::Tayang;
+            let own_voice = settings.voice_source != crate::types::VoiceSource::Buma;
             if own_voice {
                 if let crate::ai_proxy::AiJob::Voice { text, language, out, .. } = &job {
                     let source = settings.voice_source;
@@ -1055,7 +1058,7 @@ pub async fn start_ai_proxy(handle: AppHandle) {
                 }
             }
             let Some(token) = token else {
-                return Err((401, serde_json::json!({ "error": "signed-out", "message": "The user isn't signed in to Tayang: make this without AI images or voice" })));
+                return Err((401, serde_json::json!({ "error": "signed-out", "message": "The user isn't signed in to Buma: make this without AI images or voice" })));
             };
             crate::ai_proxy::run_job(auth.client(), &base, &token, job, &folder).await
         })
@@ -1095,6 +1098,36 @@ fn safe_segment(s: &str) -> bool {
     !s.is_empty() && s != "." && s != ".." && !s.contains(['/', '\\'])
 }
 
+/// Attaches a folder to a chat (its agent works there from the next session), or detaches it.
+#[tauri::command]
+pub fn set_chat_folder(state: State<'_, AppState>, chat_id: String, folder: Option<String>) -> CmdResult<Chat> {
+    let folder = match folder {
+        Some(f) => {
+            let p = PathBuf::from(&f);
+            if !p.is_absolute() || !p.is_dir() {
+                return Err(format!("{f} is not a folder on this computer"));
+            }
+            Some(p.to_string_lossy().into_owned())
+        }
+        None => None,
+    };
+    state
+        .db
+        .set_chat_folder(&chat_id, folder.as_deref())
+        .map_err(err)?
+        .ok_or_else(|| "This chat no longer exists".to_string())
+}
+
+/// Moves a chat into a project: a feature started from a chat that began without one.
+#[tauri::command]
+pub fn set_chat_project(state: State<'_, AppState>, chat_id: String, project_id: String) -> CmdResult<Chat> {
+    state
+        .db
+        .set_chat_project(&chat_id, &project_id)
+        .map_err(err)?
+        .ok_or_else(|| "This chat no longer exists".to_string())
+}
+
 /// Where this chat's agent runs. `project_folder` is the recorded folder of the chat's
 /// (known) project, when it has one: that folder is used as is, even if the working
 /// folder has changed since, as long as it still exists. Every other chat runs inside
@@ -1111,17 +1144,17 @@ pub fn resolve_cwd(
         return Ok(folder.to_path_buf());
     }
     let cwd = if chat_id == "setup" {
-        working.join(".tayang").join("setup")
+        working.join(".buma").join("setup")
     } else if let Some(rest) = chat_id.strip_prefix("study-") {
         if !safe_segment(rest) {
             return Err("That chat isn't valid".into());
         }
-        working.join(".tayang").join("style-study").join(rest)
+        working.join(".buma").join("style-study").join(rest)
     } else {
         if !safe_segment(chat_id) {
             return Err("That chat isn't valid".into());
         }
-        working.join(".tayang").join("chats").join(chat_id)
+        working.join(".buma").join("chats").join(chat_id)
     };
     std::fs::create_dir_all(working).map_err(|e| format!("Can't create the working folder: {e}"))?;
     if !projects::ensure_inside(working, &cwd) {
@@ -1131,10 +1164,13 @@ pub fn resolve_cwd(
     Ok(cwd)
 }
 
+/// The folder a chat's agent works in when it isn't the default: its project's, else a folder the user
+/// attached to the chat.
 fn project_folder_for_chat(state: &AppState, chat_id: &str) -> CmdResult<Option<PathBuf>> {
     let chat = state.db.get_chat(chat_id).map_err(err)?;
+    let attached = chat.as_ref().and_then(|c| c.folder.clone());
     let Some(project_id) = chat.and_then(|c| c.project_id) else {
-        return Ok(None);
+        return Ok(attached.map(PathBuf::from));
     };
     let project = state
         .db
@@ -1144,12 +1180,13 @@ fn project_folder_for_chat(state: &AppState, chat_id: &str) -> CmdResult<Option<
     Ok(Some(PathBuf::from(project.folder)))
 }
 
-/// Added to Claude's system prompt for sessions Tayang starts.
-pub const TAYANG_APPEND: &str = "You are running inside Tayang Studio, a desktop app for making motion videos. \
-Follow the tayang-studio skill. When the user has to choose, ask with your AskUserQuestion tool: Tayang shows \
-it as a card with the options. Never write JSON or markup for a choice.";
+/// Added to Claude's system prompt for sessions Buma starts.
+pub const BUMA_APPEND: &str = "You are running inside BSpace SDLC, BUMA's desktop app for taking a feature from \
+idea to deploy. Work with the bspace-sdlc-skills plugin: start from the using-bspace-sdlc skill, which routes by the \
+files on disk. When the user has to choose, ask with your AskUserQuestion tool: Buma shows it as a card with the \
+options. Never write JSON or markup for a choice.";
 
-/// The Tayang agent plugin in the repo, used when the bundled copy is missing (`tauri dev`).
+/// The Buma agent plugin in the repo, used when the bundled copy is missing (`tauri dev`).
 /// Debug builds only: a release build must never reach into the build machine's checkout.
 fn dev_plugin_dir() -> Option<PathBuf> {
     if !cfg!(debug_assertions) {
@@ -1176,8 +1213,8 @@ fn plugin_dir(resource_dir: Option<&Path>) -> Option<PathBuf> {
     });
     if found.is_none() {
         eprintln!(
-            "[tayang] warning: agent-plugin/.claude-plugin/plugin.json is missing from the app resources; \
-             Claude gets the Tayang skills in its first prompt instead"
+            "[buma] warning: agent-plugin/.claude-plugin/plugin.json is missing from the app resources; \
+             Claude gets the Buma skills in its first prompt instead"
         );
     }
     found
@@ -1217,21 +1254,21 @@ fn error_log(agent: AgentId) -> Option<PathBuf> {
 }
 
 /// Claude gets the plugin and the system prompt through `_meta` (so nothing is
-/// installed in the user's own `~/.claude`); every agent gets `TAYANG_STUDIO=1`.
+/// installed in the user's own `~/.claude`); every agent gets `BSPACE_SDLC_APP=1`.
 /// Without `skills` (internal sessions) there is no `_meta` at all.
 fn session_options(agent: AgentId, plugin: Option<&Path>, skills: bool) -> crate::acp::SessionOptions {
-    let env = vec![("TAYANG_STUDIO".to_string(), "1".to_string())];
+    let env = vec![("BSPACE_SDLC_APP".to_string(), "1".to_string())];
     let use_modes = agent == AgentId::Claude;
     if agent != AgentId::Claude || !skills {
-        return crate::acp::SessionOptions { meta: None, env, auto: false, use_modes, mode_timeout: None, model: None, error_log: error_log(agent), usage_log: None };
+        return crate::acp::SessionOptions { meta: None, authenticate: None, env, auto: false, use_modes, mode_timeout: None, model: None, error_log: error_log(agent), usage_log: None };
     }
-    let mut meta = serde_json::json!({ "systemPrompt": { "append": TAYANG_APPEND } });
+    let mut meta = serde_json::json!({ "systemPrompt": { "append": BUMA_APPEND } });
     if let Some(path) = plugin {
         meta["claudeCode"] = serde_json::json!({
             "options": { "plugins": [{ "type": "local", "path": path.to_string_lossy() }] }
         });
     }
-    crate::acp::SessionOptions { meta: Some(meta), env, auto: false, use_modes, mode_timeout: None, model: None, error_log: error_log(agent), usage_log: None }
+    crate::acp::SessionOptions { meta: Some(meta), authenticate: None, env, auto: false, use_modes, mode_timeout: None, model: None, error_log: error_log(agent), usage_log: None }
 }
 
 /// Adds a local plugin to a Claude session that has `_meta` (sessions without it get no plugins).
@@ -1242,6 +1279,106 @@ fn add_plugin(options: &mut crate::acp::SessionOptions, path: &Path) {
         Some(list) => list.push(entry),
         None => meta["claudeCode"] = serde_json::json!({ "options": { "plugins": [entry] } }),
     }
+}
+
+// ---- plugins (the Skills screen's Plugins tab, see plugins.rs) ----
+
+fn plugins_root(app: &AppHandle) -> CmdResult<PathBuf> {
+    crate::plugins::root(&app.path().app_data_dir().map_err(err)?)
+}
+
+fn bundled_plugin(app: &AppHandle) -> Option<PathBuf> {
+    plugin_dir(app.path().resource_dir().ok().as_deref())
+}
+
+/// The bundled plugin and every installed one, with what is on.
+#[tauri::command]
+pub fn plugins_list(app: AppHandle) -> CmdResult<Vec<crate::plugins::PluginInfo>> {
+    Ok(crate::plugins::list(&plugins_root(&app)?, bundled_plugin(&app).as_deref()))
+}
+
+/// Reads a plugin (or a repo of them) from a folder, for the user to check before installing.
+#[tauri::command]
+pub async fn plugin_stage_folder(app: AppHandle, path: String) -> CmdResult<crate::plugins::Staged> {
+    let root = plugins_root(&app)?;
+    tauri::async_runtime::spawn_blocking(move || crate::plugins::stage(&root, Path::new(&path))).await.map_err(err)?
+}
+
+/// Unpacks a .zip of a plugin (or a repo of them), for the user to check before installing.
+#[tauri::command]
+pub async fn plugin_stage_zip(app: AppHandle, path: String) -> CmdResult<crate::plugins::Staged> {
+    let root = plugins_root(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let bytes = std::fs::read(&path).map_err(|e| format!("Can't read {path}: {e}"))?;
+        let tmp = root.join(".staging").join(format!("zip-{}", uuid::Uuid::new_v4().simple()));
+        let result = crate::skills_github::unpack(&bytes, &tmp).and_then(|_| crate::plugins::stage(&root, &tmp));
+        let _ = std::fs::remove_dir_all(&tmp);
+        result
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Downloads a GitHub repo (or a folder in it) and reads the plugins in it, for the user to check.
+#[tauri::command]
+pub async fn plugin_stage_github(app: AppHandle, url: String) -> CmdResult<crate::plugins::Staged> {
+    use crate::skills_github as gh;
+    let link = gh::parse_link(&url)?;
+    let root = plugins_root(&app)?;
+    let client = api_client(std::time::Duration::from_secs(90))?;
+    let mut resp = client.get(link.archive_url()).send().await.map_err(|_| "Couldn't reach GitHub. Are you online?".to_string())?;
+    match resp.status().as_u16() {
+        200..=299 => {}
+        404 => return Err("Nothing at that link. Check it, and note that private repos can't be added".into()),
+        code => return Err(format!("GitHub didn't send the repo (error {code}). Try again in a minute")),
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = resp.chunk().await.map_err(|_| "The download stopped. Try again".to_string())? {
+        bytes.extend_from_slice(&chunk);
+        if bytes.len() as u64 > gh::DOWNLOAD_LIMIT {
+            return Err(format!("That repo is over {} MB, too big to add", gh::DOWNLOAD_LIMIT / 1024 / 1024));
+        }
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let tmp = root.join(".staging").join(format!("gh-{}", uuid::Uuid::new_v4().simple()));
+        let result = gh::unpack(&bytes, &tmp).and_then(|_| {
+            // The archive's top folder, then the folder the link points at.
+            let top = std::fs::read_dir(&tmp).ok().and_then(|mut d| d.next()).and_then(|e| e.ok()).map(|e| e.path()).unwrap_or_else(|| tmp.clone());
+            crate::plugins::stage(&root, &top.join(&link.path))
+        });
+        let _ = std::fs::remove_dir_all(&tmp);
+        result
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Installs what was staged (replacing older versions). New sessions load it.
+#[tauri::command]
+pub fn plugin_install(app: AppHandle, id: String) -> CmdResult<Vec<crate::plugins::PluginInfo>> {
+    let root = plugins_root(&app)?;
+    crate::plugins::commit(&root, &id)?;
+    Ok(crate::plugins::list(&root, bundled_plugin(&app).as_deref()))
+}
+
+#[tauri::command]
+pub fn plugin_discard(app: AppHandle, id: String) -> CmdResult<()> {
+    crate::plugins::discard(&plugins_root(&app)?, &id)
+}
+
+/// Removes an installed plugin; an update of the bundled one goes back to the bundled version.
+#[tauri::command]
+pub fn plugin_remove(app: AppHandle, name: String) -> CmdResult<Vec<crate::plugins::PluginInfo>> {
+    let root = plugins_root(&app)?;
+    crate::plugins::remove(&root, &name)?;
+    Ok(crate::plugins::list(&root, bundled_plugin(&app).as_deref()))
+}
+
+#[tauri::command]
+pub fn plugin_set_enabled(app: AppHandle, name: String, enabled: bool) -> CmdResult<Vec<crate::plugins::PluginInfo>> {
+    let root = plugins_root(&app)?;
+    crate::plugins::set_enabled(&root, &name, enabled)?;
+    Ok(crate::plugins::list(&root, bundled_plugin(&app).as_deref()))
 }
 
 fn skills_root(app: &AppHandle) -> CmdResult<PathBuf> {
@@ -1387,18 +1524,27 @@ pub fn skill_github_discard(app: AppHandle, id: String) -> CmdResult<()> {
     Ok(())
 }
 
-/// Tayang's own Claude Code config folder (see `claude_account`), created on first use.
+/// Buma's own Claude Code config folder (see `claude_account`), created on first use.
+/// The Claude config folder of the active Claude account (the default: Buma's own `claude` folder).
 pub fn claude_config_dir(app: &AppHandle) -> CmdResult<PathBuf> {
-    let dir = crate::claude_account::config_dir(&app.path().app_data_dir().map_err(err)?);
+    let data = app.path().app_data_dir().map_err(err)?;
+    let id = crate::accounts::active(&crate::accounts::load(&data), AgentId::Claude, "claude");
+    let dir = crate::accounts::dir(&data, AgentId::Claude, &id).unwrap_or_else(|| crate::claude_account::config_dir(&data));
     std::fs::create_dir_all(&dir).map_err(err)?;
     Ok(dir)
 }
 
-/// `CLAUDE_CONFIG_DIR` for a Claude session: Tayang's own sign-in and a clean setup. Nothing for
+/// `CLAUDE_CONFIG_DIR` for a Claude session: Buma's own sign-in and a clean setup. Nothing for
 /// other agents.
 fn claude_env(app: &AppHandle, agent: AgentId) -> CmdResult<Vec<(String, String)>> {
     if agent != AgentId::Claude {
-        return Ok(Vec::new());
+        // Codex and opencode on an extra account: their sign-in lives in that account's folder.
+        let data = app.path().app_data_dir().map_err(err)?;
+        let id = crate::accounts::active(&crate::accounts::load(&data), agent, &agent_key(agent));
+        return Ok(match crate::accounts::dir(&data, agent, &id) {
+            Some(d) if crate::accounts::supports_accounts(agent) => crate::accounts::env_for(agent, &d),
+            _ => Vec::new(),
+        });
     }
     let dir = claude_config_dir(app)?;
     Ok(vec![(crate::claude_account::CONFIG_ENV.to_string(), dir.to_string_lossy().into_owned())])
@@ -1415,7 +1561,7 @@ pub struct ClaudeSignIn(pub std::sync::Mutex<Option<tokio::sync::oneshot::Sender
 /// The event with the sign-in page, for when the browser didn't open by itself.
 pub const CLAUDE_SIGN_IN_URL_EVENT: &str = "claude://sign-in-url";
 
-/// Who is signed in to Claude in Tayang.
+/// Who is signed in to Claude in Buma.
 #[tauri::command]
 pub async fn claude_account(app: AppHandle) -> CmdResult<crate::claude_account::ClaudeAccount> {
     let dir = claude_config_dir(&app)?;
@@ -1423,7 +1569,7 @@ pub async fn claude_account(app: AppHandle) -> CmdResult<crate::claude_account::
     Ok(crate::claude_account::status(&claude, &dir).await)
 }
 
-/// Signs in to Claude for Tayang: Claude Code opens the browser and the user signs in there.
+/// Signs in to Claude for Buma: Claude Code opens the browser and the user signs in there.
 /// Resolves with the account once they're done; an error when cancelled, timed out or refused.
 #[tauri::command]
 pub async fn claude_sign_in(
@@ -1469,7 +1615,7 @@ pub fn claude_sign_in_cancel(pending: State<'_, ClaudeSignIn>) -> CmdResult<()> 
     Ok(())
 }
 
-/// Signs out of Claude in Tayang. Running Claude chats keep going until they end.
+/// Signs out of Claude in Buma. Running Claude chats keep going until they end.
 #[tauri::command]
 pub async fn claude_sign_out(
     app: AppHandle,
@@ -1481,7 +1627,7 @@ pub async fn claude_sign_out(
     Ok(crate::claude_account::sign_out(&claude, &dir).await)
 }
 
-/// Starts the chat's agent. Resolves `true` when Claude started without the Tayang
+/// Starts the chat's agent. Resolves `true` when Claude started without the Buma
 /// plugin, so the caller must send the skills as text in the first prompt (other
 /// agents always get them that way).
 #[tauri::command]
@@ -1497,12 +1643,22 @@ pub async fn agent_start(
     let cwd = resolve_cwd(&state.working(), &chat_id, folder.as_deref())?;
     let resource_dir = app.path().resource_dir().ok();
     let skills = wants_skills(&chat_id);
-    let plugin = if agent_id == AgentId::Claude && skills {
-        plugin_dir(resource_dir.as_deref())
+    // Every plugin that is on: the bundled bspace-sdlc-skills (unless an installed update replaces it)
+    // and the ones installed on the Skills screen.
+    let plugins: Vec<PathBuf> = if agent_id == AgentId::Claude && skills {
+        let bundled = plugin_dir(resource_dir.as_deref());
+        match app.path().app_data_dir().ok().and_then(|d| crate::plugins::root(&d).ok()) {
+            Some(root) => crate::plugins::active_paths(&root, bundled.as_deref()),
+            None => bundled.into_iter().collect(),
+        }
     } else {
-        None
+        Vec::new()
     };
+    let plugin = plugins.first().cloned();
     let mut options = session_options(agent_id, plugin.as_deref(), skills);
+    for more in plugins.iter().skip(1) {
+        add_plugin(&mut options, more);
+    }
     // The user's own skills (the Skills screen) load as a second plugin.
     if agent_id == AgentId::Claude && skills {
         if let Some(mine) = app.path().app_data_dir().ok().and_then(|d| crate::skills::root(&d).ok()).and_then(|r| crate::skills::plugin(&r)) {
@@ -1518,7 +1674,7 @@ pub async fn agent_start(
         agent: agent_key(agent_id),
         kind: chat_kind(&chat_id, folder.is_some()).to_string(),
     });
-    // AI images and voice with the user's credits: this session's own token for Tayang's endpoint.
+    // AI images and voice with the user's credits: this session's own token for Buma's endpoint.
     if let Some(proxy) = app.try_state::<Arc<crate::ai_proxy::AiProxy>>() {
         options.env.extend(proxy.session_env(&chat_id));
     }
@@ -1578,6 +1734,230 @@ impl crate::acp::AcpSink for QuietSink {
 
 /// The models an agent offers, read by opening a short session in a scratch folder (for the picker
 /// before any chat with that agent has run). None when the agent doesn't report models.
+/// The npm package that installs each agent's CLI (Add connection's Install). Claude and Codex run
+/// through `npx` and need none; Antigravity and Cursor have their own installers.
+pub fn agent_npm_package(agent: AgentId) -> Option<&'static str> {
+    match agent {
+        AgentId::Claude => Some("@anthropic-ai/claude-code"),
+        AgentId::Codex => Some("@openai/codex"),
+        AgentId::Gemini => Some("@google/gemini-cli"),
+        AgentId::Opencode => Some("opencode-ai"),
+        _ => None,
+    }
+}
+
+/// Installs an agent's CLI with npm (`npm install -g`), for Add connection. The error is npm's last lines.
+#[tauri::command]
+pub async fn agent_install(agent_id: AgentId) -> CmdResult<()> {
+    if agent_id == AgentId::Cursor {
+        // Cursor's own installer script (it is not on npm): downloaded from cursor.com and run.
+        let mut cmd = if cfg!(windows) {
+            let mut c = tokio::process::Command::new("powershell");
+            c.args(["-NoProfile", "-Command", "irm 'https://cursor.com/install?win32=true' | iex"]);
+            c
+        } else {
+            let mut c = tokio::process::Command::new("bash");
+            c.args(["-c", "curl -fsS https://cursor.com/install | bash"]);
+            c
+        };
+        let out = cmd.env("PATH", system::augmented_path()).output().await.map_err(|e| format!("Couldn't run the installer: {e}"))?;
+        if out.status.success() {
+            return Ok(());
+        }
+        let text = String::from_utf8_lossy(&out.stderr);
+        let tail: Vec<&str> = text.lines().rev().take(6).collect::<Vec<_>>().into_iter().rev().collect();
+        return Err(tail.join("\n").into());
+    }
+    let pkg = agent_npm_package(agent_id).ok_or("This agent has its own installer")?;
+    let out = tokio::process::Command::new(system::Exec::which(&RealExec, "npm").unwrap_or_else(|| "npm".into()))
+        .args(["install", "-g", pkg])
+        .env("PATH", system::augmented_path())
+        .output()
+        .await
+        .map_err(|e| format!("Couldn't run npm: {e}"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let text = String::from_utf8_lossy(&out.stderr);
+    let tail: Vec<&str> = text.lines().rev().take(6).collect::<Vec<_>>().into_iter().rev().collect();
+    Err(tail.join("\n").into())
+}
+
+// ---- accounts (several per platform) ----
+
+/// One account of an agent, for Settings › Agents › Provider.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountView {
+    pub id: String,
+    pub agent: AgentId,
+    /// Who is signed in (an email), when that is known.
+    pub account: Option<String>,
+    pub signed_in: bool,
+    pub active: bool,
+}
+
+/// Who is signed in to one account of an agent.
+async fn account_view(data: &Path, home: &Path, f: &crate::accounts::AccountsFile, agent: AgentId, id: &str) -> AccountView {
+    let dir = crate::accounts::dir(data, agent, id);
+    let (signed_in, account) = match agent {
+        AgentId::Claude => match (claude_program(), dir.as_deref()) {
+            (Ok(claude), Some(d)) => {
+                let a = crate::claude_account::status(&claude, d).await;
+                (a.signed_in, a.email)
+            }
+            _ => (false, None),
+        },
+        _ => {
+            let account = match dir.as_deref() {
+                Some(d) => system::account_in(agent, d),
+                None => system::agent_account(agent, home),
+            };
+            let saved = match dir.as_deref() {
+                Some(d) => system::account_files_in(agent, d).iter().any(|p| p.is_file()),
+                None => system::credential_files(agent, home).iter().any(|p| p.is_file()),
+            };
+            (saved, account)
+        }
+    };
+    AccountView { id: id.to_string(), agent, account, signed_in, active: crate::accounts::active(f, agent, &agent_key(agent)) == id }
+}
+
+/// Every account of the agents that can have several (Claude, Codex, opencode): the default one first.
+#[tauri::command]
+pub async fn accounts_list(app: AppHandle, state: State<'_, AppState>) -> CmdResult<Vec<AccountView>> {
+    let data = app.path().app_data_dir().map_err(err)?;
+    let f = crate::accounts::load(&data);
+    let mut out = Vec::new();
+    for agent in [AgentId::Claude, AgentId::Codex, AgentId::Opencode] {
+        out.push(account_view(&data, &state.home, &f, agent, crate::accounts::DEFAULT).await);
+        for e in f.extra.iter().filter(|e| e.agent == agent) {
+            out.push(account_view(&data, &state.home, &f, agent, &e.id).await);
+        }
+    }
+    Ok(out)
+}
+
+/// Adds an account to an agent (signed out until `account_sign_in`); returns its id.
+#[tauri::command]
+pub fn account_add(app: AppHandle, agent_id: AgentId) -> CmdResult<String> {
+    if !crate::accounts::supports_accounts(agent_id) {
+        return Err("This agent has one account".into());
+    }
+    let data = app.path().app_data_dir().map_err(err)?;
+    crate::accounts::add(&data, agent_id, &uuid::Uuid::new_v4().to_string()).map_err(err)
+}
+
+/// Removes an extra account: signs it out (Claude's sign-in is in the Keychain) and deletes its folder.
+#[tauri::command]
+pub async fn account_remove(app: AppHandle, agent_id: AgentId, id: String) -> CmdResult<()> {
+    let data = app.path().app_data_dir().map_err(err)?;
+    if agent_id == AgentId::Claude && id != crate::accounts::DEFAULT {
+        if let Ok(claude) = claude_program() {
+            let _ = crate::claude_account::sign_out(&claude, &crate::accounts::extra_dir(&data, &id)).await;
+        }
+    }
+    crate::accounts::remove(&data, &id).map_err(err)
+}
+
+/// Signs one account out. Claude: `claude auth logout` in that account's folder. Codex, opencode and
+/// Gemini: their sign-in files are deleted (for the default account that is the CLI's own sign-in on
+/// this computer, which the UI says before asking).
+#[tauri::command]
+pub async fn account_sign_out(app: AppHandle, state: State<'_, AppState>, usage: State<'_, crate::usage::UsageCache>, agent_id: AgentId, id: String) -> CmdResult<()> {
+    let data = app.path().app_data_dir().map_err(err)?;
+    let dir = crate::accounts::dir(&data, agent_id, &id);
+    *usage.0.lock().map_err(err)? = None;
+    if agent_id == AgentId::Claude {
+        let dir = dir.ok_or("No folder for this account")?;
+        let claude = claude_program()?;
+        let _ = crate::claude_account::sign_out(&claude, &dir).await;
+        return Ok(());
+    }
+    let files = crate::accounts::sign_out_files(agent_id, dir.as_deref(), &state.home);
+    if files.is_empty() {
+        return Err("Buma can't sign this agent out. Sign out in its own app".into());
+    }
+    for f in files.iter().filter(|f| f.is_file()) {
+        std::fs::remove_file(f).map_err(err)?;
+    }
+    Ok(())
+}
+
+/// Makes an account the agent's active one: new sessions of the agent start on it.
+#[tauri::command]
+pub fn account_use(app: AppHandle, usage: State<'_, crate::usage::UsageCache>, agent_id: AgentId, id: String) -> CmdResult<()> {
+    let data = app.path().app_data_dir().map_err(err)?;
+    *usage.0.lock().map_err(err)? = None;
+    crate::accounts::set_active(&data, &agent_key(agent_id), &id).map_err(err)
+}
+
+/// Signs in to one account of an agent in the browser: Claude with `claude auth login`, the others with
+/// their ACP sign-in, each pointed at that account's folder.
+#[tauri::command]
+pub async fn account_sign_in(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    pending: State<'_, ClaudeSignIn>,
+    agent_id: AgentId,
+    id: String,
+) -> CmdResult<()> {
+    let data = app.path().app_data_dir().map_err(err)?;
+    let dir = crate::accounts::dir(&data, agent_id, &id);
+    if agent_id == AgentId::Claude {
+        use crate::claude_account::{sign_in, SignInEnd, SIGN_IN_TIMEOUT};
+        let dir = dir.ok_or("No folder for this account")?;
+        std::fs::create_dir_all(&dir).map_err(err)?;
+        let claude = claude_program()?;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        if let Some(old) = pending.0.lock().map_err(err)?.replace(tx) {
+            let _ = old.send(());
+        }
+        let emitter = app.clone();
+        return match sign_in(&claude, &dir, SIGN_IN_TIMEOUT, rx, move |url| {
+            let _ = emitter.emit(CLAUDE_SIGN_IN_URL_EVENT, url);
+        })
+        .await
+        {
+            SignInEnd::Done => Ok(()),
+            SignInEnd::Cancelled => Err("cancelled".into()),
+            SignInEnd::TimedOut => Err("Signing in took too long. Try again".into()),
+            SignInEnd::Failed(why) => Err(why),
+        };
+    }
+    let (command, launch_env) = agent_launch(&app, agent_id).await?;
+    let cwd = app.path().app_cache_dir().map_err(err)?.join("model-probe");
+    std::fs::create_dir_all(&cwd).map_err(err)?;
+    let probe = format!("sign-in-{}", agent_key(agent_id));
+    let mut options = session_options(agent_id, None, false);
+    options.env.extend(launch_env);
+    if let Some(d) = dir.as_deref() {
+        options.env.extend(crate::accounts::env_for(agent_id, d));
+    }
+    options.authenticate = Some(String::new());
+    let result = state.acp.start_with(&probe, &command, &cwd, Arc::new(QuietSink), options).await;
+    let _ = state.acp.stop(&probe).await;
+    result.map_err(err)
+}
+
+/// Signs in to an agent the way it signs in (Add connection in Settings › Agents › Provider): its ACP
+/// `authenticate` with the browser sign-in method, which opens the OAuth page (ChatGPT, Google…) and
+/// returns once the user is done. Claude signs in through `claude_account` instead.
+#[tauri::command]
+pub async fn agent_sign_in(app: AppHandle, state: State<'_, AppState>, agent_id: AgentId, method: Option<String>) -> CmdResult<()> {
+    let (command, launch_env) = agent_launch(&app, agent_id).await?;
+    let cwd = app.path().app_cache_dir().map_err(err)?.join("model-probe");
+    std::fs::create_dir_all(&cwd).map_err(err)?;
+    let probe = format!("sign-in-{}", agent_key(agent_id));
+    let mut options = session_options(agent_id, None, false);
+    options.env.extend(claude_env(&app, agent_id)?);
+    options.env.extend(launch_env);
+    options.authenticate = Some(method.unwrap_or_default());
+    let result = state.acp.start_with(&probe, &command, &cwd, Arc::new(QuietSink), options).await;
+    let _ = state.acp.stop(&probe).await;
+    result.map_err(err)
+}
+
 #[tauri::command]
 pub async fn agent_models(app: AppHandle, state: State<'_, AppState>, agent_id: AgentId) -> CmdResult<Option<AgentModels>> {
     let (command, launch_env) = agent_launch(&app, agent_id).await?;
@@ -1607,7 +1987,7 @@ fn needs_skills_text(agent: AgentId, plugin: Option<&Path>) -> bool {
     agent == AgentId::Claude && plugin.is_none()
 }
 
-/// m:ss.cc, same as `formatTimecode` in `@tayang/shared`.
+/// m:ss.cc, same as `formatTimecode` in `@bspace-sdlc-app/shared`.
 pub fn format_timecode(sec: f64, fps: u32) -> String {
     let fps = fps.max(1);
     let total = sec.max(0.0);
@@ -1655,7 +2035,7 @@ pub fn build_prompt(
                 out.push(PromptPart::Text(match project(project_id) {
                     Some(p) => {
                         let head = format!(
-                            "Context: video project \"{}\". Its Tayang id is {}. Its files are in {}.",
+                            "Context: video project \"{}\". Its Buma id is {}. Its files are in {}.",
                             p.title, p.id, p.folder
                         );
                         match brief(Path::new(&p.folder)) {
@@ -1892,6 +2272,26 @@ pub async fn agent_set_auto(
     state.acp.set_auto(&chat_id, on).await.map(|_| ()).map_err(err)
 }
 
+/// The chat's permission mode: `ask`, `acceptEdits`, `plan`, `auto` or `bypass`.
+#[tauri::command]
+pub async fn agent_set_mode(state: State<'_, AppState>, chat_id: String, mode: String) -> CmdResult<()> {
+    state.acp.set_permission_mode(&chat_id, &mode).await.map_err(err)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentModes {
+    available: Vec<String>,
+    current: Option<String>,
+}
+
+/// The modes the chat's running agent offers (empty for an agent without modes).
+#[tauri::command]
+pub fn agent_modes(state: State<'_, AppState>, chat_id: String) -> CmdResult<AgentModes> {
+    let (available, current) = state.acp.modes(&chat_id).map_err(err)?;
+    Ok(AgentModes { available, current })
+}
+
 #[tauri::command]
 pub async fn agent_cancel(state: State<'_, AppState>, chat_id: String) -> CmdResult<()> {
     state.acp.cancel(&chat_id).await.map_err(err)
@@ -2079,7 +2479,7 @@ pub async fn media_extract_frame(
     let tools = state.media.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let video = media::latest_render(&folder).ok_or("This project has no render yet")?;
-        let out = folder.join(".tayang").join("frames");
+        let out = folder.join(".buma").join("frames");
         media::extract_frame(&tools, &video, time_sec, &out).map(|p| path_string(&p))
     })
     .await
@@ -2096,7 +2496,7 @@ pub async fn media_thumbnails(
     let tools = state.media.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let video = media::latest_render(&folder).ok_or("This project has no render yet")?;
-        let out = folder.join(".tayang").join("thumbs");
+        let out = folder.join(".buma").join("thumbs");
         media::thumbnails(&tools, &video, count, &out)
             .map(|v| v.iter().map(|p| path_string(p)).collect())
     })
@@ -2166,7 +2566,7 @@ pub struct RenderCommand {
     pub render: Vec<String>,
 }
 
-/// The exact command "Render video" will run when the project has a `tayang.json`.
+/// The exact command "Render video" will run when the project has a `buma.json`.
 #[tauri::command]
 pub fn render_command(
     state: State<'_, AppState>,
@@ -2233,6 +2633,60 @@ impl ApiKeys {
     }
 }
 
+// ---- Azure DevOps sign-in (see devops): required before the app opens ----
+
+async fn devops_saved(keys: &ApiKeys) -> CmdResult<Option<crate::devops::Saved>> {
+    Ok(keys.get_account(crate::devops::ACCOUNT).await?.and_then(|raw| serde_json::from_str(&raw).ok()))
+}
+
+/// Who is signed in to Azure DevOps, from the keychain (no network: it works offline).
+#[tauri::command]
+pub async fn devops_status(keys: State<'_, ApiKeys>) -> CmdResult<crate::devops::DevopsStatus> {
+    let profile = devops_saved(&keys).await?.map(|s| s.profile);
+    Ok(crate::devops::DevopsStatus { signed_in: profile.is_some(), profile })
+}
+
+/// Checks the token against the organization, then saves both. The token stays in Rust.
+#[tauri::command]
+pub async fn devops_sign_in(keys: State<'_, ApiKeys>, org: String, pat: String) -> CmdResult<crate::devops::DevopsStatus> {
+    let org = crate::devops::normalize_org(&org).ok_or("Enter your Azure DevOps organization, like buma or https://dev.azure.com/buma")?;
+    let pat = pat.trim().to_string();
+    if pat.is_empty() {
+        return Err("Paste your personal access token".into());
+    }
+    let client = crate::auth::http_client()?;
+    let profile = crate::devops::verify(&client, "https://dev.azure.com", &org, &pat).await?;
+    let saved = crate::devops::Saved { method: crate::devops::Method::Pat, pat, profile: profile.clone() };
+    keys.set_account(crate::devops::ACCOUNT, serde_json::to_string(&saved).map_err(err)?).await?;
+    Ok(crate::devops::DevopsStatus { signed_in: true, profile: Some(profile) })
+}
+
+/// Sign in with Microsoft: the Azure CLI opens Microsoft's sign-in in the browser, then the account is
+/// checked against the organization. Nothing secret is saved; the Azure CLI keeps the sign-in.
+#[tauri::command]
+pub async fn devops_microsoft_sign_in(keys: State<'_, ApiKeys>, org: String) -> CmdResult<crate::devops::DevopsStatus> {
+    let org = crate::devops::normalize_org(&org).ok_or("Enter your Azure DevOps organization, like buma or https://dev.azure.com/buma")?;
+    let az = tauri::async_runtime::spawn_blocking(|| {
+        system::refresh_shell_path();
+        system::Exec::which(&RealExec, "az")
+    })
+    .await
+    .map_err(err)?
+    .ok_or("Signing in with Microsoft needs the Azure CLI. Install it (Check your setup lists it), or use a personal access token.")?;
+    let token = crate::devops::az_sign_in(&az).await?;
+    let client = crate::auth::http_client()?;
+    let profile = crate::devops::verify_bearer(&client, "https://dev.azure.com", &org, &token).await?;
+    let saved = crate::devops::Saved { method: crate::devops::Method::AzureCli, pat: String::new(), profile: profile.clone() };
+    keys.set_account(crate::devops::ACCOUNT, serde_json::to_string(&saved).map_err(err)?).await?;
+    Ok(crate::devops::DevopsStatus { signed_in: true, profile: Some(profile) })
+}
+
+#[tauri::command]
+pub async fn devops_sign_out(keys: State<'_, ApiKeys>) -> CmdResult<crate::devops::DevopsStatus> {
+    keys.delete_account(crate::devops::ACCOUNT).await?;
+    Ok(crate::devops::DevopsStatus { signed_in: false, profile: None })
+}
+
 // ---- the user's own voice (Fish Audio or VoiceStudio, see voice) ----
 
 /// What Settings › Video shows about the voice sources: which keys are saved.
@@ -2287,7 +2741,7 @@ pub async fn voice_key_save(
     Ok((check, settings))
 }
 
-/// Forgets the source's API key; the voice source goes back to Tayang when it was that source.
+/// Forgets the source's API key; the voice source goes back to Buma when it was that source.
 #[tauri::command]
 pub async fn voice_key_clear(state: State<'_, AppState>, keys: State<'_, ApiKeys>, source: crate::types::VoiceSource) -> CmdResult<Settings> {
     let (account, _) = voice_key_source(source)?;
@@ -2296,7 +2750,7 @@ pub async fn voice_key_clear(state: State<'_, AppState>, keys: State<'_, ApiKeys
     if settings.voice_source != source {
         return Ok(settings);
     }
-    state.db.update_settings(serde_json::json!({ "voiceSource": "tayang" })).map_err(err)
+    state.db.update_settings(serde_json::json!({ "voiceSource": "buma" })).map_err(err)
 }
 
 /// Whether VoiceStudio is open on this computer.
@@ -2316,7 +2770,7 @@ pub const ENGINE_PROGRESS_EVENT: &str = "engine://progress";
 fn api_client(timeout: std::time::Duration) -> CmdResult<reqwest::Client> {
     reqwest::Client::builder()
         .timeout(timeout)
-        .user_agent(concat!("tayang-studio/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("bspace-sdlc-app/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(err)
 }
@@ -2423,7 +2877,7 @@ pub async fn engine_install(app: AppHandle, lock: State<'_, EngineInstall>) -> C
     // Large file, slow connections: no overall timeout, only a connect one.
     let client = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(20))
-        .user_agent(concat!("tayang-studio/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("bspace-sdlc-app/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(err)?;
     let emitter = app.clone();
@@ -2494,6 +2948,8 @@ async fn api_agent_info(app: &AppHandle) -> AgentInfo {
         version: provider.map(|p| p.model),
         acp_command: Vec::new(),
         recommended: false,
+        signed_in: key,
+        account: None,
     }
 }
 
@@ -2780,12 +3236,12 @@ mod tests {
     fn session_options_for_claude_load_the_plugin() {
         let plugin = PathBuf::from("/res/agent-plugin");
         let o = session_options(AgentId::Claude, Some(&plugin), true);
-        assert_eq!(o.env, vec![("TAYANG_STUDIO".to_string(), "1".to_string())]);
+        assert_eq!(o.env, vec![("BSPACE_SDLC_APP".to_string(), "1".to_string())]);
         let meta = o.meta.unwrap();
         let path = meta["claudeCode"]["options"]["plugins"][0]["path"].as_str().unwrap();
         assert_eq!(PathBuf::from(path), plugin);
         assert_eq!(meta["claudeCode"]["options"]["plugins"][0]["type"], "local");
-        assert_eq!(meta["systemPrompt"]["append"], TAYANG_APPEND);
+        assert_eq!(meta["systemPrompt"]["append"], BUMA_APPEND);
     }
 
     #[test]
@@ -2793,7 +3249,7 @@ mod tests {
         for id in [AgentId::Opencode, AgentId::Codex, AgentId::Gemini] {
             let o = session_options(id, Some(Path::new("/x")), true);
             assert!(o.meta.is_none());
-            assert_eq!(o.env, vec![("TAYANG_STUDIO".to_string(), "1".to_string())]);
+            assert_eq!(o.env, vec![("BSPACE_SDLC_APP".to_string(), "1".to_string())]);
         }
     }
 
@@ -2819,7 +3275,7 @@ mod tests {
         let o = session_options(AgentId::Claude, None, true);
         let meta = o.meta.unwrap();
         assert!(meta["claudeCode"].is_null());
-        assert_eq!(meta["systemPrompt"]["append"], TAYANG_APPEND);
+        assert_eq!(meta["systemPrompt"]["append"], BUMA_APPEND);
     }
 
     #[test]
@@ -2834,8 +3290,8 @@ mod tests {
 
     #[test]
     fn the_system_prompt_asks_with_the_question_tool_not_a2ui() {
-        assert!(TAYANG_APPEND.contains("AskUserQuestion"));
-        assert!(!TAYANG_APPEND.to_lowercase().contains("a2ui"));
+        assert!(BUMA_APPEND.contains("AskUserQuestion"));
+        assert!(!BUMA_APPEND.to_lowercase().contains("a2ui"));
     }
 
     #[test]
@@ -2866,7 +3322,7 @@ mod tests {
     fn internal_sessions_get_no_meta_options() {
         let o = session_options(AgentId::Claude, Some(Path::new("/p")), false);
         assert!(o.meta.is_none());
-        assert_eq!(o.env, vec![("TAYANG_STUDIO".to_string(), "1".to_string())]);
+        assert_eq!(o.env, vec![("BSPACE_SDLC_APP".to_string(), "1".to_string())]);
     }
 
     #[test]
@@ -2889,14 +3345,14 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let w = tmp.path();
         let setup = resolve_cwd(w, "setup", None).unwrap();
-        assert!(setup.ends_with(".tayang/setup") || setup.ends_with(r".tayang\setup"));
+        assert!(setup.ends_with(".buma/setup") || setup.ends_with(r".buma\setup"));
         assert!(setup.is_dir());
         let topics = resolve_cwd(w, "autopilot-a1", None).unwrap();
-        assert_eq!(topics, w.join(".tayang").join("chats").join("autopilot-a1"));
+        assert_eq!(topics, w.join(".buma").join("chats").join("autopilot-a1"));
         let study = resolve_cwd(w, "study-abc", None).unwrap();
-        assert_eq!(study, w.join(".tayang").join("style-study").join("abc"));
+        assert_eq!(study, w.join(".buma").join("style-study").join("abc"));
         let chat = resolve_cwd(w, "c1", None).unwrap();
-        assert_eq!(chat, w.join(".tayang").join("chats").join("c1"));
+        assert_eq!(chat, w.join(".buma").join("chats").join("c1"));
         let proj = w.join("my-video");
         std::fs::create_dir(&proj).unwrap();
         assert_eq!(resolve_cwd(w, "c2", Some(&proj)).unwrap(), proj);
@@ -2948,7 +3404,7 @@ mod tests {
         let old = tmp.path().join("old").join("p");
         std::fs::create_dir_all(&old).unwrap();
         let known = |id: &str| (id == "p").then(|| old.clone());
-        let in_old = frame(old.join(".tayang/frames/f.png"));
+        let in_old = frame(old.join(".buma/frames/f.png"));
         assert!(check_frame_images(&w, std::slice::from_ref(&in_old), known).is_ok());
         assert!(check_frame_images(&w, &[in_old], none).is_err());
         assert!(check_frame_images(&w, &[frame(old.join("../secret.png"))], known).is_err());
@@ -3106,7 +3562,7 @@ mod tests {
             vec![
                 PromptPart::Text("hi".into()),
                 PromptPart::Text(
-                    "Context: video project \"Launch\". Its Tayang id is p1. Its files are in /w/launch.\nIts AGENTS.md:\n\n# Launch\n- Kind: promo"
+                    "Context: video project \"Launch\". Its Buma id is p1. Its files are in /w/launch.\nIts AGENTS.md:\n\n# Launch\n- Kind: promo"
                         .into()
                 ),
                 PromptPart::Image { path: PathBuf::from("/w/f.png") },
@@ -3283,12 +3739,58 @@ pub async fn get_chat_trace(app: AppHandle, state: State<'_, AppState>, chat_id:
     if folder.is_some() && tool_ids.is_empty() {
         return Ok(crate::trace::ChatTrace { supported: true, ..Default::default() });
     }
-    // Tayang's own Claude folder, then `~/.claude` for chats from before Tayang had one.
+    // Buma's own Claude folder, then `~/.claude` for chats from before Buma had one.
     let configs = vec![claude_config_dir(&app)?, state.home.join(".claude")];
     tauri::async_runtime::spawn_blocking(move || crate::trace::chat_trace(&configs, &cwd, &tool_ids)).await.map_err(err)
 }
 
 // ---- agent usage ----
+
+/// Every model and version an agent can run, for Settings › Agents › Provider: Claude from Anthropic's
+/// list (with the Claude sign-in), opencode from `opencode models`; empty for agents that only report
+/// theirs through ACP (`agent_models`).
+#[tauri::command]
+pub async fn agent_model_catalog(app: AppHandle, state: State<'_, AppState>, agent_id: AgentId) -> CmdResult<Vec<crate::types::ModelChoice>> {
+    match agent_id {
+        AgentId::Claude => {
+            let claude = claude_config_dir(&app)?;
+            let token = tauri::async_runtime::spawn_blocking(move || crate::usage::read_claude_token(&RealExec, &claude)).await.map_err(err)?;
+            match token {
+                Some(t) => crate::model_catalog::fetch_anthropic(&t).await,
+                None => Ok(Vec::new()),
+            }
+        }
+        AgentId::Codex => {
+            // The active account's Codex home: an extra account's folder, else ~/.codex.
+            let data = app.path().app_data_dir().map_err(err)?;
+            let id = crate::accounts::active(&crate::accounts::load(&data), AgentId::Codex, "codex");
+            let home = crate::accounts::dir(&data, AgentId::Codex, &id).unwrap_or_else(|| state.home.join(".codex"));
+            Ok(std::fs::read_to_string(home.join("models_cache.json")).map(|b| crate::model_catalog::from_codex_cache(&b)).unwrap_or_default())
+        }
+        AgentId::Opencode => tauri::async_runtime::spawn_blocking(|| {
+            crate::system::Exec::run(&RealExec, "opencode", &["models"]).map(|out| crate::model_catalog::from_opencode(&out)).unwrap_or_default()
+        })
+        .await
+        .map_err(err),
+        _ => Ok(Vec::new()),
+    }
+}
+
+/// Settings › Agents › Usage: the agents' turns and failovers of the last `days` days (all when None).
+#[tauri::command]
+pub async fn agent_activity(app: AppHandle, days: Option<u32>) -> CmdResult<Vec<serde_json::Value>> {
+    let path = app.path().app_data_dir().map_err(err)?.join("agent-usage.jsonl");
+    let since = days.map(|d| chrono::Utc::now() - chrono::Duration::days(i64::from(d)));
+    tauri::async_runtime::spawn_blocking(move || crate::activity::read(&path, since)).await.map_err(err)
+}
+
+/// Records that a chat moved to the next agent (failover), for the Usage screen.
+#[tauri::command]
+pub async fn agent_failover_record(app: AppHandle, chat_id: String, from: String, to: String, reason: String) -> CmdResult<()> {
+    let path = app.path().app_data_dir().map_err(err)?.join("agent-usage.jsonl");
+    let at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    crate::activity::append(&path, &crate::activity::failover_line(&chat_id, &from, &to, &reason, &at)).map_err(err)
+}
 
 #[tauri::command]
 pub async fn get_agent_usage(
@@ -3304,24 +3806,92 @@ pub async fn get_agent_usage(
             }
         }
     }
-    let claude = claude_config_dir(&app)?;
-    let (agents, token) = tauri::async_runtime::spawn_blocking(move || {
-        let agents = system::detect_agents(&RealExec);
-        let token = if agents.iter().any(|a| a.installed && a.id == AgentId::Claude) {
-            crate::usage::read_claude_token(&RealExec, &claude)
-        } else {
-            None
-        };
-        (agents, token)
-    })
-    .await
-    .map_err(err)?;
+    let data = app.path().app_data_dir().map_err(err)?;
+    let acc = crate::accounts::load(&data);
+    let agents = tauri::async_runtime::spawn_blocking(|| system::detect_agents(&RealExec)).await.map_err(err)?;
     let now = chrono::Utc::now();
     let mut out = Vec::new();
     for a in agents.iter().filter(|a| a.installed) {
+        // Every account of the agent has its own numbers: the default one first, then the extra ones.
+        let ids: Vec<String> = std::iter::once(crate::accounts::DEFAULT.to_string())
+            .chain(acc.extra.iter().filter(|e| e.agent == a.id).map(|e| e.id.clone()))
+            .collect();
         if a.id == AgentId::Opencode {
-            let db = crate::usage::opencode_db(&state.home, std::env::var("XDG_DATA_HOME").ok().as_deref());
-            let usage = tauri::async_runtime::spawn_blocking(move || crate::usage::opencode_usage(&db, now)).await.map_err(err)?;
+            for id in ids {
+                let dir = crate::accounts::dir(&data, a.id, &id);
+                let xdg = match &dir {
+                    Some(d) => Some(d.to_string_lossy().into_owned()),
+                    None => std::env::var("XDG_DATA_HOME").ok(),
+                };
+                let db = crate::usage::opencode_db(&state.home, xdg.as_deref());
+                if id != crate::accounts::DEFAULT && !db.is_file() {
+                    continue;
+                }
+                let mut usage = tauri::async_runtime::spawn_blocking(move || crate::usage::opencode_usage(&db, now)).await.map_err(err)?;
+                usage.account_id = Some(id);
+                usage.account = match dir.as_deref() {
+                    Some(d) => system::account_in(a.id, d),
+                    None => system::agent_account(a.id, &state.home),
+                };
+                out.push(usage);
+            }
+            continue;
+        }
+        if a.id == AgentId::Codex {
+            for id in ids {
+                let home = match crate::accounts::dir(&data, a.id, &id) {
+                    Some(d) => d,
+                    None => std::env::var("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|_| state.home.join(".codex")),
+                };
+                let creds = crate::usage::read_codex_token(&home);
+                if creds.is_none() && id != crate::accounts::DEFAULT {
+                    continue;
+                }
+                let mut usage = match &creds {
+                    None => {
+                        let mut u = crate::usage::unavailable(a.id, &a.name, now);
+                        u.status = UsageStatus::SignedOut;
+                        u.message = Some("Sign in to Codex to see usage".into());
+                        u
+                    }
+                    Some((t, acct)) => crate::usage::fetch_codex_usage(t, acct).await.unwrap_or_else(|m| {
+                        let mut u = crate::usage::unavailable(a.id, &a.name, now);
+                        u.status = UsageStatus::Error;
+                        u.message = Some(m);
+                        u
+                    }),
+                };
+                usage.account = match crate::accounts::dir(&data, a.id, &id) {
+                    Some(d) => system::account_in(a.id, &d),
+                    None => system::agent_account(a.id, &state.home),
+                };
+                usage.account_id = Some(id);
+                out.push(usage);
+            }
+            continue;
+        }
+        if a.id == AgentId::Cursor {
+            let home = state.home.clone();
+            let session = tauri::async_runtime::spawn_blocking(move || crate::usage::read_cursor_session(&RealExec, &home)).await.map_err(err)?;
+            let mut usage = match &session {
+                None => {
+                    let mut u = crate::usage::unavailable(a.id, &a.name, now);
+                    u.status = UsageStatus::SignedOut;
+                    u.message = Some("Sign in to Cursor to see usage".into());
+                    u
+                }
+                Some((user, token)) => crate::usage::fetch_cursor_usage(user, token).await.unwrap_or_else(|m| {
+                    let mut u = crate::usage::unavailable(a.id, &a.name, now);
+                    u.status = UsageStatus::Error;
+                    u.message = Some(m);
+                    u
+                }),
+            };
+            usage.account_id = Some(crate::accounts::DEFAULT.to_string());
+            usage.account = std::fs::read_to_string(state.home.join(".cursor/cli-config.json"))
+                .ok()
+                .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+                .and_then(|v| v.pointer("/authInfo/email").and_then(|e| e.as_str()).map(str::to_string));
             out.push(usage);
             continue;
         }
@@ -3329,18 +3899,32 @@ pub async fn get_agent_usage(
             out.push(crate::usage::unavailable(a.id, &a.name, now));
             continue;
         }
-        let usage = match &token {
-            None => crate::usage::usage_from_response(401, "", now),
-            Some(t) => match crate::usage::fetch_claude_usage(t).await {
-                Ok(u) => u,
-                Err(m) => {
-                    let mut u = crate::usage::usage_from_response(0, "", now);
-                    u.message = Some(m);
-                    u
-                }
-            },
-        };
-        out.push(usage);
+        for id in ids {
+            let Some(dir) = crate::accounts::dir(&data, a.id, &id) else { continue };
+            let d = dir.clone();
+            let token = tauri::async_runtime::spawn_blocking(move || crate::usage::read_claude_token(&RealExec, &d)).await.map_err(err)?;
+            // An extra account that never signed in has nothing to show.
+            if token.is_none() && id != crate::accounts::DEFAULT {
+                continue;
+            }
+            let mut usage = match &token {
+                None => crate::usage::usage_from_response(401, "", now),
+                Some(t) => match crate::usage::fetch_claude_usage(t).await {
+                    Ok(u) => u,
+                    Err(m) => {
+                        let mut u = crate::usage::usage_from_response(0, "", now);
+                        u.message = Some(m);
+                        u
+                    }
+                },
+            };
+            usage.account = match (token.is_some(), claude_program()) {
+                (true, Ok(claude)) => crate::claude_account::status(&claude, &dir).await.email,
+                _ => None,
+            };
+            usage.account_id = Some(id);
+            out.push(usage);
+        }
     }
     // Failures aren't cached, so the next poll retries.
     if out.iter().all(|u| u.status != UsageStatus::Error) {

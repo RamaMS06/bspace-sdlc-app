@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Where the agents' tokens go: totals of Tayang's per-turn usage log (agent-usage.jsonl), by
+// Where the agents' tokens go: totals of Buma's per-turn usage log (agent-usage.jsonl), by
 // chat kind, agent and model, plus the most expensive chats.
 //
 //   node scripts/usage-report.mjs            # the dev build's log
@@ -19,7 +19,7 @@ const arg = process.argv[2];
 const file =
   arg && !arg.startsWith('--')
     ? arg
-    : join(dataDir(arg === '--release' ? 'app.tayang.studio' : 'app.tayang.studio.dev'), 'agent-usage.jsonl');
+    : join(dataDir(arg === '--release' ? 'com.buma.bspace-sdlc-app' : 'com.buma.bspace-sdlc-app.dev'), 'agent-usage.jsonl');
 if (!existsSync(file)) {
   console.error(`No usage log at ${file} yet. Run a few agent turns first.`);
   process.exit(1);

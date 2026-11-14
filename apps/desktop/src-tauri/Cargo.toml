@@ -1,11 +1,12 @@
 [package]
-name = "tayang-studio"
+name = "bspace-sdlc-app"
 version = "0.0.10"
-description = "Tayang Studio"
+description = "BSpace SDLC"
+authors = ["p-rama.msugiyanto"]
 edition = "2021"
 
 [lib]
-name = "tayang_studio_lib"
+name = "bspace_sdlc_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

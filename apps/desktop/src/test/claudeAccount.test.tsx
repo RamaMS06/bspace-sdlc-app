@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentInfo, Settings } from '@tayang/shared';
+import type { AgentInfo, Settings } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/claudeAccount', () => ({
   getClaudeAccount: vi.fn(),

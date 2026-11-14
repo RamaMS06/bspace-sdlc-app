@@ -4,36 +4,30 @@ import { Button } from '@/components/Button';
 import { ResizeHandle } from '@/components/ResizeHandle';
 import { Sidebar, type SidebarKey } from '@/components/Sidebar';
 import { StatusBar } from '@/components/StatusBar';
+import { TitleBar } from '@/components/TitleBar';
+import { VersionTag } from '@/components/VersionTag';
+import { BumaLoading } from '@/components/buma/Loading';
 import { setUiLanguage } from '@/i18n';
 import { systemLanguage } from '@/lib/language';
 import { getSettings, getSystemInfo, syncStyles, updateSettings } from '@/lib/ipc';
 import { getVersion } from '@tauri-apps/api/app';
 import { startAnalytics } from '@/lib/analytics';
-import { runBillingReminder } from '@/lib/billingReminder';
-import { onTick, startScheduler } from '@/lib/scheduler';
-import { recheckDoneBuildJobs, settleLateRenders } from '@/lib/buildJobs';
+import { recheckDoneBuildJobs } from '@/lib/buildJobs';
 import { backfillProjectStatus } from '@/lib/projectStatus';
-import { startAutopilot } from '@/state/autopilot';
-import { AUTOPILOT_ENABLED } from '@/lib/features';
-import { ComingSoon } from '@/screens/ComingSoon';
 import { startUpdateChecks } from '@/state/updater';
 import { useWindowDrag } from '@/lib/windowDrag';
-import { Agents } from '@/screens/Agents';
-import { Autopilot } from '@/screens/Autopilot';
-import { AutopilotWizard } from '@/screens/AutopilotWizard';
-import { Calendar } from '@/screens/Calendar';
 import { ChatRoute, useSoloChat } from '@/screens/ChatRoute';
-import { Plans } from '@/screens/Plans';
 import { Settings } from '@/screens/Settings';
 import { Skills } from '@/screens/Skills';
-import { Style } from '@/screens/Style';
-import { Videos } from '@/screens/Videos';
-import { Social } from '@/screens/Social';
+import { Workflow } from '@/screens/Workflow';
+import { Agents } from '@/screens/Agents';
 import { Connect } from '@/screens/onboarding/Connect';
 import { Requirements } from '@/screens/onboarding/Requirements';
 import { AccountStep } from '@/screens/onboarding/AccountStep';
 import { Welcome } from '@/screens/onboarding/Welcome';
 import { useApp, type Route } from '@/state/app';
+import { forceLight } from '@/lib/theme';
+import { useDevops } from '@/state/devops';
 import { SIDEBAR, useFittedLayout, useLayout, useSidebarShortcut, useWindowWidthSync } from '@/state/layout';
 import { refreshJobs } from '@/state/jobs';
 
@@ -42,14 +36,10 @@ const ONBOARDING = new Set<Route['name']>(['welcome', 'connect', 'requirements',
 const SIDEBAR_KEY: Partial<Record<Route['name'], SidebarKey>> = {
   'chat-new': 'chat',
   chat: 'chat',
-  videos: 'videos',
-  social: 'social',
-  style: 'style',
-  autopilot: 'autopilot',
-  'autopilot-wizard': 'autopilot',
+  workflow: 'workflow',
+  features: 'workflow',
   agents: 'agents',
   skills: 'skills',
-  calendar: 'calendar',
   settings: 'settings',
 };
 
@@ -65,6 +55,12 @@ export default function App() {
   const settings = useApp((s) => s.settings);
   const { t } = useTranslation();
   useWindowDrag();
+
+  // Get started and the rest of onboarding are always white, dialogs included.
+  const onboarding = ONBOARDING.has(route.name);
+  useEffect(() => {
+    forceLight(onboarding);
+  }, [onboarding]);
 
   const [loadError, setLoadError] = useState(false);
 
@@ -89,7 +85,11 @@ export default function App() {
         void Promise.resolve()
           .then(syncStyles)
           .catch(() => {});
-        if (st.onboarded) {
+        // The app doesn't open without an Azure DevOps sign-in: back to the last onboarding step.
+        const devops = st.onboarded ? await useDevops.getState().init().catch(() => null) : null;
+        if (st.onboarded && !devops?.signedIn) {
+          useApp.getState().navigate({ name: 'onboarding-account' });
+        } else if (st.onboarded) {
           useApp.getState().navigate({ name: 'chat-new' });
           void refreshJobs().catch(() => {});
           // Once per install: old build jobs marked done without a video go back to needs-you.
@@ -126,34 +126,11 @@ export default function App() {
   // Release builds look for a new version shortly after launch and every few hours.
   useEffect(() => startUpdateChecks(), []);
 
-  // Once set up, the scheduler listens for the Rust tick (reminders and the autopilot engine). The engine
-  // registers first, so the scheduler's first pass already runs it.
-  const onboarded = settings?.onboarded ?? false;
-  useEffect(() => {
-    if (!onboarded) return;
-    let off: (() => void) | undefined;
-    let gone = false;
-    // Autopilot is coming soon: its engine stays off (see lib/features).
-    const stopEngine = AUTOPILOT_ENABLED ? startAutopilot() : () => {};
-    // Startup and every tick: build jobs whose video arrived late become done.
-    const stopLate = onTick(() => settleLateRenders());
-    // "Your plan ends in 3 days", once per period.
-    const stopPlanReminder = onTick((now) => runBillingReminder(now));
-    startScheduler()
-      .then((un) => (gone ? un() : (off = un)))
-      .catch(() => {});
-    return () => {
-      gone = true;
-      off?.();
-      stopEngine();
-      stopLate();
-      stopPlanReminder();
-    };
-  }, [onboarded]);
 
   if (!settings) {
     return (
       <div data-tauri-drag-region className="flex h-full flex-col items-center justify-center gap-4 bg-background">
+        {!loadError && <BumaLoading variant="process" />}
         {loadError && (
           <>
             <p className="m-0 text-sm text-text-2">{t('app.settingsFailed')}</p>
@@ -166,17 +143,11 @@ export default function App() {
     );
   }
 
-  if (route.name === 'plans') {
+  if (onboarding) {
     return (
-      <div className="h-full overflow-y-auto bg-background">
-        <Plans from={route.from} plan={route.plan} />
-      </div>
-    );
-  }
-  if (ONBOARDING.has(route.name)) {
-    return (
-      <div className="h-full overflow-y-auto bg-background">
+      <div className="light h-full overflow-y-auto bg-background">
         <Onboarding name={route.name} />
+        <VersionTag floating />
       </div>
     );
   }
@@ -199,49 +170,61 @@ function Shell({ route }: { route: Route }) {
   const fitted = useFittedLayout(route.name === 'chat' && !solo);
   useWindowWidthSync();
   useSidebarShortcut();
+  const sidebarHidden = useLayout((s) => s.sidebarHidden);
+  const drawerOpen = useLayout((s) => s.drawerOpen);
+  // A pick in the drawer (or Back/Forward) closes it.
+  useEffect(() => {
+    useLayout.getState().setDrawerOpen(false);
+  }, [route]);
 
   return (
     // The window never scrolls as a page: each panel scrolls on its own.
     <div className="flex h-full flex-col overflow-hidden bg-background">
-    <div className="flex min-h-0 flex-1 overflow-hidden">
-      <div id="app-sidebar" className="relative h-full shrink-0" style={{ width: fitted.sidebar }}>
-        <Sidebar active={SIDEBAR_KEY[route.name] ?? 'chat'} collapsed={fitted.collapsed} />
-        <ResizeHandle
-          label={t('layout.resizeSidebar')}
-          side="right"
-          aria-controls="app-sidebar"
-          value={fitted.sidebar}
-          min={SIDEBAR.min}
-          ariaMin={SIDEBAR.rail}
-          max={fitted.sidebarMax}
-          onResize={(w, live) => resizeSidebar(w, fitted.sidebarMax, live)}
-          onReset={() => useLayout.getState().resetSidebar()}
-          onToggle={() => useLayout.getState().toggleCollapsed()}
-        />
-      </div>
+    <TitleBar />
+    <div className="relative flex min-h-0 flex-1 overflow-hidden">
+      {fitted.narrow ? (
+        drawerOpen && (
+          // A narrow window: the sidebar opens over the screen, and closes on a pick or a click outside.
+          <div className="absolute inset-0 z-40 flex" data-testid="sidebar-drawer">
+            <div id="app-sidebar" className="relative h-full w-[min(280px,85vw)] shrink-0 shadow-xl">
+              <Sidebar active={SIDEBAR_KEY[route.name] ?? 'chat'} />
+            </div>
+            <button
+              type="button"
+              aria-label={t('titleBar.hideSidebar')}
+              onClick={() => useLayout.getState().setDrawerOpen(false)}
+              className="flex-1 cursor-default border-0 bg-black/30 p-0"
+            />
+          </div>
+        )
+      ) : (
+        !sidebarHidden && (
+          <div id="app-sidebar" className="relative h-full shrink-0" style={{ width: fitted.sidebar }}>
+            <Sidebar active={SIDEBAR_KEY[route.name] ?? 'chat'} collapsed={fitted.collapsed} />
+            <ResizeHandle
+              label={t('layout.resizeSidebar')}
+              side="right"
+              aria-controls="app-sidebar"
+              value={fitted.sidebar}
+              min={SIDEBAR.min}
+              ariaMin={SIDEBAR.rail}
+              max={fitted.sidebarMax}
+              onResize={(w, live) => resizeSidebar(w, fitted.sidebarMax, live)}
+              onReset={() => useLayout.getState().resetSidebar()}
+              onToggle={() => useLayout.getState().toggleCollapsed()}
+            />
+          </div>
+        )
+      )}
       <main className="relative min-w-0 flex-1">
         {route.name === 'chat-new' || route.name === 'chat' ? (
           <ChatRoute />
-        ) : route.name === 'videos' ? (
-          <Videos />
-        ) : route.name === 'social' ? (
-          <Social />
-        ) : route.name === 'style' ? (
-          <Style />
-        ) : route.name === 'autopilot' || route.name === 'autopilot-wizard' ? (
-          !AUTOPILOT_ENABLED ? (
-            <ComingSoon feature="autopilot" />
-          ) : route.name === 'autopilot' ? (
-            <Autopilot key={route.id ?? 'list'} id={route.id} />
-          ) : (
-            <AutopilotWizard key={route.id ?? 'new'} id={route.id} draft={route.draft} />
-          )
+        ) : route.name === 'workflow' || route.name === 'features' ? (
+          <Workflow />
         ) : route.name === 'agents' ? (
           <Agents />
         ) : route.name === 'skills' ? (
           <Skills />
-        ) : route.name === 'calendar' ? (
-          <Calendar />
         ) : (
           <Settings />
         )}

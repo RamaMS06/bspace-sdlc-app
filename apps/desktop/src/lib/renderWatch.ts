@@ -1,4 +1,4 @@
-import type { FileInfo } from '@tayang/shared';
+import type { FileInfo } from '@bspace-sdlc-app/shared';
 import { newestVideoInfo } from '@/lib/ipc';
 
 /** How often the project's newest mp4 is looked at while a command runs. */

@@ -1,10 +1,12 @@
 import { create } from 'zustand';
-import type { AgentId, AgentUpdate, ModelChoice } from '@tayang/shared';
+import type { AgentId, AgentUpdate, ModelChoice } from '@bspace-sdlc-app/shared';
 import { onAgentUpdate } from '@/lib/events';
-import { agentModels, type AgentModels } from '@/lib/ipc';
+import { agentModelCatalog, agentModels, type AgentModels } from '@/lib/ipc';
 import { useChat } from '@/state/chat';
+import { useFailover } from '@/state/failover';
+import { useAccounts } from '@/state/accounts';
 
-const CACHE_KEY = 'tayang.agentModels';
+const CACHE_KEY = 'buma.agentModels';
 
 /** Your API's models follow the provider saved in Settings, so they are read fresh, never kept. */
 const UNCACHED: AgentId[] = ['custom'];
@@ -42,16 +44,70 @@ interface ModelsState {
   /** Starts following the `models` updates of every session. Safe to call again. */
   listen(): void;
   report(chatId: string, update: Extract<AgentUpdate, { kind: 'models' }>): void;
+  /** Every model and version each agent can run (Settings' "+ Model" menu), kept between launches. */
+  catalog: Partial<Record<AgentId, ModelChoice[]>>;
+  catalogLoading: Partial<Record<AgentId, boolean>>;
+  /** Reads an agent's full model list (once per app run unless `force`). */
+  loadCatalog(agent: AgentId, force?: boolean): Promise<void>;
   /** Asks the agent for its models when none are known yet (or when `force`). */
   load(agent: AgentId, force?: boolean): Promise<void>;
 }
 
 let listening = false;
 
+const CATALOG_KEY = 'buma.modelCatalog';
+/**
+ * Agents whose full list is exactly what the signed-in account may run (Codex: the list Codex fetched
+ * for that account). For them the agent's own session list (which may name API-only models) is not
+ * offered, and route models missing from it are dropped.
+ */
+export const EXACT_LIST: AgentId[] = ['codex'];
+/** Agents whose full list was read in this app run. */
+const catalogRead = new Set<AgentId>();
+function loadCatalogCache(): Partial<Record<AgentId, ModelChoice[]>> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CATALOG_KEY) ?? 'null') as unknown;
+    return raw && typeof raw === 'object' ? (raw as Partial<Record<AgentId, ModelChoice[]>>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export const useModels = create<ModelsState>((set, get) => ({
   byChat: {},
   byAgent: loadCache(),
   loading: {},
+  catalog: loadCatalogCache(),
+  catalogLoading: {},
+  loadCatalog: async (agent, force = false) => {
+    if (get().catalogLoading[agent] || (!force && catalogRead.has(agent))) return;
+    catalogRead.add(agent);
+    set((s) => ({ catalogLoading: { ...s.catalogLoading, [agent]: true } }));
+    try {
+      const list = await agentModelCatalog(agent);
+      if (list?.length && EXACT_LIST.includes(agent)) {
+        // Models on the route this account doesn't have can't run: hide them for it.
+        const fo = useFailover.getState();
+        const account = useAccounts.getState().activeOf(agent);
+        const have = new Set(list.map((m) => m.value));
+        for (const m of fo.models[agent] ?? []) if (!have.has(m)) fo.markIncompatible(agent, account, m);
+      }
+      if (list?.length)
+        set((s) => {
+          const catalog = { ...s.catalog, [agent]: list };
+          try {
+            localStorage.setItem(CATALOG_KEY, JSON.stringify(catalog));
+          } catch {
+            /* read again next time */
+          }
+          return { catalog };
+        });
+    } catch {
+      /* the agent's own list (or the known one) stands in */
+    } finally {
+      set((s) => ({ catalogLoading: { ...s.catalogLoading, [agent]: false } }));
+    }
+  },
   failed: {},
   listen: () => {
     if (listening) return;

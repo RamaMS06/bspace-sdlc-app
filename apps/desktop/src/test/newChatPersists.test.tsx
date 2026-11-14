@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import type { AgentUpdate, Chat, Job, PermissionRequest, Project, RecentChat, Settings, Style } from '@tayang/shared';
+import type { AgentUpdate, Chat, Job, PermissionRequest, Project, RecentChat, Settings, Style } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   listProjects: vi.fn(),
@@ -71,14 +71,14 @@ import { useChat } from '@/state/chat';
 import { useJobs } from '@/state/jobs';
 
 const settings: Settings = {
-  workingFolder: '/tmp/Tayang',
+  workingFolder: '/tmp/Buma',
   defaultAgent: 'claude',
   frameCheck: true,
   language: 'id',
   format: '9:16',
   fps: 30,
   onboarded: true,
-  apiUrl: 'https://studio.tayang.app/api',
+  apiUrl: 'https://bspace.buma.internal/api',
   installId: '',
   shareInstallStats: true,
   autoMode: false,
@@ -95,7 +95,7 @@ const mkProject = (id: string, title: string): Project => ({
   id,
   title,
   slug: id,
-  folder: `/tmp/Tayang/${id}`,
+  folder: `/tmp/Buma/${id}`,
   kind: 'explainer',
   format: '9:16',
   language: 'id',
@@ -131,7 +131,7 @@ function Shell() {
   return (
     <>
       <Sidebar active="chat" />
-      <main>{name === 'videos' ? <p>Videos screen</p> : <ChatRoute />}</main>
+      <main>{name === 'features' ? <p>Features screen</p> : <ChatRoute />}</main>
     </>
   );
 }
@@ -191,7 +191,7 @@ describe('a new chat never disappears', () => {
     expect(within(main()).getByText('Sebentar, aku cek dulu')).toBeInTheDocument();
 
     vi.mocked(ipc.listRecentChats).mockResolvedValue([recent('c-new', null, 'halo')]);
-    act(() => useApp.getState().navigate({ name: 'videos' }));
+    act(() => useApp.getState().navigate({ name: 'features' }));
     expect(within(main()).queryByText('Sebentar, aku cek dulu')).not.toBeInTheDocument();
     await emit('c-new', { kind: 'text', text: ' dan ini lanjutannya' });
 
@@ -199,7 +199,7 @@ describe('a new chat never disappears', () => {
     expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c-new' });
     // The reply kept streaming while the chat was closed.
     expect(await within(main()).findByText('Sebentar, aku cek dulu dan ini lanjutannya')).toBeInTheDocument();
-    expect(within(main()).getByRole('textbox', { name: 'Message' })).toBeDisabled();
+    expect(within(main()).getByRole('button', { name: 'Stop' })).toBeInTheDocument();
   });
 
   it('a chat without a project has no preview, step bar or render button; its title heads it', async () => {
@@ -208,7 +208,7 @@ describe('a new chat never disappears', () => {
     render(<ChatRoute />);
     expect(await screen.findByText('Ngobrol santai')).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Preview' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('list', { name: 'Progress' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'SDLC progress' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Render' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Message' })).toBeInTheDocument();
   });
@@ -235,30 +235,10 @@ describe('a new chat never disappears', () => {
     vi.mocked(ipc.getChat).mockResolvedValue(chat('c1', 'p1'));
     useApp.setState({ route: { name: 'chat', chatId: 'c1' } });
     render(<ChatRoute />);
-    expect(await screen.findByRole('list', { name: 'Progress' })).toBeInTheDocument();
+    expect(await screen.findByRole('list', { name: 'SDLC progress' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Preview' })).toBeInTheDocument();
   });
 
-  it('topic cards work in the chat the topic ask moved to, with the template from the Style screen', async () => {
-    const user = userEvent.setup();
-    vi.mocked(ipc.createChat).mockResolvedValueOnce(chat('c-new', null, 'Topic ideas')).mockResolvedValueOnce(chat('c9', 'p9'));
-    vi.mocked(ipc.createProject).mockResolvedValue(mkProject('p9', 'Ide satu'));
-    vi.mocked(ipc.listStyles).mockResolvedValue([
-      { id: 'tmpl', name: 'Atlas', source: 'builtin', sourceUrl: null, notes: {}, prompt: 'p', createdAt: '', engine: 'remotion', template: { sha256: 'a', size: 1, version: 1 } },
-    ]);
-    vi.mocked(ipc.installStyleTemplate).mockResolvedValue({ installed: true });
-    useApp.setState({ route: { name: 'chat-new', styleId: 'tmpl' } });
-    render(<Shell />);
-    await user.click(await screen.findByRole('button', { name: /From a topic/ }));
-    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c-new', styleId: 'tmpl' }));
-    expect(await screen.findByText('Starting from the Atlas template')).toBeInTheDocument();
-    await emit('c-new', { kind: 'text', text: '```json\n[{"title":"Ide satu","kind":"explainer","lengthSec":30}]\n```' });
-    expect(screen.queryByRole('button', { name: /Ide satu/ })).not.toBeInTheDocument();
-    await emit('c-new', { kind: 'done', stopReason: 'end_turn' });
-    await user.click(await screen.findByRole('button', { name: /Ide satu/ }));
-    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c9' }));
-    expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).toMatchObject({ title: 'Ide satu', styleId: 'tmpl' });
-  });
 
   it('the composer keeps focus across the first send, ready for the follow-up', async () => {
     const user = userEvent.setup();
@@ -270,58 +250,13 @@ describe('a new chat never disappears', () => {
     const box = within(main()).getByRole('textbox', { name: 'Message' });
     await waitFor(() => expect(box).toHaveFocus());
     // Opening the chat later from Recent does not grab focus.
-    act(() => useApp.getState().navigate({ name: 'videos' }));
+    act(() => useApp.getState().navigate({ name: 'features' }));
     act(() => useApp.getState().navigate({ name: 'chat', chatId: 'c-new' }));
     expect(within(main()).getByRole('textbox', { name: 'Message' })).not.toHaveFocus();
   });
 
-  it('a double click on From a topic asks once', async () => {
-    const user = userEvent.setup();
-    let made: (c: Chat) => void = () => {};
-    vi.mocked(ipc.createChat).mockReturnValue(new Promise((r) => (made = r)));
-    render(<Shell />);
-    const topic = await screen.findByRole('button', { name: /From a topic/ });
-    await user.click(topic);
-    await user.click(topic);
-    await act(async () => made(chat('c-new', null, 'Topic ideas')));
-    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c-new' }));
-    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
-    expect(ipc.createChat).toHaveBeenCalledTimes(1);
-    expect(ipc.agentPrompt).toHaveBeenCalledTimes(1);
-    expect(useChat.getState().messages['c-new']!.filter((m) => m.role === 'user')).toHaveLength(1);
-  });
 
-  it('a chat that is made after the user left does not pull them back', async () => {
-    const user = userEvent.setup();
-    let made: (c: Chat) => void = () => {};
-    vi.mocked(ipc.createChat).mockReturnValue(new Promise((r) => (made = r)));
-    render(<Shell />);
-    await user.click(await screen.findByRole('button', { name: /From a topic/ }));
-    act(() => useApp.getState().navigate({ name: 'videos' }));
-    await act(async () => made(chat('c-new', null, 'Topic ideas')));
-    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
-    expect(useApp.getState().route).toEqual({ name: 'videos' });
-    // It is still there to find.
-    expect(useChat.getState().rows['c-new']).toBeDefined();
-  });
 
-  it('a picked topic stays picked after coming back, and a second pick makes no second project', async () => {
-    const user = userEvent.setup();
-    vi.mocked(ipc.createChat).mockResolvedValueOnce(chat('c-new', null, 'Topic ideas')).mockResolvedValue(chat('c9', 'p9'));
-    vi.mocked(ipc.createProject).mockResolvedValue(mkProject('p9', 'Ide satu'));
-    render(<Shell />);
-    await user.click(await screen.findByRole('button', { name: /From a topic/ }));
-    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c-new' }));
-    await emit('c-new', { kind: 'text', text: '```json\n[{"title":"Ide satu","kind":"explainer","lengthSec":30}]\n```' });
-    await emit('c-new', { kind: 'done', stopReason: 'end_turn' });
-    await user.click(await screen.findByRole('button', { name: /Ide satu/ }));
-    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c9' }));
-    // Back to the topic chat: the pick is recorded there and the cards are gone.
-    act(() => useApp.getState().navigate({ name: 'chat', chatId: 'c-new' }));
-    expect(await within(main()).findByText('Started "Ide satu" as a video')).toBeInTheDocument();
-    expect(within(main()).queryByRole('button', { name: /Ide satu/ })).not.toBeInTheDocument();
-    expect(ipc.createProject).toHaveBeenCalledTimes(1);
-  });
 
   it('an A2UI topic card counts as answered once picked, and a pick in flight blocks another after a remount', async () => {
     const user = userEvent.setup();
@@ -383,7 +318,7 @@ describe('a new chat never disappears', () => {
     const user = userEvent.setup();
     render(<Shell />);
     await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'setengah jadi');
-    act(() => useApp.getState().navigate({ name: 'videos' }));
+    act(() => useApp.getState().navigate({ name: 'features' }));
     act(() => useApp.getState().navigate({ name: 'chat-new' }));
     expect(await screen.findByRole('textbox', { name: 'Message' })).toHaveValue('setengah jadi');
   });
@@ -394,7 +329,8 @@ describe('a new chat never disappears', () => {
     vi.mocked(ipc.attachFile).mockResolvedValue({ type: 'file', path: '/tmp/a.png', name: 'a.png', mime: 'image/png', size: 1 } as never);
     render(<Shell />);
     await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'pakai ini');
-    await user.click(screen.getByRole('button', { name: 'Attach files' }));
+    await user.click(screen.getByRole('button', { name: 'Add files, a folder or a skill' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Add files' }));
     await waitFor(() => expect(useApp.getState().route).toMatchObject({ name: 'chat', chatId: 'c-new', draft: 'pakai ini' }));
     expect(await within(main()).findByRole('textbox', { name: 'Message' })).toHaveValue('pakai ini');
     await waitFor(() => expect(useChat.getState().attachments['c-new']).toHaveLength(1));
@@ -403,22 +339,16 @@ describe('a new chat never disappears', () => {
     expect(await screen.findByRole('textbox', { name: 'Message' })).toHaveValue('');
   });
 
-  it('Chat goes back to the running new chat; once it is done, Chat starts fresh', async () => {
+  it('New always starts a fresh chat, even while another one runs', async () => {
     const user = userEvent.setup();
     render(<Shell />);
     await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'halo');
     await user.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c-new' }));
-    act(() => useApp.getState().navigate({ name: 'videos' }));
-    await user.click(within(nav()).getByRole('link', { name: 'Chat' }));
-    expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c-new' });
-    // New chat always starts a fresh one.
-    await user.click(within(nav()).getByRole('button', { name: 'New chat' }));
+    act(() => useApp.getState().navigate({ name: 'workflow' }));
+    await user.click(within(nav()).getByRole('link', { name: 'New' }));
     expect(useApp.getState().route).toEqual({ name: 'chat-new' });
-    await emit('c-new', { kind: 'done', stopReason: 'end_turn' });
-    act(() => useApp.getState().navigate({ name: 'videos' }));
-    await user.click(within(nav()).getByRole('link', { name: 'Chat' }));
-    expect(useApp.getState().route).toEqual({ name: 'chat-new' });
+    expect(within(nav()).queryByRole('button', { name: 'New chat' })).toBeNull();
   });
 });
 
@@ -440,7 +370,7 @@ describe('Recent in the sidebar', () => {
     expect(screen.queryByText('Study')).not.toBeInTheDocument();
   });
 
-  it('pulses for a running chat and shows the orange dot for one that needs you', async () => {
+  it('pulses for a running chat and shows the primary dot for one that needs you', async () => {
     vi.mocked(ipc.listRecentChats).mockResolvedValue(list);
     useChat.setState({ streaming: { c0: true } });
     useJobs.setState({ jobs: [{ id: 'build-c3', chatId: 'c3', status: 'needs-you' } as Job] });
@@ -532,7 +462,7 @@ describe('@mentioning a style in the chat screens', () => {
     notes: { camera: 'Slow push-ins' },
     prompt: 'Animate a journey across a paper map.',
     createdAt: '',
-    previewUrl: 'https://cdn.tayang.app/atlas.jpg',
+    previewUrl: 'https://cdn.bspace.buma.internal/atlas.jpg',
     template: { sha256: 'a', size: 1, version: 1 },
   };
   const paper: Style = { ...atlas, id: 'paper', name: 'Paper cut', previewUrl: null };
@@ -564,7 +494,7 @@ describe('@mentioning a style in the chat screens', () => {
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
     expect(sentText()).toContain('Use the style \\"Atlas journey\\" for this video:');
     expect(sentText()).toContain('Animate a journey across a paper map.');
-    expect(sentText()).not.toContain('cdn.tayang.app');
+    expect(sentText()).not.toContain('cdn.bspace.buma.internal');
     // The sent message shows the chip; the chat keeps the template for topic starts.
     expect(await within(main()).findByText('@Atlas journey')).toBeInTheDocument();
     expect(await within(main()).findByText('Starting from the Atlas journey template')).toBeInTheDocument();
@@ -598,7 +528,7 @@ describe('@mentioning a style in the chat screens', () => {
     const user = userEvent.setup();
     render(<Shell />);
     await mentionStyle(user, 'atlas');
-    act(() => useApp.getState().navigate({ name: 'videos' }));
+    act(() => useApp.getState().navigate({ name: 'features' }));
     act(() => useApp.getState().navigate({ name: 'chat-new' }));
     expect(await screen.findByText('@Atlas journey')).toBeInTheDocument();
     expect(screen.queryByText(/^Starting from the/)).not.toBeInTheDocument();
@@ -621,7 +551,7 @@ describe('@mentioning a style in the chat screens', () => {
     vi.mocked(ipc.getChat).mockResolvedValue(chat('c1', 'p1'));
     useApp.setState({ route: { name: 'chat', chatId: 'c1' } });
     render(<ChatRoute />);
-    await screen.findByRole('list', { name: 'Progress' });
+    await screen.findByRole('list', { name: 'SDLC progress' });
     await mentionStyle(user, 'atlas');
     expect(screen.getByText('This style is used for this message')).toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'ganti gaya');
@@ -638,7 +568,7 @@ describe('@mentioning a style in the chat screens', () => {
     vi.mocked(ipc.getChat).mockResolvedValue(chat('c1', 'p1'));
     useApp.setState({ route: { name: 'chat', chatId: 'c1' } });
     render(<ChatRoute />);
-    await screen.findByRole('list', { name: 'Progress' });
+    await screen.findByRole('list', { name: 'SDLC progress' });
     await mentionStyle(user, 'atlas');
     expect(screen.getByText('@Atlas journey')).toBeInTheDocument();
     expect(screen.queryByText('This style is used for this message')).not.toBeInTheDocument();

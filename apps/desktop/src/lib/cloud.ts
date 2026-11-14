@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { CreatePostResponse, PostDetails, RedeemResponse, SocialAccount, SocialPlatform, UsageResponse } from '@tayang/shared';
+import type { CreatePostResponse, PostDetails, RedeemResponse, SocialAccount, SocialPlatform, UsageResponse } from '@bspace-sdlc-app/shared';
 
 /** What a cloud call can fail with: the kebab-case `CloudError` from Rust, or `other`. */
 export type CloudErrorCode =

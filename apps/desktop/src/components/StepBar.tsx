@@ -1,17 +1,16 @@
 import { useTranslation } from 'react-i18next';
-import type { ProjectStatus } from '@tayang/shared';
+import type { ProjectStatus } from '@bspace-sdlc-app/shared';
 import { cn } from '@/lib/utils';
 
-export const STEPS = ['topic', 'script', 'style', 'build', 'render'] as const;
+export const STEPS = ['ideate', 'blueprint', 'design', 'build', 'verify'] as const;
 
 /**
- * Index of the step the project is on. Topic is always done. draft → Script; building → Build (Script and
- * Style done); a render running for the project → Render; rendered (or scheduled) → 5: every step done,
- * none current. A rendered video that renders again is on Render.
+ * Index of the SDLC step a feature is on: draft → Ideate; building → Build (Blueprint and Design done);
+ * finished → every step done, none current. `verifying` puts it on Verify.
  */
-export function currentStep(status: ProjectStatus, rendering = false): number {
-  if (rendering) return 4;
-  if (status === 'draft') return 1;
+export function currentStep(status: ProjectStatus, verifying = false): number {
+  if (verifying) return 4;
+  if (status === 'draft') return 0;
   if (status === 'building') return 3;
   return STEPS.length;
 }
@@ -58,7 +57,7 @@ export function StepBar(props: Props) {
               data-step-mark
               className={cn(
                 'inline-flex size-5 items-center justify-center rounded-full font-mono text-[11px]',
-                done && 'bg-deep-orange text-orange-light',
+                done && 'bg-primary-border text-primary-text',
                 active && 'bg-primary text-primary-foreground',
                 !done && !active && 'border border-hairline text-text-3',
               )}

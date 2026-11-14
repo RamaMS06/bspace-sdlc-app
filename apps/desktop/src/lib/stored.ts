@@ -1,7 +1,7 @@
 import { i18n } from '@/i18n';
 
 /**
- * Text Tayang writes into saved data (job notes and titles, system lines in a chat) so it can be
+ * Text Buma writes into saved data (job notes and titles, system lines in a chat) so it can be
  * shown in whichever language the user reads later. The saved copy is always the English text of one
  * of these keys; `localized` matches it back to its key and says it again in the active language.
  * Text that matches no key (agent output, style names, links) passes through unchanged, and so do
@@ -12,6 +12,8 @@ export const STORED_KEYS = [
   'agents.studyTitle',
   'agents.cancelledStudy',
   'agents.cancelled',
+  'chat.modeFailed',
+  'chat.terminated',
   'agents.studyUnreadable',
   'agents.rendering',
   'agents.waitingAnswer',
@@ -24,6 +26,12 @@ export const STORED_KEYS = [
   'chat.busyNote',
   'chat.switched',
   'chat.switchedProject',
+  'chat.failover.limit',
+  'chat.failover.auth',
+  'chat.failover.down',
+  'chat.failover.model',
+  'chat.failoverModel',
+  'chat.failoverNone',
   'chat.autoOffFailed',
   'chat.templateProblem',
   'chat.templateGone',

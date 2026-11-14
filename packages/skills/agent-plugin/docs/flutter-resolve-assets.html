@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>flutter-resolve-assets — bspace-sdlc-skills</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/doc.css">
+<script src="assets/doc.js" defer></script>
+</head>
+<body data-page="flutter-resolve-assets"><div class="wrap">
+<div class="topbar"><a class="brand" href="index.html">bspace <span>sdlc</span> skills</a><span class="note">v1.0.7</span><div class="langswitch" aria-label="Language"><button type="button" data-lang="id" aria-pressed="true">ID</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div></div>
+<nav class="pages"><a href="index.html">Overview</a><span class="navgroup">Router</span><a href="using-bspace-sdlc.html">using-bspace-sdlc</a><span class="navgroup">Dokumen</span><a href="blueprint-ftsd.html">blueprint-ftsd</a><span class="navgroup">Flutter</span><a href="flutter-slice-screen.html">flutter-slice-screen</a><a href="flutter-match-component.html">flutter-match-component</a><a href="flutter-resolve-assets.html" aria-current="page">flutter-resolve-assets</a><a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a><a href="flutter-run-verify.html">flutter-run-verify</a><span class="navgroup">Vue</span><a href="vue-slice-screen.html">vue-slice-screen</a><a href="vue-resolve-assets.html">vue-resolve-assets</a><span class="navgroup">Eksekusi</span><a href="subagent-driven-development.html">subagent-driven-development</a></nav>
+  <span class="navgroup">Wireframe</span><a href="wireframe-lofi.html">wireframe-lofi</a>
+  <span class="navgroup">Design</span><a href="figma-generate-screen.html">figma-generate-screen</a>
+<h1><em>flutter</em>-resolve-assets</h1>
+<p class="lede">Mengubah layer ikon, gambar, dan vector Figma menjadi asset Flutter nyata. Dipakai saat slicing screen, saat asset menjadi kotak kosong, atau saat path asset salah. Hanya berlaku di repo dengan <code>pubspec.yaml</code>.</p>
+<div class="layer"><div class="layer-head"><span class="tag">Route contract</span><span class="note">CALLED BY SLICE · DIRECT REPAIR</span></div><div class="layer-body"><div class="tablewrap"><table class="compact"><tr><th>Bagian</th><th>As-is</th></tr><tr><td>Trigger</td><td><code>flutter-slice-screen</code> menemukan image/vector; user melihat blank box, invalid file, atau path asset salah.</td></tr><tr><td>Prasyarat</td><td>Full Figma node id, package dengan <code>pubspec.yaml</code>, target category, dan plan row bila dipanggil dari slice.</td></tr><tr><td>Memanggil</td><td>Tidak memanggil skill lain; memakai Figma <code>download_assets</code>. SVG dependency dan shared pubspec diusulkan ke orchestrator.</td></tr><tr><td>Output</td><td>File asset valid, <code>SvgPicture.asset</code>/<code>Image.asset</code>, <code>## Assets</code> row, atau gap tanpa placeholder.</td></tr><tr><td>Next</td><td>Kembali ke section/widget caller; slice lanjut ke fidelity. Asset bad dua kali → <code>TODO(asset-gap)</code> + report, bukan kotak.</td></tr></table></div></div></div>
+<div class="layer"><div class="layer-head"><span class="tag">Klasifikasi awal</span><span class="note">reuse → export → validate → wire</span></div><div class="layer-body"><div class="tablewrap"><table><tr><th>Layer Figma</th><th>Kind</th><th>File / solusi</th></tr><tr><td>Vector, icon, illustration, logo, line art</td><td><code>svg</code></td><td><code>download_assets(... defaultFormat: "svg")</code></td></tr><tr><td>Image fill: photo, avatar, screenshot</td><td><code>raster</code></td><td><code>rawImages</code> → PNG/JPG</td></tr><tr><td>DS icon / Material glyph yang dibungkus DS</td><td><code>ds</code></td><td>tidak ada file; <code>UIIcon(...)</code></td></tr></table></div><p><code>rawImages</code> kosong berarti vector. Keputusan berdasarkan fill/type node, bukan nama layer. Jangan mengganti vector Figma dengan font icon tebakan.</p></div></div>
+<h2>Alur</h2><pre>
+Figma node → cek reuse di constants + pubspec
+    │ ada ─► pakai path lama
+    │ tidak
+    ▼
+rawImages ada? ─ ya ─► raster PNG/JPG
+    │ tidak
+    ▼
+svgAssets ─► SVG
+    │
+    ▼
+assets/images/&lt;category&gt;/ → cek isi file di disk
+    │ valid ─► reference inline + plan row
+    │ gagal dua kali ─► gap + TODO(asset-gap), tanpa placeholder
+</pre>
+<h2>Langkah</h2>
+<div class="step"><h3><span class="n">1</span>Reuse sebelum export</h3><p>Cari nama layer atau padanan visual di <code>lib/**/constants/</code> serta folder yang terdaftar pada <code>pubspec.yaml</code>. Jika ada match, pakai path tersebut. Jangan export duplikat.</p></div>
+<div class="step"><h3><span class="n">2</span>Scope ID dan simpan response</h3><p>Gunakan full id dari <code>get_metadata</code>, termasuk compound id seperti <code>I10306:78999;7712:27567</code>. Sebelum download, grep segmen akhir id di <code>## Assets</code> dan <code>work/raw/download_assets-*</code>; satu id hanya satu download. Simpan response verbatim ke <code>work/raw/download_assets-&lt;node-id&gt;.json</code>. Field <code>export</code> adalah render whole node, bukan asset.</p></div>
+<div class="step"><h3><span class="n">3</span>Tempat dan dependency</h3><ul><li>Tujuan legal: <code>assets/images/&lt;category&gt;/</code>. Jangan simpan di root, <code>lib/</code>, <code>specs/</code>, cwd, atau <code>renders/</code>.</li><li>Jika kategori belum ada, buat folder dan tambahkan tepat satu entry di bawah <code>flutter: assets:</code>; additive, jangan reformat file.</li><li>Jika SVG dan <code>flutter_svg</code> belum ada, tambahkan sesuai constraint screening dan catat di <code>## Notes</code>.</li><li>Worker hanya mengusulkan kategori/pubspec; orchestrator yang menulis shared file.</li></ul></div>
+<div class="step"><h3><span class="n">4</span>Validasi on-disk</h3><p>File tersimpan bukan berarti asset valid. SVG harus dimulai <code>&lt;svg</code>/<code>&lt;?xml</code> dan punya drawing element seperti <code>&lt;path</code>, <code>&lt;rect</code>, <code>&lt;g</code>, atau <code>&lt;image</code>. PNG/JPG harus dilaporkan <code>file</code> sebagai format yang benar dan ukurannya masuk akal. Gagal → hapus, download ulang sekali dengan URL baru. Gagal lagi → catat gap dan jangan tinggalkan file buruk.</p><pre>head -c 200 &lt;file&gt; | grep -q '&lt;svg\|&lt;?xml' &amp;&amp; grep -lq '&lt;path\|&lt;rect\|&lt;circle\|&lt;polygon\|&lt;line\|&lt;g \|&lt;use\|&lt;image' &lt;file&gt;</pre></div>
+<div class="step"><h3><span class="n">5</span>Reference traceable</h3><p>Nama file mengikuti nama layer Figma (snake/kebab); local const mengikuti camelCase. Gunakan <code>SvgPicture.asset</code> atau <code>Image.asset</code> di widget screen-local. Jangan mengubah shared asset-constants; laporkan path baru dan usulan constant sebagai follow-up.</p></div>
+<div class="step"><h3><span class="n">6</span>Fit, position, dan gap</h3><p>Baca ukuran/posisi dari metadata tersimpan. Asset fill memakai <code>BoxFit.cover</code>/<code>fill</code> atau full width; edge-anchored memakai <code>Stack</code>/<code>Positioned</code>; hug memakai ukuran integer. Asset unresolved tidak boleh menjadi <code>Container</code>, <code>ColoredBox</code>, atau <code>Placeholder</code>. Catat <code>// TODO(asset-gap): &lt;node-id&gt;</code> di site widget dan gap di <code>## Notes</code>.</p></div>
+<h2>Context mode</h2><div class="tablewrap"><table class="compact"><tr><th>Mode</th><th>Aturan</th></tr><tr><td>Di <code>flutter-slice-screen</code></td><td>Satu row <code>Node | Name | Kind | Path</code> di <code>plan.md</code>; worker hanya file kategorinya sendiri.</td></tr><tr><td>Batch multi-frame</td><td>Frame worker hanya mengusulkan export; orchestrator dedupe dan download sekali.</td></tr><tr><td>Standalone</td><td>Tidak ada <code>plan.md</code>; laporkan inline dan minta persetujuan sebelum edit <code>pubspec.yaml</code>.</td></tr></table></div>
+<div class="warn"><span class="tag">Self-check</span><p>Setiap row non-gap harus menunjuk file yang ada di <code>assets/images/&lt;category&gt;/</code>, lolos validasi isi, lalu direferensikan oleh widget yang mengerjakan row tersebut. Tidak ada placeholder box.</p></div>
+<footer>Sumber: <code>skills/flutter-resolve-assets/SKILL.md</code>, <code>flutter-slice-screen/scripts/figma_xml.py</code>, <code>references/environment.md</code>.</footer>
+</div></body></html>

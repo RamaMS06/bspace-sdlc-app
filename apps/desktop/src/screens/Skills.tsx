@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FileUp, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
 import { SkillImportDialog } from '@/components/SkillImportDialog';
-import { BUILTIN_SKILLS, type UserSkill } from '@tayang/skills';
+import { type UserSkill } from '@bspace-sdlc-app/skills';
+import { PluginsTab } from '@/components/PluginsTab';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/Button';
 import { Markdown } from '@/components/Markdown';
-import { Oyen } from '@/components/Oyen';
+import { StatusIcon } from '@/components/StatusIcon';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -90,7 +92,7 @@ function SkillEditor({ editing, onClose, onSaved }: { editing: Editing | null; o
             />
           </label>
           {error && (
-            <p role="alert" className="m-0 text-xs text-orange-light">
+            <p role="alert" className="m-0 text-xs text-error">
               {error}
             </p>
           )}
@@ -143,7 +145,7 @@ function SkillCard({
             <Button variant="ghost" className="h-8 px-2 text-[13px]" onClick={() => setConfirming(false)}>
               {t('skills.keep')}
             </Button>
-            <Button variant="secondary" className="h-8 px-3 text-[13px] text-orange-light" onClick={onDelete}>
+            <Button variant="secondary" className="h-8 px-3 text-[13px] text-error" onClick={onDelete}>
               {t('skills.deleteConfirm')}
             </Button>
           </>
@@ -175,12 +177,12 @@ function SkillCard({
   );
 }
 
-/** The skills agents use in Tayang: the built-in one, and the user's own (added, imported, turned off). */
+/** What agents use in Buma: plugins (the bundled bspace-sdlc-skills and installed ones) and the user's own skills. */
 export function Skills() {
   const { t } = useTranslation();
   const [skills, setSkills] = useState<UserSkill[] | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
-  const [viewing, setViewing] = useState<(typeof BUILTIN_SKILLS)[number] | null>(null);
+  const [tab, setTab] = useState<'plugins' | 'skills'>('plugins');
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
 
@@ -209,12 +211,13 @@ export function Skills() {
     });
 
   return (
-    <div className="flex h-full flex-col gap-6 overflow-y-auto p-8">
+    <div className="flex h-full flex-col gap-6 overflow-y-auto p-4 sm:p-8">
       <div data-tauri-drag-region className="flex flex-wrap items-center gap-4">
         <div className="mr-auto flex flex-col gap-1">
           <h1 className="m-0 text-[28px] font-semibold tracking-[-0.01em]">{t('skills.title')}</h1>
           <span className="text-sm text-text-2">{t('skills.subtitle')}</span>
         </div>
+        {tab === 'skills' && (
         <div className="flex gap-2">
           <Button variant="secondary" onClick={() => setImporting(true)}>
             <FileUp size={16} strokeWidth={1.5} aria-hidden="true" />
@@ -225,21 +228,36 @@ export function Skills() {
             {t('skills.new')}
           </Button>
         </div>
+        )}
       </div>
 
+      <Tabs value={tab} onValueChange={(v) => setTab(v as 'plugins' | 'skills')}>
+        <TabsList variant="line" aria-label={t('skills.tabsAria')} className="h-10 w-full justify-start border-b border-border p-0">
+          <TabsTrigger value="plugins" className="h-10 flex-none px-3 text-sm">
+            {t('plugins.title')}
+          </TabsTrigger>
+          <TabsTrigger value="skills" className="h-10 flex-none px-3 text-sm">
+            {t('skills.tabSkills')}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {tab === 'plugins' && <PluginsTab />}
+
       {error && (
-        <p role="alert" className="m-0 rounded-md border border-deep-orange px-3 py-2 text-[13px] text-orange-light">
+        <p role="alert" className="m-0 rounded-md border border-error/40 px-3 py-2 text-[13px] text-error">
           {error}
         </p>
       )}
 
+      {tab === 'skills' && (
       <section aria-labelledby="skills-yours" className="flex flex-col gap-2">
         <h2 id="skills-yours" className="m-0 text-[13px] font-medium text-text-3">
           {t('skills.yours')}
         </h2>
         {skills?.length === 0 && (
           <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border px-6 py-10 text-center">
-            <Oyen mood="wink" size={40} />
+            <StatusIcon kind="info" size={40} />
             <span className="text-sm font-medium">{t('skills.emptyTitle')}</span>
             <span className="max-w-[420px] text-[13px] text-text-2">{t('skills.emptyBody')}</span>
           </div>
@@ -254,43 +272,13 @@ export function Skills() {
           />
         ))}
       </section>
+      )}
 
-      <section aria-labelledby="skills-builtin" className="flex flex-col gap-2">
-        <h2 id="skills-builtin" className="m-0 text-[13px] font-medium text-text-3">
-          {t('skills.builtin')}
-        </h2>
-        {BUILTIN_SKILLS.map((s) => (
-          <article key={s.id} className="flex items-start gap-4 rounded-xl border border-border bg-card p-4">
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <span className="flex items-center gap-2 font-mono text-[13px] font-medium">
-                {s.id}
-                <span className="inline-flex items-center gap-1 rounded-full border border-hairline px-1.5 py-px font-sans text-[10px] font-medium text-text-3">
-                  <Lock size={10} aria-hidden="true" />
-                  {t('skills.alwaysOn')}
-                </span>
-              </span>
-              <span className="line-clamp-2 text-[13px] text-text-2">{s.description}</span>
-            </div>
-            <Button variant="ghost" className="h-8 shrink-0 px-3 text-[13px]" onClick={() => setViewing(s)}>
-              {t('skills.view')}
-            </Button>
-          </article>
-        ))}
-      </section>
 
       <SkillImportDialog open={importing} onOpenChange={setImporting} onAdded={load} />
 
       <SkillEditor editing={editing} onClose={() => setEditing(null)} onSaved={load} />
 
-      <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
-        <DialogContent className="sm:max-w-[720px]">
-          <DialogHeader>
-            <DialogTitle className="font-mono">{viewing?.id}</DialogTitle>
-            <DialogDescription>{t('skills.builtinHint')}</DialogDescription>
-          </DialogHeader>
-          <div className="max-h-[60vh] overflow-y-auto text-[13px]">{viewing && <Markdown text={viewing.body} />}</div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

@@ -18,7 +18,7 @@ fn token_from_json(json: &str) -> Option<String> {
     (!t.is_empty()).then(|| t.to_string())
 }
 
-/// The OAuth token of Tayang's Claude sign-in (`claude_config`, see `claude_account`): the macOS
+/// The OAuth token of Buma's Claude sign-in (`claude_config`, see `claude_account`): the macOS
 /// Keychain item Claude Code keeps for that folder, else its `.credentials.json` (Linux, Windows).
 /// The caller must never log or return it.
 pub fn read_claude_token(exec: &dyn Exec, claude_config: &Path) -> Option<String> {
@@ -93,6 +93,8 @@ fn with_status(status: UsageStatus, message: &str, now: DateTime<Utc>) -> AgentU
         updated_at: stamp(now),
         message: Some(message.to_string()),
         spend: None,
+        account_id: None,
+        account: None,
     }
 }
 
@@ -109,6 +111,8 @@ pub fn parse_claude_usage(json: &str, now: DateTime<Utc>) -> AgentUsage {
         updated_at: stamp(now),
         message: None,
         spend: None,
+        account_id: None,
+        account: None,
     }
 }
 
@@ -126,7 +130,7 @@ pub fn usage_from_response(status: u16, body: &str, now: DateTime<Utc>) -> Agent
 pub async fn fetch_claude_usage(token: &str) -> Result<AgentUsage, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
-        .user_agent(concat!("tayang-studio/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("bspace-sdlc-app/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|_| "Couldn't start the usage request".to_string())?;
     let res = client
@@ -139,6 +143,148 @@ pub async fn fetch_claude_usage(token: &str) -> Result<AgentUsage, String> {
     let status = res.status().as_u16();
     let body = res.text().await.unwrap_or_default();
     Ok(usage_from_response(status, &body, Utc::now()))
+}
+
+pub const CODEX_USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
+
+/// The ChatGPT sign-in Codex keeps in `<codex home>/auth.json`: its access token and account id.
+/// Used for one request and dropped; the caller must never log or return them.
+pub fn read_codex_token(codex_home: &Path) -> Option<(String, String)> {
+    let v: Value = serde_json::from_str(&std::fs::read_to_string(codex_home.join("auth.json")).ok()?).ok()?;
+    let t = v.get("tokens")?;
+    let token = t.get("access_token")?.as_str()?.trim();
+    let id = t.get("account_id").and_then(Value::as_str).unwrap_or("");
+    (!token.is_empty()).then(|| (token.to_string(), id.to_string()))
+}
+
+fn codex_window(w: &Value) -> Option<UsageWindow> {
+    let used = w.get("used_percent").and_then(Value::as_f64)?.clamp(0.0, 100.0);
+    let resets = w.get("reset_at").and_then(Value::as_i64).and_then(|s| DateTime::from_timestamp(s, 0)).map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+    Some(UsageWindow { used_percent: used, resets_at: resets })
+}
+
+/// Codex's plan limits (5 hour and weekly windows) from the ChatGPT usage endpoint.
+pub fn parse_codex_usage(json: &str, now: DateTime<Utc>) -> AgentUsage {
+    let mut u = with_status(UsageStatus::Error, "Couldn't read Codex usage", now);
+    u.agent_id = AgentId::Codex;
+    let Ok(v) = serde_json::from_str::<Value>(json) else { return u };
+    let Some(rl) = v.get("rate_limit") else { return u };
+    u.status = UsageStatus::Ok;
+    u.message = None;
+    u.session = rl.get("primary_window").and_then(codex_window);
+    u.weekly = rl.get("secondary_window").and_then(codex_window);
+    u
+}
+
+/// One GET to the ChatGPT usage endpoint. Errors never include the token.
+pub async fn fetch_codex_usage(token: &str, account_id: &str) -> Result<AgentUsage, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .user_agent(concat!("bspace-sdlc-app/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|_| "Couldn't start the usage request".to_string())?;
+    let mut req = client.get(CODEX_USAGE_URL).bearer_auth(token);
+    if !account_id.is_empty() {
+        req = req.header("chatgpt-account-id", account_id);
+    }
+    let res = req.send().await.map_err(|_| "Couldn't reach ChatGPT to load usage".to_string())?;
+    let status = res.status().as_u16();
+    let body = res.text().await.unwrap_or_default();
+    let now = Utc::now();
+    let mut u = match status {
+        200..=299 => parse_codex_usage(&body, now),
+        401 | 403 => with_status(UsageStatus::SignedOut, "Sign in to Codex to see usage", now),
+        429 => with_status(UsageStatus::Error, "Usage is busy, try again in a minute", now),
+        _ => with_status(UsageStatus::Error, "Couldn't load usage", now),
+    };
+    u.agent_id = AgentId::Codex;
+    Ok(u)
+}
+
+/// Where the Cursor editor keeps its state (its sign-in among it).
+pub fn cursor_state_db(home: &Path) -> std::path::PathBuf {
+    let base = if cfg!(target_os = "macos") {
+        home.join("Library/Application Support")
+    } else if cfg!(windows) {
+        std::env::var("APPDATA").map(std::path::PathBuf::from).unwrap_or_else(|_| home.join("AppData/Roaming"))
+    } else {
+        home.join(".config")
+    };
+    base.join("Cursor/User/globalStorage/state.vscdb")
+}
+
+/// The Cursor editor's access token, from its state database (read only).
+fn cursor_token_from_db(db: &Path) -> Option<String> {
+    let conn = rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
+    let t: String = conn.query_row("SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken'", [], |r| r.get(0)).ok()?;
+    let t = t.trim().trim_matches('"').to_string();
+    (!t.is_empty()).then_some(t)
+}
+
+/// Cursor's sign-in: the editor's token (its state database), else the one the CLI keeps in the macOS
+/// Keychain, with the user id inside it. The caller must never log or return it.
+pub fn read_cursor_session(exec: &dyn Exec, home: &Path) -> Option<(String, String)> {
+    use base64::Engine;
+    let token = cursor_token_from_db(&cursor_state_db(home)).or_else(|| {
+        if !cfg!(target_os = "macos") {
+            return None;
+        }
+        exec.run("security", &["find-generic-password", "-s", "cursor-access-token", "-w"]).map(|t| t.trim().to_string())
+    })?;
+    let claims = token.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(claims.trim_end_matches('=')).ok()?;
+    let v: Value = serde_json::from_slice(&bytes).ok()?;
+    let user = v.get("sub")?.as_str()?.rsplit('|').next()?.to_string();
+    (!token.is_empty() && !user.is_empty()).then_some((user, token))
+}
+
+/// Cursor's plan usage for the billing month, from `usage-summary`: the share of the included usage used.
+pub fn parse_cursor_usage(json: &str, now: DateTime<Utc>) -> AgentUsage {
+    let mut u = with_status(UsageStatus::Error, "Couldn't read Cursor usage", now);
+    u.agent_id = AgentId::Cursor;
+    let Ok(v) = serde_json::from_str::<Value>(json) else { return u };
+    let Some(pct) = v.pointer("/individualUsage/plan/totalPercentUsed").and_then(Value::as_f64) else { return u };
+    let resets = v
+        .get("billingCycleEnd")
+        .and_then(Value::as_str)
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|d| d.with_timezone(&Utc).to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+    u.status = UsageStatus::Ok;
+    u.message = None;
+    u.model_weekly = Some(ModelUsage { label: "Month".into(), window: UsageWindow { used_percent: pct.clamp(0.0, 100.0), resets_at: resets } });
+    u
+}
+
+/// One GET to Cursor's usage summary. Errors never include the token.
+pub async fn fetch_cursor_usage(user: &str, token: &str) -> Result<AgentUsage, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .user_agent(concat!("bspace-sdlc-app/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|_| "Couldn't start the usage request".to_string())?;
+    let cookie = format!("WorkosCursorSessionToken={user}%3A%3A{token}");
+    let res = client
+        .get("https://cursor.com/api/usage-summary")
+        .header("Cookie", cookie)
+        .send()
+        .await
+        .map_err(|_| "Couldn't reach Cursor to load usage".to_string())?;
+    let status = res.status().as_u16();
+    let body = res.text().await.unwrap_or_default();
+    let now = Utc::now();
+    Ok(match status {
+        200..=299 => parse_cursor_usage(&body, now),
+        401 | 403 => {
+            let mut u = with_status(UsageStatus::SignedOut, "Sign in to Cursor to see usage", now);
+            u.agent_id = AgentId::Cursor;
+            u
+        }
+        _ => {
+            let mut u = with_status(UsageStatus::Error, "Couldn't load usage", now);
+            u.agent_id = AgentId::Cursor;
+            u
+        }
+    })
 }
 
 /// Last results, reused for five minutes unless the UI forces a refresh.
@@ -157,6 +303,8 @@ pub fn unavailable(id: AgentId, name: &str, now: DateTime<Utc>) -> AgentUsage {
         updated_at: stamp(now),
         message: Some(format!("Usage isn't available for {name} yet")),
         spend: None,
+        account_id: None,
+        account: None,
     }
 }
 
@@ -208,6 +356,8 @@ pub fn opencode_usage(db: &Path, now: DateTime<Utc>) -> AgentUsage {
             updated_at: stamp(now),
             message: None,
             spend: Some(spend),
+            account_id: None,
+            account: None,
         },
         None => unavailable(AgentId::Opencode, "OpenCode", now),
     }
@@ -242,6 +392,27 @@ mod tests {
          "scope": {"model": {"display_name": "Old"}}}
       ]
     }"#;
+
+    #[test]
+    fn parses_cursor_month() {
+        let j = r#"{"billingCycleEnd":"2026-11-28T02:57:43.000Z","individualUsage":{"plan":{"totalPercentUsed":7.996}}}"#;
+        let u = parse_cursor_usage(j, now());
+        assert_eq!((u.agent_id, u.status), (AgentId::Cursor, UsageStatus::Ok));
+        let m = u.model_weekly.unwrap();
+        assert_eq!(m.window.used_percent, 7.996);
+        assert!(m.window.resets_at.unwrap().starts_with("2026-11-28"));
+        assert_eq!(parse_cursor_usage("{}", now()).status, UsageStatus::Error);
+    }
+
+    #[test]
+    fn parses_codex_windows() {
+        let j = r#"{"rate_limit":{"primary_window":{"used_percent":12,"reset_at":1794678100},"secondary_window":{"used_percent":2.5,"reset_at":1794992996}}}"#;
+        let u = parse_codex_usage(j, now());
+        assert_eq!((u.agent_id, u.status), (AgentId::Codex, UsageStatus::Ok));
+        assert_eq!(u.session.unwrap().used_percent, 12.0);
+        assert_eq!(u.weekly.unwrap().used_percent, 2.5);
+        assert_eq!(parse_codex_usage("{}", now()).status, UsageStatus::Error);
+    }
 
     #[test]
     fn parses_windows_and_scoped_model() {

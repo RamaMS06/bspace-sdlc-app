@@ -1,0 +1,251 @@
+@import "@buma-dev/styles/src/assets/scss/config";
+@import "@buma-dev/styles/src/assets/scss/utils";
+
+.b-btn {
+  @include typography(format, body);
+  border: none;
+  display: flex;
+  line-height: unset;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 40px;
+  padding: space(sm) space(md);
+  border-radius: radius(small);
+  width: fit-content;
+  cursor: pointer;
+
+  &-icon-only {
+    padding: space(sm);
+    width: 40px;
+  }
+
+  &:active {
+    box-shadow: shadow(button);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* SECTION Button size */
+  &-sm {
+    display: flex;
+    line-height: unset;
+    align-items: center;
+    height: 24px;
+    padding: space(xxs) space(xs);
+    border-radius: radius(small);
+
+    &.b-btn-icon-only {
+      width: 24px;
+    }
+  }
+
+  &-block {
+    width: 100%;
+  }
+
+  &-pill {
+    border-radius: radius(massive);
+  }
+  /* !SECTION */
+
+  /* SECTION Button regular */
+  &-primary {
+    background-color: color(primary, 500);
+    border-color: color(primary, 500);
+    color: color(text, white);
+
+    &:hover,
+    &:active {
+      background-color: color(primary, 600);
+      border-color: color(primary, 600);
+    }
+
+    &:disabled {
+      background-color: color(primary, 500);
+      border-color: color(primary, 500);
+    }
+  }
+
+  &-secondary {
+    color: color(text, dark);
+    border: 1px solid #e8ecf5;
+    background-color: #f5f8fa;
+
+    &:hover,
+    &:active {
+      color: color(text, dark);
+      background-color: color(tertiary, 200);
+    }
+
+    &:hover {
+      border: 1px solid color(tertiary, 300);
+    }
+
+    &:active {
+      border: 1px solid color(stroke, tertiary);
+    }
+
+    &-white {
+      color: color(text, dark);
+      background-color: color(background, white);
+      border: 1px solid color(stroke, tertiary);
+
+      &:hover,
+      &:active {
+        color: color(text, dark);
+        background-color: color(tertiary, 200);
+      }
+
+      &:hover {
+        border: 1px solid color(tertiary, 300);
+        background-color: color(neutral, 300);
+      }
+
+      &:active {
+        border: 1px solid color(stroke, tertiary);
+      }
+    }
+  }
+
+  &-tertiary {
+    background-color: transparent;
+    text-decoration: none;
+    color: color(primary, 500);
+
+    &:hover {
+      color: color(primary, 600);
+    }
+  }
+  &-hover-card{
+    background-color: color(background, dark);
+    height: 24px;
+    color: color(text, white);
+    padding: space(xxs);
+
+    &:hover {
+      background-color: #191d22;
+    }
+  }
+  /* !SECTION */
+
+  /* SECTION Button condition */
+  &-approve {
+    color: color(text, white);
+    background-color: color(primary, 500);
+
+    &:hover,
+    &:active,
+    &:disabled &:focus-visible {
+      background-color: color(primary, 500);
+      color: color(text, white);
+    }
+  }
+
+  &-reject {
+    color: color(text, white);
+    background-color: color(danger, 500);
+
+    &:hover,
+    &:active,
+    &:disabled &:focus-visible {
+      background-color: color(danger, 500);
+      color: color(text, white);
+    }
+  }
+
+  &-revise {
+    color: color(text, white);
+    background-color: color(secondary, 500);
+
+    &:hover,
+    &:active,
+    &:disabled &:focus-visible {
+      background-color: color(secondary, 500);
+      color: color(text, white);
+    }
+  }
+
+  &-outstanding {
+    color: color(text, white);
+    background-color: color(info, 500);
+
+    &:hover,
+    &:active,
+    &:disabled &:focus-visible {
+      background-color: color(info, 500);
+      color: color(text, white);
+    }
+  }
+  /* !SECTION */
+
+  /* SECTION Button outline */
+  &-outline {
+    &-primary,
+    &-secondary {
+      &:hover,
+      &:active {
+        color: color(neutral, 0);
+      }
+    }
+  }
+
+  &-outline {
+    &-primary {
+      &--approve {
+        background-color: transparent;
+        border: 1px solid color(primary, 500);
+        color: color(primary, 500);
+
+        &:hover,
+        &:active {
+          background-color: color(primary, 600);
+          border: 1px solid color(primary, 600);
+          color: color(text, white);
+        }
+
+        &:disabled {
+          background-color: transparent;
+          border: 1px solid color(primary, 500);
+        }
+      }
+
+      &--reject {
+        border: 1px solid color(danger, 500);
+        color: color(danger, 500);
+      }
+
+      &--revise {
+        border: 1px solid color(secondary, 500);
+        color: color(secondary, 500);
+      }
+
+      &--outstanding {
+        border: 1px solid color(info, 500);
+        color: color(info, 500);
+      }
+    }
+  }
+
+  &-outline-secondary {
+    color: color(text, dark);
+    border: 1px solid color(stroke, dark);
+    background-color: transparent;
+
+    &:hover,
+    &:active {
+      background-color: color(background, dark);
+      border: 1px solid color(stroke, dark);
+      color: color(text, white);
+    }
+
+    &:disabled {
+      background-color: transparent;
+      border: 1px solid color(stroke, dark);
+    }
+  }
+  /* !SECTION */
+}

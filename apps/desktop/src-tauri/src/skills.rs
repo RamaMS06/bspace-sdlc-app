@@ -1,4 +1,4 @@
-//! The user's own skills, kept as a Claude Code plugin in Tayang's data folder:
+//! The user's own skills, kept as a Claude Code plugin in Buma's data folder:
 //! `<root>/skills/<id>/SKILL.md` are on, `<root>/disabled/<id>/SKILL.md` are off.
 //! Claude loads the folder as a plugin; other agents get a list of the skills in their first prompt.
 
@@ -9,13 +9,13 @@ use serde::Serialize;
 
 const ON: &str = "skills";
 const OFF: &str = "disabled";
-const PLUGIN_JSON: &str = r#"{"name":"my-skills","description":"Your own skills, added in Tayang Studio","version":"0.1.0"}"#;
+const PLUGIN_JSON: &str = r#"{"name":"my-skills","description":"Your own skills, added in BSpace SDLC","version":"0.1.0"}"#;
 /// An imported folder bigger than this is refused: a skill is instructions and a few small files.
 const IMPORT_LIMIT: u64 = 20 * 1024 * 1024;
 /// Claude Code's limit for a skill name.
 const NAME_LIMIT: usize = 64;
 /// In a skill's folder: the link it was added from, for skills added from GitHub.
-const SOURCE_FILE: &str = ".tayang-source";
+const SOURCE_FILE: &str = ".buma-source";
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]

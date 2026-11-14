@@ -15,12 +15,12 @@ const sent = () => vi.mocked(invoke).mock.calls.map((c) => (c[1] as { options: {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useApp.setState({ route: { name: 'videos' } });
+  useApp.setState({ route: { name: 'features' } });
   vi.spyOn(document, 'hasFocus').mockReturnValue(true);
 });
 
 describe('agent notifications', () => {
-  it('says a chat is done, by its video title', async () => {
+  it('says a chat is done, by its feature title', async () => {
     await notifyAgent('c1', 'done');
     expect(sent()).toEqual([{ title: 'Your agent is done', body: 'Lampu lalu lintas pertama is ready for you.' }]);
   });

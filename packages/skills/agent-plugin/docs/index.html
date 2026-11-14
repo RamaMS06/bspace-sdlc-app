@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>bspace-sdlc-skills — Overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/doc.css">
+<script src="assets/doc.js" defer></script>
+</head>
+<body data-page="index">
+<div class="wrap">
+
+<div class="topbar"><a class="brand" href="index.html">bspace <span>sdlc</span> skills</a><span class="note">v1.0.7</span><div class="langswitch" aria-label="Language"><button type="button" data-lang="id" aria-pressed="true">ID</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div></div>
+
+<nav class="pages">
+  <a href="index.html" aria-current="page">Overview</a>
+  <span class="navgroup">Intake</span><a href="stakeholder-intake.html">stakeholder-intake</a>
+  <span class="navgroup">Router</span><a href="using-bspace-sdlc.html">using-bspace-sdlc</a>
+  <span class="navgroup">Dokumen</span><a href="blueprint-ftsd.html">blueprint-ftsd</a>
+  <span class="navgroup">Wireframe</span><a href="wireframe-lofi.html">wireframe-lofi</a>
+  <span class="navgroup">Design</span><a href="figma-generate-screen.html">figma-generate-screen</a>
+  <span class="navgroup">Flutter</span><a href="flutter-slice-screen.html">flutter-slice-screen</a><a href="flutter-match-component.html">flutter-match-component</a><a href="flutter-resolve-assets.html">flutter-resolve-assets</a><a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a><a href="flutter-run-verify.html">flutter-run-verify</a>
+  <span class="navgroup">Vue</span><a href="vue-slice-screen.html">vue-slice-screen</a><a href="vue-resolve-assets.html">vue-resolve-assets</a>
+  <span class="navgroup">Eksekusi</span><a href="subagent-driven-development.html">subagent-driven-development</a>
+</nav>
+
+<h1><em>Figma</em> → kode, dengan BUMA DS</h1>
+<p class="lede">Plugin <code>bspace-sdlc-skills</code> berisi 13 skill. Isinya mencakup alur fitur dari ide sampai UI jadi: brainstorm intent, rencana komponen DS dan desain di Figma, slicing ke Flutter atau Vue, verifikasi, lalu close. Semua kode yang dihasilkan hanya <b>presentation</b>, tanpa domain, API, atau repository.</p>
+<p class="lede">Dokumen ini menjelaskan kondisi <b>saat ini</b> (as-is). Sumber kebenarannya ada di <code>plugins/bspace-sdlc-skills/skills/*/SKILL.md</code>. Kalau dokumen ini berbeda dengan SKILL.md, yang berlaku SKILL.md.</p>
+
+<h2>Cara mulai</h2>
+<div class="route-grid">
+  <div class="route-card"><div class="flow-label">START · E2E</div><h3>Fitur baru dari ide</h3><p>Belum ada intent atau node Figma. Mulai dari router: discover, brainstorm, Blueprint (Gate B), lo-fi wireframe + approval, design reference-first (C1, G2), FTSD (F1), API (F2), platform slice, run-verify, lalu close.</p><p class="route-next">→ <a href="using-bspace-sdlc.html">using-bspace-sdlc</a></p></div>
+  <div class="route-card"><div class="flow-label">START · DIRECT</div><h3>Screen Figma, dengan atau tanpa FSD</h3><p>Designer butuh screen di Figma. Pakai FSD/intent kalau ada, atau isi brief singkat. Designer tentukan referensi, file, page, dan posisi frame.</p><p class="route-next">→ <a href="figma-generate-screen.html">figma-generate-screen</a></p></div>
+  <div class="route-card"><div class="flow-label">START · DIRECT</div><h3>Flutter dari node Figma</h3><p>Intent/design gate sudah ada, atau task hanya implementasi UI. Langsung slice; skill ini memanggil resolusi component, asset, fidelity, lalu gate output.</p><p class="route-next">→ <a href="flutter-slice-screen.html">flutter-slice-screen</a></p></div>
+  <div class="route-card"><div class="flow-label">START · DIRECT</div><h3>Vue dari node Figma</h3><p>Target app standalone Vue sudah jelas. Langsung inventory, plan, human gate, generate, validate, dan lint.</p><p class="route-next">→ <a href="vue-slice-screen.html">vue-slice-screen</a></p></div>
+  <div class="route-card"><div class="flow-label">START · TARGETED</div><h3>Perbaikan satu masalah</h3><p>Sudah tahu masalahnya: component mismatch, asset rusak, fidelity turun, atau runtime overflow. Panggil skill repair langsung; tidak perlu mengulang E2E.</p><p class="route-next">→ component · asset · fidelity · run-verify</p></div>
+  <div class="route-card"><div class="flow-label">WRAPPER · MULTI-UNIT</div><h3>Banyak section, frame, atau task</h3><p>Tambahkan model eksekusi SDD di atas route mana pun. Worker fresh, brief/report file, gate eksternal, shared file satu writer.</p><p class="route-next">→ <a href="subagent-driven-development.html">subagent-driven-development</a></p></div>
+  <div class="route-card"><div class="flow-label">RESUME</div><h3>Melanjutkan pekerjaan</h3><p>Baca artefak terakhir di disk. Router memakai gate pertama yang gagal; direct skill memakai prerequisite page dan output contract.</p><p class="route-next">→ router atau skill terakhir yang belum pass</p></div>
+</div>
+
+<h2>Peta skill</h2>
+<div class="layer">
+  <div class="layer-head"><span class="tag">13 skill, 8 kelompok</span><span class="note">nama skill = nama folder</span></div>
+  <div class="layer-body">
+    <div class="modules">
+      <div><div class="file"><a href="stakeholder-intake.html">stakeholder-intake</a></div><div class="used">intake · sebelum P0/P1</div><p>Menormalisasi brief, Excel, notulen, SOP, chat, atau link menjadi <code>intake.md</code> + <code>manifest.yaml</code> dengan source ID.</p></div>
+      <div><div class="file"><a href="using-bspace-sdlc.html">using-bspace-sdlc</a></div><div class="used">router · fase 1–5</div><p>Pintu masuk fitur baru: brainstorm → <code>intent.md</code> → rencana komponen → desain Figma + prototype → slice → close. Navigasinya berdasarkan file di disk.</p></div>
+      <div><div class="file"><a href="wireframe-lofi.html">wireframe-lofi</a></div><div class="used">wireframe · gate wajib</div><p>Menetapkan screen, state, field, CTA, dan flow dalam grayscale sebelum hi-fi Figma dan approval stakeholder.</p></div>
+      <div><div class="file"><a href="figma-generate-screen.html">figma-generate-screen</a></div><div class="used">design · P3 atau mandiri</div><p>Generate screen apa pun di Figma dengan BUMA DS. Sumber adaptif: FSD → intent → brief singkat. Designer memilih referensi dan lokasi (file, page, posisi); AI tidak membuat page sendiri.</p></div>
+      <div><div class="file"><a href="blueprint-ftsd.html">blueprint-ftsd</a></div><div class="used">dokumen · P0–P4b</div><p>Scaffold Blueprint (FSD) dan FTSD BUMA dari brainstorm, sekali. Setelah itu docx milik analyst; AI baca snapshot, usul lewat Comment, gate dari tanggal approval, API contract <code>openapi.yaml</code>.</p></div>
+      <div><div class="file"><a href="flutter-slice-screen.html">flutter-slice-screen</a></div><div class="used">Flutter · utama</div><p>Mengubah node Figma menjadi screen Flutter yang bisa dijalankan. Bertindak sebagai orchestrator, mengirim satu worker per section, dan memakai gate <code>--check</code>.</p></div>
+      <div><div class="file"><a href="flutter-match-component.html">flutter-match-component</a></div><div class="used">Flutter · langkah 5</div><p>Mencocokkan node Figma ke class BUMA DS lengkap dengan props-nya. Urutannya: Code Connect, Inner wrapper, tangga eskalasi, lalu gotcha.</p></div>
+      <div><div class="file"><a href="flutter-resolve-assets.html">flutter-resolve-assets</a></div><div class="used">Flutter · langkah 5</div><p>Mengubah ikon, gambar, dan vektor menjadi file asset. Aturan pilih SVG atau PNG, cek isi file di disk, dan larangan kotak placeholder.</p></div>
+      <div><div class="file"><a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a></div><div class="used">Flutter · langkah 8</div><p>Memberi skor render Flutter terhadap Figma (geometri lalu piksel) lewat <code>diff_renders.py</code>, dengan loop perbaikan sampai pass atau STOP.</p></div>
+      <div><div class="file"><a href="flutter-run-verify.html">flutter-run-verify</a></div><div class="used">Flutter · langkah 9</div><p>Render test headless di 4 lebar layar plus kasus notch dan text scale 1.3, lalu <code>flutter run</code> di device yang tersedia dengan auto-fix.</p></div>
+      <div><div class="file"><a href="vue-slice-screen.html">vue-slice-screen</a></div><div class="used">Vue · utama</div><p>Mengubah node Figma menjadi screen Vue (app standalone). Mencakup inventory, coverage, human gate, dan <code>validate-slice.sh</code>.</p></div>
+      <div><div class="file"><a href="vue-resolve-assets.html">vue-resolve-assets</a></div><div class="used">Vue · langkah 12</div><p>Mengubah gambar dan ilustrasi non-ikon menjadi file di <code>src/assets/&lt;kategori&gt;/</code> dan memvalidasi isinya.</p></div>
+      <div><div class="file"><a href="subagent-driven-development.html">subagent-driven-development</a></div><div class="used">eksekusi · selalu</div><p>Model eksekusi untuk pekerjaan multi-unit: satu worker dengan konteks baru per unit, brief dan report berupa file, gate berupa script.</p></div>
+    </div>
+  </div>
+</div>
+
+<h2>Alur end-to-end</h2>
+<pre>
+  stakeholder input ─► stakeholder-intake
+            │             intake.md + manifest.yaml
+            ▼
+  P0 Discover → P1 Brainstorm → P2 Data → Blueprint + Gate B
+            │             project.md / intent.md / data.md / Blueprint.docx
+            ▼
+  lo-fi wireframe ─► wireframe.md + stakeholder approval
+            ▼
+  hi-fi Figma ─► design.md + C1 / GD2 / P1 / G2
+            ▼
+  Flutter/Vue slice ─► component + asset + fidelity gates
+            ▼
+  run-verify ─► runtime evidence ─► close.md
+
+  router mengambil first failing gate; unit &gt; 1 memakai subagent-driven-development
+</pre>
+
+<h2>Trigger → skill → next</h2>
+<p class="lede">Pilih berdasarkan pekerjaan yang benar-benar diminta. Skill direct tidak otomatis menjalankan router; prerequisite yang belum ada dicatat sebagai gap atau meminta input sesuai SKILL.md.</p>
+<div class="tablewrap"><table>
+<tr><th>Trigger / kondisi</th><th>Skill yang aktif</th><th>Skill berikutnya / output</th></tr>
+<tr><td>Input stakeholder campuran, belum dinormalisasi</td><td><a href="stakeholder-intake.html"><code>stakeholder-intake</code></a></td><td><code>stakeholder-input/</code> → P0/P1</td></tr>
+<tr><td>Ide baru, belum ada <code>intent.md</code></td><td><a href="using-bspace-sdlc.html"><code>using-bspace-sdlc</code></a> · Brainstorm</td><td><code>intent.md</code> + G1 → Design</td></tr>
+<tr><td>Gate B pass, approved <code>wireframe.md</code> belum ada atau gagal</td><td><a href="wireframe-lofi.html"><code>wireframe-lofi</code></a></td><td><code>wireframe.md</code> + approval → hi-fi</td></tr>
+<tr><td>Intent approved, design belum siap atau Figma belum ada</td><td><a href="using-bspace-sdlc.html"><code>using-bspace-sdlc</code></a> · Design</td><td><code>design.md</code> + C1/G2 → platform slice</td></tr>
+<tr><td>Node Figma + target Flutter; multi-section tetap satu orchestrator</td><td><a href="flutter-slice-screen.html"><code>flutter-slice-screen</code></a></td><td>memanggil component, asset, fidelity → <code>spec.md</code>/<code>plan.md</code></td></tr>
+<tr><td>Node/component Flutter mismatch: class, wrapper, props, variant, style</td><td><a href="flutter-match-component.html"><code>flutter-match-component</code></a></td><td>mapping + constructor + Notes → kembali ke call site/slice</td></tr>
+<tr><td>Flutter icon/image/vector blank, invalid, atau path salah</td><td><a href="flutter-resolve-assets.html"><code>flutter-resolve-assets</code></a></td><td>asset valid + <code>## Assets</code> → kembali ke widget/slice</td></tr>
+<tr><td>Flutter render berbeda dari Figma</td><td><a href="flutter-verify-fidelity.html"><code>flutter-verify-fidelity</code></a></td><td><code>score.json</code> pass → <code>flutter-run-verify</code></td></tr>
+<tr><td>Flutter overflow, exception, safe area, device/native issue</td><td><a href="flutter-run-verify.html"><code>flutter-run-verify</code></a></td><td><code>run: PASS|skipped|BLOCKED</code> → close</td></tr>
+<tr><td>Node Figma + target Vue standalone</td><td><a href="vue-slice-screen.html"><code>vue-slice-screen</code></a></td><td>memanggil asset resolver → human gate → <code>.vue</code> + <code>spec.md</code></td></tr>
+<tr><td>Vue non-icon image/illustration unresolved</td><td><a href="vue-resolve-assets.html"><code>vue-resolve-assets</code></a></td><td><code>AS-XX</code> + import valid → kembali ke Vue section</td></tr>
+<tr><td>&gt;1 section/frame/task atau context penuh</td><td><a href="subagent-driven-development.html"><code>subagent-driven-development</code></a></td><td>brief/report/progress + external gate → caller skill lanjut</td></tr>
+</table></div>
+
+<h2>Gate: apa yang memblok alur</h2>
+<p class="lede">Sebuah gate hanya lulus kalau ada bukti mekanis: exit code script, grep, atau file di disk. Klaim agent tidak dihitung sebagai bukti.</p>
+<div class="tablewrap"><table class="compact">
+<tr><th>Gate</th><th>Skill</th><th>Lulus kalau</th></tr>
+<tr><td>Lo-fi</td><td>wireframe-lofi</td><td><code>Status: approved</code>, approver bertanggal, Figma file/page/placement, SCR dan traceability ID</td></tr>
+<tr><td>G1</td><td>using-bspace-sdlc</td><td><code>Status: approved</code> dan <code>Approved-by</code> ada, 0 <code>[NEEDS CLARIFICATION</code>, 0 <code>Q-xx</code> terbuka</td></tr>
+<tr><td>C1</td><td>using-bspace-sdlc</td><td><code>Components-approved-by</code> ada, setiap AC UI punya baris di <code>## Components</code>, setiap prop punya nilai</td></tr>
+<tr><td>GD2 · P1</td><td>using-bspace-sdlc</td><td>read-back Figma: 0 nilai hardcoded, props = plan; setiap AC yang memindahkan user punya reaction</td></tr>
+<tr><td>G2 (GD3)</td><td>using-bspace-sdlc</td><td><code>Reviewed-by</code> desainer dan <code>Metadata-hash</code> = hash <code>get_metadata</code> saat ini</td></tr>
+<tr><td>Skor fidelity</td><td>flutter-verify-fidelity</td><td><code>diff_renders.py</code> exit 0: 0 error geometri, section ≥ 98%, setiap node ≥ 400px² ≥ 90%</td></tr>
+<tr><td><code>--check</code></td><td>flutter-slice-screen</td><td><code>validate_output.py --check &lt;feature-dir&gt;</code> exit 0 (token, struktur, render, pin intent)</td></tr>
+<tr><td><code>run:</code></td><td>flutter-run-verify</td><td><code>PASS (headless)</code>, lalu <code>run: PASS &lt;device&gt;</code> atau <code>skipped (no device)</code>; <code>BLOCKED</code> = gagal</td></tr>
+<tr><td>Human gate (langkah 15)</td><td>vue-slice-screen</td><td>developer menyetujui <code>plan.md</code>; jawabannya dicatat verbatim</td></tr>
+<tr><td><code>validate-slice.sh</code></td><td>vue-slice-screen</td><td>exit 0 di langkah 14 (plan) dan langkah 19 (plan + <code>.vue</code>)</td></tr>
+</table></div>
+
+<h2>Artefak di disk</h2>
+<div class="outputs">
+  <div><div class="file">stakeholder-input/&lt;feature&gt;/</div><p><code>intake.md</code>, <code>manifest.yaml</code>, dan optional <code>sources/</code>.</p></div>
+  <div><div class="file">intent/&lt;ID&gt;-&lt;slug&gt;/</div><p><code>intent.md</code>, <code>wireframe.md</code>, <code>design.md</code>, <code>close.md</code>, plus <code>intent/constitution.md</code> (dibuat sekali per repo). Ditulis oleh <code>using-bspace-sdlc</code>.</p></div>
+  <div><div class="file">specs/&lt;ID&gt;-&lt;slug&gt;-&lt;DD_MM_YYYY&gt;/</div><p>Flutter: <code>spec.md</code>, <code>plan.md</code>, <code>renders/</code>, <code>work/</code>, tidak ada file lain. Hanya <code>work/iter/*/score.json</code> yang di-commit.</p></div>
+  <div><div class="file">specs/&lt;ID&gt;-&lt;screen-name&gt;/</div><p>Vue: <code>spec.md</code> dan <code>plan.md</code> (Inventory, Coverage, Component/Asset decisions, Progress).</p></div>
+  <div><div class="file">lib/features/&lt;f&gt;/presentation/</div><p>Flutter: <code>&lt;screen&gt;.screen.dart</code>, <code>widgets/&lt;screen&gt;_content.dart</code>, dan satu widget per section.</p></div>
+  <div><div class="file">*.vue</div><p>Vue: screen tipis, <code>&lt;Screen&gt;Content.vue</code>, dan satu <code>&lt;Screen&gt;&lt;Section&gt;.vue</code> per section.</p></div>
+  <div><div class="file">assets/images/&lt;kategori&gt;/</div><p>Flutter (ditambah satu baris di <code>pubspec.yaml</code> kalau kategorinya baru). Vue: <code>src/assets/&lt;kategori&gt;/</code>.</p></div>
+</div>
+
+<h2>Plugin</h2>
+<div class="layer">
+  <div class="layer-head"><span class="tag">Struktur dan versi</span><span class="note">satu versi untuk semua skill</span></div>
+  <div class="layer-body">
+<pre>
+.claude-plugin/marketplace.json      marketplace "bspace-marketplace" → ./plugins/bspace-sdlc-skills
+plugins/bspace-sdlc-skills/
+├── .claude-plugin/plugin.json       manifest Claude Code
+├── .codex-plugin/plugin.json        manifest Codex
+├── .cursor-plugin/plugin.json       manifest Cursor
+├── hooks/hooks.json                 Stop hook → fidelity_loop.py
+├── skills/&lt;nama-skill&gt;/SKILL.md     11 skill (+ references/, scripts/, assets/)
+└── docs/                            dokumen ini
+scripts/bump-plugin-version.sh       bash scripts/bump-plugin-version.sh &lt;ver&gt; | --check
+</pre>
+    <ul>
+      <li><b>Pemanggilan:</b> <code>/flutter-slice-screen</code> atau <code>/bspace-sdlc-skills:flutter-slice-screen</code>.</li>
+      <li><b>Versi:</b> satu nomor versi yang dicatat di 4 manifest. Ubah lewat <code>bump-plugin-version.sh</code>; <code>--check</code> gagal kalau keempatnya berbeda.</li>
+      <li><b>Stop hook</b> (<code>hooks/fidelity_loop.py</code>): selama ada <code>score.json</code> (24 jam terakhir) yang belum <code>pass</code> dan belum <code>stop</code>, giliran model tidak boleh berakhir. Loop fidelity bukan keputusan model.</li>
+    </ul>
+  </div>
+</div>
+
+<footer>Dokumen statis tanpa build step, bisa dibuka langsung lewat <code>file://</code>. Sumber: <code>plugins/bspace-sdlc-skills/skills/</code>. Proposal yang belum diterapkan: <a href="proposal-component-meta-yaml.md">proposal-component-meta-yaml.md</a>.</footer>
+</div>
+</body>
+</html>

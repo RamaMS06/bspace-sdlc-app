@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { ChatMessage, Project, Style } from '@tayang/shared';
+import type { ChatMessage, Project, Style } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   assetUrl: (p: string) => p,
@@ -25,8 +25,8 @@ const atlas: Style = {
   notes: { camera: 'Slow push-ins on the map', pacing: '', color: 'Navy and paper white' },
   prompt: 'Animate a journey across a paper map.',
   createdAt: '',
-  previewUrl: 'https://cdn.tayang.app/atlas.jpg',
-  previewVideoUrl: 'https://cdn.tayang.app/atlas.mp4',
+  previewUrl: 'https://cdn.bspace.buma.internal/atlas.jpg',
+  previewVideoUrl: 'https://cdn.bspace.buma.internal/atlas.mp4',
   template: { sha256: 'a', size: 1, version: 1 },
 };
 const copied: Style = { ...atlas, id: 'copied-1', name: 'Bold captions', source: 'copied', previewUrl: null, template: null };
@@ -59,8 +59,8 @@ describe('styleContext', () => {
         'Animate a journey across a paper map.',
         'Camera: Slow push-ins on the map',
         'Color: Navy and paper white',
-        'This style has a starter template; Tayang sets it up when a new video starts from it.',
-        'Its Tayang style id is "builtin-atlas": put exactly this id in a topic card\'s styleId.',
+        'This style has a starter template; Buma sets it up when a new video starts from it.',
+        'Its Buma style id is "builtin-atlas": put exactly this id in a topic card\'s styleId.',
       ].join('\n'),
     );
     expect(text).not.toMatch(/https?:/);
@@ -93,7 +93,7 @@ describe('styleContext', () => {
     expect(out).toEqual([
       {
         type: 'text',
-        text: 'Use the style "Mine" for this video:\nAnimate a journey across a paper map.\nIts Tayang style id is "mine-1": put exactly this id in a topic card\'s styleId.',
+        text: 'Use the style "Mine" for this video:\nAnimate a journey across a paper map.\nIts Buma style id is "mine-1": put exactly this id in a topic card\'s styleId.',
       },
     ]);
   });
@@ -106,22 +106,22 @@ describe('the @ menu with styles', () => {
     return { onSend, ...utils };
   };
 
-  it('shows videos and styles in two groups, each style with its picture and where it comes from', async () => {
+  it('shows features and styles in two groups, each style with its picture and where it comes from', async () => {
     const user = userEvent.setup();
     setup();
     await user.type(screen.getByRole('textbox', { name: 'Message' }), '@');
     const list = await screen.findByRole('listbox');
-    expect(within(list).getByText('Videos')).toBeInTheDocument();
+    expect(within(list).getByText('Features')).toBeInTheDocument();
     expect(within(list).getByText('Styles')).toBeInTheDocument();
     const atlasRow = within(list).getByRole('option', { name: /Atlas journey/ });
     expect(atlasRow).toHaveTextContent('Built in');
-    expect(atlasRow.querySelector('img')).toHaveAttribute('src', 'https://cdn.tayang.app/atlas.jpg');
+    expect(atlasRow.querySelector('img')).toHaveAttribute('src', 'https://cdn.bspace.buma.internal/atlas.jpg');
     // A copied style without its own preview shows its video's thumbnail; one without either, a swatch.
     expect(within(list).getByRole('option', { name: /Bold captions/ }).querySelector('img')).toHaveAttribute(
       'src',
       'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg',
     );
-    expect(within(list).getByRole('option', { name: /Bold captions/ })).toHaveTextContent('Copied from a video');
+    expect(within(list).getByRole('option', { name: /Bold captions/ })).toHaveTextContent('Copied');
     expect(within(list).getByRole('option', { name: /Mine/ })).toHaveTextContent('Yours');
     expect(within(within(list).getByRole('option', { name: /Mine/ })).getByTestId('style-swatch')).toBeInTheDocument();
   });
@@ -141,7 +141,7 @@ describe('the @ menu with styles', () => {
     await user.type(screen.getByRole('textbox', { name: 'Message' }), '@atl');
     const list = await screen.findByRole('listbox');
     expect(within(list).getAllByRole('option').map((o) => o.textContent)).toEqual([expect.stringContaining('Atlas journey')]);
-    expect(within(list).getByText('No videos match')).toBeInTheDocument();
+    expect(within(list).getByText('No features match')).toBeInTheDocument();
   });
 
   it('arrow keys move across the groups and Enter picks a style as a chip', async () => {
@@ -174,7 +174,7 @@ describe('the @ menu with styles', () => {
     await user.type(screen.getByRole('textbox', { name: 'Message' }), '@');
     const list = await screen.findByRole('listbox');
     // A project chat lists styles only.
-    expect(within(list).queryByText('Videos')).not.toBeInTheDocument();
+    expect(within(list).queryByText('Features')).not.toBeInTheDocument();
     await user.keyboard('{Enter}');
     expect(screen.getByText('This style is used for this message')).toBeInTheDocument();
   });

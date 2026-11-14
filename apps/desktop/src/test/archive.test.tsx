@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import type { Job, RecentChat } from '@tayang/shared';
+import type { Job, RecentChat } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   listRecentChats: vi.fn(),
@@ -22,7 +22,6 @@ vi.mock('@/lib/events', () => ({
 import * as ipc from '@/lib/ipc';
 import { ArchiveSection } from '@/components/ArchiveSection';
 import { Sidebar } from '@/components/Sidebar';
-import { Agents } from '@/screens/Agents';
 import { useApp } from '@/state/app';
 import { useChat } from '@/state/chat';
 import { useJobs } from '@/state/jobs';
@@ -112,21 +111,3 @@ describe('Settings › Archive', () => {
   });
 });
 
-describe('archiving finished cards on the board', () => {
-  it('hides archived cards and archives one done card or all of them', async () => {
-    const jobs = [job('1', 'done'), job('2', 'done'), job('3', 'done', { archivedAt: '2026-11-02T00:00:00Z' }), job('4', 'needs-you')];
-    vi.mocked(ipc.listJobs).mockResolvedValue(jobs);
-    useJobs.setState({ jobs } as never);
-    render(<Agents />);
-    const done = screen.getByRole('region', { name: 'Done' });
-    expect(within(done).getByText('Video 1')).toBeInTheDocument();
-    expect(within(done).queryByText('Video 3')).not.toBeInTheDocument();
-    // Only finished cards can be archived.
-    expect(screen.queryByRole('button', { name: 'Archive Video 4' })).not.toBeInTheDocument();
-
-    await userEvent.click(within(done).getByRole('button', { name: 'Archive Video 1' }));
-    expect(ipc.setJobsArchived).toHaveBeenCalledWith(['1'], true);
-    await userEvent.click(within(done).getByRole('button', { name: 'Archive all' }));
-    await waitFor(() => expect(ipc.setJobsArchived).toHaveBeenLastCalledWith(['1', '2'], true));
-  });
-});

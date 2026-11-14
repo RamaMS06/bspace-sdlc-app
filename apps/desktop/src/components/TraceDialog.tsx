@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChartNoAxesGantt, ChevronDown, ChevronRight, CircleAlert, RefreshCw, Sparkles, Wrench } from 'lucide-react';
-import type { ChatTrace, TraceSpan } from '@tayang/shared';
+import type { ChatTrace, TraceSpan } from '@bspace-sdlc-app/shared';
 import { Button } from '@/components/Button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { getChatTrace } from '@/lib/ipc';
 import { axisTicks, buildScale, contextOf, formatDuration, formatTokens, summarize, visibleRows, type TraceRow, type TraceScale } from '@/lib/trace';
 import { cn } from '@/lib/utils';
+import { Spinner } from '@/components/Loading';
 import { useChat } from '@/state/chat';
 
 const POLL_MS = 10_000;
 /** Checked with the dataviz palette validator against the card colour. */
-const LLM_BAR = 'bg-[#e8693f]';
-const TOOL_BAR = 'bg-[#5f8ee8]';
+const LLM_BAR = 'bg-brand-secondary';
+const TOOL_BAR = 'bg-info';
 
 const shortModel = (name: string) => name.replace(/^claude-/, '');
 
@@ -41,8 +42,8 @@ function Bar({ span, scale }: { span: TraceSpan; scale: TraceScale }) {
 }
 
 function RowIcon({ row }: { row: TraceRow }) {
-  if (row.span.kind === 'llm') return <Sparkles size={14} strokeWidth={1.5} aria-hidden="true" className="shrink-0 text-[#e8693f]" />;
-  if (row.span.kind === 'tool') return <Wrench size={14} strokeWidth={1.5} aria-hidden="true" className="shrink-0 text-[#5f8ee8]" />;
+  if (row.span.kind === 'llm') return <Sparkles size={14} strokeWidth={1.5} aria-hidden="true" className="shrink-0 text-brand-secondary" />;
+  if (row.span.kind === 'tool') return <Wrench size={14} strokeWidth={1.5} aria-hidden="true" className="shrink-0 text-info" />;
   return null;
 }
 
@@ -229,7 +230,7 @@ export function TraceDialog({ chatId, open, onOpenChange }: { chatId: string; op
           <div className="flex items-center gap-3">
             <DialogTitle>{t('trace.title')}</DialogTitle>
             <Button variant="ghost" className="h-7 gap-1.5 px-2 text-xs" disabled={loading} onClick={() => void load()}>
-              <RefreshCw size={14} strokeWidth={1.5} aria-hidden="true" className={cn(loading && 'motion-safe:animate-spin')} />
+              {loading ? <Spinner size={14} /> : <RefreshCw size={14} strokeWidth={1.5} aria-hidden="true" />}
               {t('trace.refresh')}
             </Button>
           </div>
@@ -271,7 +272,7 @@ export function TraceButton({ chatId, className }: { chatId: string; className?:
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant="secondary" className={cn('size-9 shrink-0 px-0', className)} aria-label={t('trace.open')} title={t('trace.open')} onClick={() => setOpen(true)}>
+      <Button variant="secondary" iconOnly className={cn('shrink-0', className)} aria-label={t('trace.open')} title={t('trace.open')} onClick={() => setOpen(true)}>
         <ChartNoAxesGantt size={16} strokeWidth={1.5} aria-hidden="true" />
       </Button>
       {open && <TraceDialog chatId={chatId} open={open} onOpenChange={setOpen} />}

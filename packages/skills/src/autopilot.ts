@@ -1,4 +1,4 @@
-import type { Niche, SocialAccount, Style, VideoKind, VideoLanguage, Voice } from '@tayang/shared';
+import type { Niche, SocialAccount, Style, VideoKind, VideoLanguage, Voice } from '@bspace-sdlc-app/shared';
 import { clampTopicLength, FACTS_RULE, MOTION_RULES, VIDEO_KINDS } from './style';
 import { FOREGROUND_RULE, POST_RULE, RENDERS_RULE } from './frameCheck';
 
@@ -84,14 +84,14 @@ export function buildAutopilotBuildPrompt(
   const steps = [
     `Write the script for "${title}", about ${lengthSec} seconds${lang}.`,
     'Build the video in this project, following AGENTS.md and its style.',
-    "Render it to an MP4 with the render command in tayang.json (or the project's own render setup).",
+    "Render it to an MP4 with the render command in buma.json (or the project's own render setup).",
     ...(opts.frameCheck === false ? [] : ['Check frames of the render, fix anything that looks wrong and render again.']),
     'Finish by saying the path of the rendered file.',
   ];
   return [
     'This video is made by an autopilot: work through every step on your own, without asking questions or waiting for a reply.',
     ...steps.map((s, i) => `${i + 1}. ${s}`),
-    ...(opts.voiceId ? [`For the voice-over use Tayang's /voice with "voice":"${opts.voiceId}" in every call.`] : []),
+    ...(opts.voiceId ? [`For the voice-over use Buma's /voice with "voice":"${opts.voiceId}" in every call.`] : []),
     FOREGROUND_RULE,
     RENDERS_RULE,
     POST_RULE,
@@ -111,7 +111,7 @@ export interface AutopilotChatInput {
 export function buildAutopilotChatPrompt({ niches, voices, styles, accounts, language }: AutopilotChatInput): string {
   const list = (items: string[]) => (items.length ? items.map((i) => `  - ${i}`) : ['  (none available)']);
   return [
-    `Help the user set up one Tayang autopilot, which makes short videos on a schedule. Talk to them in ${LANGUAGE[language]}.`,
+    `Help the user set up one Buma autopilot, which makes short videos on a schedule. Talk to them in ${LANGUAGE[language]}.`,
     'Ask with your question tool, a few things at a time, only for what they have not said yet. Do not create files or run other commands.',
     '',
     'What you need:',
@@ -130,11 +130,11 @@ export function buildAutopilotChatPrompt({ niches, voices, styles, accounts, lan
     '- socialAccountIds from this list, none to post by hand:',
     ...list(accounts.map((a) => `${a.id}: ${a.platform}${a.username ? ` @${a.username}` : ''}`)),
     '',
-    'When you have everything, send it. Tayang shows the user the result to check and start; you cannot start it yourself:',
-    `curl -s -X POST "$TAYANG_AI_URL/autopilot" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d '{"name":"...","nicheId":"...","styleId":"...","voiceId":"...","language":"id","lengthSec":60,"days":"everyday","times":["09:00"],"review":true,"socialAccountIds":[]}'`,
+    'When you have everything, send it. Buma shows the user the result to check and start; you cannot start it yourself:',
+    `curl -s -X POST "$BUMA_AI_URL/autopilot" -H "Authorization: Bearer $BUMA_AI_TOKEN" -d '{"name":"...","nicheId":"...","styleId":"...","voiceId":"...","language":"id","lengthSec":60,"days":"everyday","times":["09:00"],"review":true,"socialAccountIds":[]}'`,
     'Then end your turn.',
   ].join('\n');
 }
 
 /** Sent once when the build turn ended without a rendered file. */
-export const AUTOPILOT_RENDER_NOW = `Render it now: no rendered video file was found in this project. Use the render command in tayang.json (or the project's own render setup), then finish by saying the path of the rendered file. ${FOREGROUND_RULE} ${RENDERS_RULE}`;
+export const AUTOPILOT_RENDER_NOW = `Render it now: no rendered video file was found in this project. Use the render command in buma.json (or the project's own render setup), then finish by saying the path of the rendered file. ${FOREGROUND_RULE} ${RENDERS_RULE}`;

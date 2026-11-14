@@ -1,55 +1,78 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import { DEFAULT_SETTINGS, type Settings } from '@tayang/shared';
+import { DEFAULT_SETTINGS, type Settings } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({ updateSettings: vi.fn() }));
-vi.mock('@/lib/auth', () => ({
-  authStatus: vi.fn(async () => ({ state: 'signed-out', signedIn: false })),
-  onAuthChanged: vi.fn(async () => () => {}),
-  authStart: vi.fn(),
-  authCancel: vi.fn(),
-  authLogout: vi.fn(),
-  authErrorCode: vi.fn(),
-}));
+vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn().mockResolvedValue(undefined) }));
 
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { updateSettings } from '@/lib/ipc';
+import { devopsMicrosoftSignIn, devopsSignIn, devopsStatus } from '@/lib/devops';
 import { AccountStep } from '@/screens/onboarding/AccountStep';
 import { OnboardingHeader } from '@/components/OnboardingHeader';
 import { useApp } from '@/state/app';
-import { useAuth } from '@/state/auth';
+import { useDevops } from '@/state/devops';
 
 const settings = (o: Partial<Settings> = {}): Settings => ({ ...DEFAULT_SETTINGS, workingFolder: '/w', ...o });
+const signedOut = { signedIn: false, profile: null };
+const profile = { org: 'buma', id: 'u-1', displayName: 'Rama Sugiyanto', email: 'rama@buma.co.id' };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(devopsStatus).mockResolvedValue(signedOut);
   useApp.setState({ route: { name: 'onboarding-account' }, settings: settings(), leaveGuard: null });
-  useAuth.setState({ status: { state: 'signed-out', signedIn: false } as never, flow: { phase: 'closed' } });
+  useDevops.setState({ status: signedOut, busy: false, error: null });
 });
 
-describe('onboarding: Tayang account step', () => {
-  it('is optional: skipping finishes onboarding and opens a new chat', async () => {
-    vi.mocked(updateSettings).mockResolvedValue(settings({ onboarded: true }));
+describe('onboarding: Azure DevOps sign-in step', () => {
+  it('is required: no skip, and the app cannot be opened while signed out', async () => {
     render(<AccountStep />);
-    expect(screen.getByRole('heading', { name: 'Sign in to Tayang' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Sign in to Azure DevOps' })).toBeInTheDocument();
     expect(screen.getByText('Step 4 of 4')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: /Skip for now/ }));
-    expect(updateSettings).toHaveBeenCalledWith({ onboarded: true });
-    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat-new' }));
-    expect(useApp.getState().settings?.onboarded).toBe(true);
+    expect(screen.queryByRole('button', { name: /Skip/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Open BSpace SDLC/ })).toBeDisabled();
+    expect(screen.getByText('Sign in to Azure DevOps to continue')).toBeInTheDocument();
   });
 
-  it('signs in with Google, then shows the account and starts', async () => {
-    const signIn = vi.fn();
-    useAuth.setState({ signIn } as never);
+  it('signs in with the organization and a token, then opens the app', async () => {
+    vi.mocked(devopsSignIn).mockResolvedValue({ signedIn: true, profile });
+    vi.mocked(updateSettings).mockResolvedValue(settings({ onboarded: true }));
     render(<AccountStep />);
-    await userEvent.click(screen.getByRole('button', { name: 'Sign in with Google' }));
-    expect(signIn).toHaveBeenCalled();
-    useAuth.setState({
-      status: { state: 'signed-in', signedIn: true, account: { id: 'a', email: 'oyen@example.com', name: 'Oyen', plan: 'free' } } as never,
-    });
-    expect(await screen.findByText('oyen@example.com')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Start making videos/ })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Organization' })).toHaveValue('buma');
+    expect(screen.getByRole('button', { name: 'Sign in with token' })).toBeDisabled();
+    await userEvent.type(screen.getByLabelText('Personal access token'), 'secret-pat');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in with token' }));
+    expect(devopsSignIn).toHaveBeenCalledWith('buma', 'secret-pat');
+    expect(await screen.findByText('Rama Sugiyanto')).toBeInTheDocument();
+    expect(screen.getByText('rama@buma.co.id · dev.azure.com/buma')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Open BSpace SDLC/ }));
+    expect(updateSettings).toHaveBeenCalledWith({ onboarded: true });
+    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat-new' }));
+  });
+
+  it('signs in with Microsoft in one click, for the organization', async () => {
+    vi.mocked(devopsMicrosoftSignIn).mockResolvedValue({ signedIn: true, profile });
+    render(<AccountStep />);
+    await userEvent.click(screen.getByRole('button', { name: /Sign in with Microsoft/ }));
+    expect(devopsMicrosoftSignIn).toHaveBeenCalledWith('buma');
+    expect(await screen.findByText('Rama Sugiyanto')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open BSpace SDLC/ })).toBeEnabled();
+  });
+
+  it('shows why Azure DevOps refused the token', async () => {
+    vi.mocked(devopsSignIn).mockRejectedValue("Azure DevOps didn't accept that token for this organization.");
+    render(<AccountStep />);
+    await userEvent.type(screen.getByLabelText('Personal access token'), 'bad');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in with token' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent("didn't accept that token");
+    expect(screen.getByRole('button', { name: /Open BSpace SDLC/ })).toBeDisabled();
+  });
+
+  it('opens the token page of the organization', async () => {
+    render(<AccountStep />);
+    await userEvent.click(screen.getByRole('button', { name: /Create a token/ }));
+    expect(openUrl).toHaveBeenCalledWith('https://dev.azure.com/buma/_usersSettings/tokens');
   });
 
   it('goes back to the tools step', async () => {

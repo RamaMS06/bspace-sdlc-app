@@ -1,4 +1,4 @@
-import type { FileInfo, MediaInfo } from '@tayang/shared';
+import type { FileInfo, MediaInfo } from '@bspace-sdlc-app/shared';
 import { latestRenderInfo, mediaProbe } from '@/lib/ipc';
 
 /** A render this close before the turn started still counts: file times can be coarse, or a little behind. */
@@ -50,7 +50,7 @@ export async function finishedRender(projectId: string, since = -Infinity): Prom
   if (!first || !renderedSince(first, since)) return null;
   const info = await probe(projectId);
   if (info === 'missing') {
-    if (!toldNoProbe) console.warn('Tayang: ffprobe could not be run, so renders are checked by size and time only');
+    if (!toldNoProbe) console.warn('Buma: ffprobe could not be run, so renders are checked by size and time only');
     toldNoProbe = true;
   } else if (!info || !(info.durationSec > 0)) return null;
   await new Promise((r) => setTimeout(r, renderTiming.stableMs));

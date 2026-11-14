@@ -1,19 +1,15 @@
-import { Loader2 } from 'lucide-react';
+import { BumaLoading } from '@/components/buma/Loading';
 import { cn } from '@/lib/utils';
 
 /**
- * A request to the Tayang API is under way: a small turning circle, beside the words that say what
- * is happening (or in a button). Still for people who ask for less motion.
+ * Work under way: the BUMA Design System loader (refresh animation, no label), beside the words that say
+ * what is happening (or in a button). Still for people who ask for less motion.
  */
 export function Spinner({ size = 14, className }: { size?: number; className?: string }) {
   return (
-    <Loader2
-      size={size}
-      strokeWidth={2}
-      aria-hidden="true"
-      data-testid="spinner"
-      className={cn('shrink-0 animate-spin text-text-3 motion-reduce:animate-none', className)}
-    />
+    <span aria-hidden="true" data-testid="spinner" className={cn('inline-flex shrink-0', className)}>
+      <BumaLoading variant="refresh" label={false} size={size} className="pointer-events-none" />
+    </span>
   );
 }
 

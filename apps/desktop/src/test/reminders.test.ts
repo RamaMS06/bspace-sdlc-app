@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Project } from '@tayang/shared';
+import type { Project } from '@bspace-sdlc-app/shared';
 import { dueReminders, REVIEW_LEAD_MS, MISSED_WINDOW_MS } from '@/lib/reminders';
 
 const H = 3_600_000;

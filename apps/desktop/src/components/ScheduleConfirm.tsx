@@ -5,7 +5,7 @@ import { slotTime } from '@/lib/autopilot';
 import type { PlannedItem } from '@/lib/scheduleVideos';
 
 /**
- * Tayang's own confirmation of a schedule card: what would be scheduled, read from the card's items (not
+ * Buma's own confirmation of a schedule card: what would be scheduled, read from the card's items (not
  * from the words the agent drew), in the user's local time. Only "Schedule N videos" here writes.
  */
 export function ScheduleConfirm({
@@ -36,7 +36,7 @@ export function ScheduleConfirm({
                 <span className="text-[13px] text-text-2">{slotTime(new Date(i.at))}</span>
                 <span className="text-[14px] font-medium">{i.title}</span>
                 {!i.projectId ? (
-                  <span className="text-xs text-orange-light">{t('schedule.confirm.newDraft')}</span>
+                  <span className="text-xs text-primary-text">{t('schedule.confirm.newDraft')}</span>
                 ) : i.previous && !Number.isNaN(Date.parse(i.previous)) ? (
                   <span className="text-xs text-text-3">{t('schedule.confirm.moves', { time: slotTime(new Date(i.previous)) })}</span>
                 ) : null}

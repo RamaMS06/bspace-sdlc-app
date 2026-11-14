@@ -1,11 +1,11 @@
-//! This computer's id for gift codes (one gift per computer per promo). Tayang sends only a hash:
+//! This computer's id for gift codes (one gift per computer per promo). Buma sends only a hash:
 //! SHA-256 of a fixed prefix and the OS's machine id, which the API hashes again with its own
 //! secret before storing it. The machine id itself never leaves the computer.
 
 use sha2::{Digest, Sha256};
 
 /// The OS's id for this computer: macOS IOPlatformUUID, Windows MachineGuid, Linux machine-id.
-/// It stays the same when Tayang is reinstalled or its data is deleted.
+/// It stays the same when Buma is reinstalled or its data is deleted.
 fn machine_id() -> Option<String> {
     #[cfg(target_os = "macos")]
     {
@@ -46,12 +46,12 @@ fn machine_guid(reg: &str) -> Option<String> {
 }
 
 fn hash(id: &str) -> String {
-    let digest = Sha256::digest(format!("tayang-device-v1:{id}").as_bytes());
+    let digest = Sha256::digest(format!("buma-device-v1:{id}").as_bytes());
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// The hex SHA-256 sent as `deviceId`. Without a machine id (a locked-down system), the install id
-/// stands in: weaker, since it changes when Tayang's data is deleted, but still one per install.
+/// stands in: weaker, since it changes when Buma's data is deleted, but still one per install.
 pub fn device_id(install_id: &str) -> String {
     hash(&machine_id().unwrap_or_else(|| format!("install:{install_id}")))
 }

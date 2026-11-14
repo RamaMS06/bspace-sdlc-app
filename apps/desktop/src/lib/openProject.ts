@@ -1,5 +1,5 @@
-import type { AgentId, MessagePart, Project } from '@tayang/shared';
-import { SKIP_FRAME_CHECK } from '@tayang/skills';
+import type { AgentId, MessagePart, Project } from '@bspace-sdlc-app/shared';
+import { SKIP_FRAME_CHECK } from '@bspace-sdlc-app/skills';
 import { i18n } from '@/i18n';
 import { slotTime } from '@/lib/autopilot';
 import { createChat, listChats } from '@/lib/ipc';
@@ -63,6 +63,6 @@ export async function sendInProjectChat(
     return;
   }
   const ask: MessagePart[] = [{ type: 'text', text }];
-  // What the user left in the composer stays there: this message is Tayang's, sent for them.
+  // What the user left in the composer stays there: this message is Buma's, sent for them.
   await useChat.getState().send(chatId, ask, { ...projectSendOptions(project, agentId, ask), keepAttachments: true });
 }

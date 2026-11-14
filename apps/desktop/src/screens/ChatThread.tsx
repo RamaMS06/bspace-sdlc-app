@@ -1,8 +1,8 @@
 import { startAutopilotChat } from '@/lib/autopilotChat';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { AgentId, ChatMessage, MessagePart, Project } from '@tayang/shared';
-import { topicIdeaFromAction } from '@tayang/skills';
+import type { AgentId, ChatMessage, MessagePart, Project } from '@bspace-sdlc-app/shared';
+import { topicIdeaFromAction } from '@bspace-sdlc-app/skills';
 import { Composer, type MentionRef } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
@@ -11,7 +11,8 @@ import { ScrollToBottom } from '@/components/ScrollToBottom';
 import { stylesFor, TemplateChip, templateOf, useChipTemplate, useStyles } from '@/components/TemplateChip';
 import { TraceButton } from '@/components/TraceDialog';
 import { TurnRail } from '@/components/TurnRail';
-import { listProjects } from '@/lib/ipc';
+import { createFeature, sdlcStart } from '@/lib/featureFlow';
+import { listProjects, setChatProject } from '@/lib/ipc';
 import { lastMentionedStyle, mentionContext, mentionedIn, styleContext } from '@/lib/mentions';
 import { ideasFromReply, startTopic, type TopicIdea } from '@/lib/topics';
 import { extractA2ui } from '@/a2ui/parse';
@@ -104,9 +105,23 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
     const sentStyle = parts.find((p) => p.type === 'style-mention');
     const sentTemplate = templateOf(sentStyle?.type === 'style-mention' ? sentStyle : null, known);
     if (sentTemplate) setStyleId(sentTemplate);
+    // An SDLC skill typed here starts a feature: this chat moves into it and Workflow follows it.
+    let job: { projectId: string; title: string } | undefined;
+    const typed = parts.find((p) => p.type === 'text');
+    const name = typed?.type === 'text' ? sdlcStart(typed.text) : null;
+    if (settings && name !== null) {
+      try {
+        const feature = await createFeature(name || t('chat.newFeature'), settings);
+        const moved = await setChatProject(chatId, feature.id);
+        useChat.getState().rememberChat(moved);
+        job = { projectId: feature.id, title: feature.title };
+      } catch {
+        /* the chat goes on without a feature */
+      }
+    }
     const failure = await useChat
       .getState()
-      .send(chatId, parts, { agentId: agent, ...(ctx.length ? { promptParts: [...ctx, ...parts] } : {}) });
+      .send(chatId, parts, { agentId: agent, ...(job ? { job } : {}), ...(ctx.length ? { promptParts: [...ctx, ...parts] } : {}) });
     // The chat already shows why in a system line.
     if (failure) setMention(sentMention);
     return !failure;
@@ -140,7 +155,7 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
     }
   };
 
-  // The agent asked Tayang to start a video (POST /video): once its turn is over, start it here.
+  // The agent asked Buma to start a video (POST /video): once its turn is over, start it here.
   const pendingPick = useChat((s) => (s.actions[chatId] ?? []).some((a) => a.name === 'pick_topic'));
   useEffect(() => {
     if (!pendingPick || streaming || busy) return;
@@ -150,22 +165,6 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingPick, streaming, busy, chatId]);
 
-  // The agent set up an autopilot (POST /autopilot): once its turn is over, the user checks it in the wizard.
-  const pendingAutopilot = useChat((s) => (s.actions[chatId] ?? []).some((a) => a.name === 'create_autopilot'));
-  useEffect(() => {
-    if (!pendingAutopilot || streaming) return;
-    const a = useChat.getState().takeAction(chatId, 'create_autopilot');
-    if (a) useApp.getState().navigate({ name: 'autopilot-wizard', draft: a.context });
-  }, [pendingAutopilot, streaming, chatId]);
-
-  // The agent asked for an autopilot (POST /autopilot-chat): once its turn is over, open the setup chat.
-  const pendingAutopilotChat = useChat((s) => (s.actions[chatId] ?? []).some((a) => a.name === 'start_autopilot_chat'));
-  useEffect(() => {
-    if (!pendingAutopilotChat || streaming) return;
-    const a = useChat.getState().takeAction(chatId, 'start_autopilot_chat');
-    const settings = useApp.getState().settings;
-    if (a && settings) void startAutopilotChat(settings, typeof a.context?.notes === 'string' ? a.context.notes : '');
-  }, [pendingAutopilotChat, streaming, chatId]);
 
   const onA2uiAction = (a: A2uiAction) => {
     if (a.name !== 'pick_topic') return false;
@@ -189,7 +188,7 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
 
       <div className="flex min-h-0 flex-1 flex-col items-center px-6">
         <div className="relative flex min-h-0 w-full flex-1 justify-center">
-          <div ref={scrollRef} className="no-scrollbar flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-6 overflow-y-auto py-6">
+          <div ref={scrollRef} className="no-scrollbar flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden py-6">
             <div className="my-auto">
               <MessageList
                 messages={messages}
@@ -262,7 +261,7 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
             onAgentChange={(a) => void switchAgent(a)}
           />
           {error && (
-            <p role="alert" className="m-0 mt-2 text-xs text-orange-light">
+            <p role="alert" className="m-0 mt-2 text-xs text-error">
               {error}
             </p>
           )}

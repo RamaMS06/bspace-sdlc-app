@@ -389,6 +389,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "bspace-sdlc-app"
+version = "0.0.10"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "flate2",
+ "keyring",
+ "libc",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sys-locale",
+ "tar",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-dialog",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "tauri-plugin-process",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "tempfile",
+ "tokio",
+ "unicode-normalization",
+ "uuid",
+ "winreg",
+ "zip 2.6.1",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4777,39 +4810,6 @@ dependencies = [
  "thiserror 2.0.21",
  "windows",
  "windows-version",
-]
-
-[[package]]
-name = "tayang-studio"
-version = "0.0.10"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "flate2",
- "keyring",
- "libc",
- "reqwest 0.12.28",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "sys-locale",
- "tar",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-dialog",
- "tauri-plugin-notification",
- "tauri-plugin-opener",
- "tauri-plugin-process",
- "tauri-plugin-single-instance",
- "tauri-plugin-updater",
- "tempfile",
- "tokio",
- "unicode-normalization",
- "uuid",
- "winreg",
- "zip 2.6.1",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 //! One chat's trace: its turns, model calls and tool calls on a time axis, with the tokens of each
-//! call. Tayang's own chat history has no timings, so this reads the session files Claude Code
-//! keeps in `<config folder>/projects`: Tayang's own Claude folder (see `claude_account`), and
-//! `~/.claude` for chats from before Tayang had one. They are an internal format: anything unknown is skipped, and a
+//! call. Buma's own chat history has no timings, so this reads the session files Claude Code
+//! keeps in `<config folder>/projects`: Buma's own Claude folder (see `claude_account`), and
+//! `~/.claude` for chats from before Buma had one. They are an internal format: anything unknown is skipped, and a
 //! chat with no readable file has an empty trace. Other agents don't write these files.
 
 use chrono::DateTime;
@@ -408,19 +408,19 @@ not json at all
     }
 
     #[test]
-    fn sessions_are_read_from_tayangs_claude_folder_and_the_old_one() {
+    fn sessions_are_read_from_bumas_claude_folder_and_the_old_one() {
         let home = tempfile::tempdir().unwrap();
         let cwd = Path::new("/w/p");
-        let (tayang, old) = (home.path().join("tayang-claude"), home.path().join(".claude"));
-        std::fs::create_dir_all(transcripts_dir(&tayang, cwd)).unwrap();
+        let (buma, old) = (home.path().join("buma-claude"), home.path().join(".claude"));
+        std::fs::create_dir_all(transcripts_dir(&buma, cwd)).unwrap();
         std::fs::create_dir_all(transcripts_dir(&old, cwd)).unwrap();
-        std::fs::write(transcripts_dir(&tayang, cwd).join("new.jsonl"), FIXTURE).unwrap();
+        std::fs::write(transcripts_dir(&buma, cwd).join("new.jsonl"), FIXTURE).unwrap();
         let before = FIXTURE.replace("\"t1\"", "\"x1\"").replace("\"m1\"", "\"y1\"");
         std::fs::write(transcripts_dir(&old, cwd).join("old.jsonl"), before).unwrap();
-        let t = chat_trace(&[tayang.clone(), old], cwd, &HashSet::new());
+        let t = chat_trace(&[buma.clone(), old], cwd, &HashSet::new());
         assert!(t.spans.iter().any(|s| s.id == "t1"));
         assert!(t.spans.iter().any(|s| s.id == "x1"));
-        assert!(chat_trace(&[tayang], cwd, &HashSet::new()).spans.iter().all(|s| s.id != "x1"));
+        assert!(chat_trace(&[buma], cwd, &HashSet::new()).spans.iter().all(|s| s.id != "x1"));
     }
 
     #[test]
@@ -432,8 +432,8 @@ not json at all
 
     #[test]
     fn the_folder_name_replaces_every_other_character() {
-        let dir = transcripts_dir(Path::new("/h/.claude"), Path::new("/home/a/Tayang/.tayang/chats/c_1"));
-        assert_eq!(dir, Path::new("/h/.claude/projects/-home-a-Tayang--tayang-chats-c-1"));
+        let dir = transcripts_dir(Path::new("/h/.claude"), Path::new("/home/a/Buma/.buma/chats/c_1"));
+        assert_eq!(dir, Path::new("/h/.claude/projects/-home-a-Buma--buma-chats-c-1"));
     }
 
     #[test]

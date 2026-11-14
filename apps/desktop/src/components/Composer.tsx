@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { ArrowUp, AtSign, Check, ChevronDown, File as FileIcon, Loader2, Palette, Paperclip, Square, X, Zap } from 'lucide-react';
-import type { AgentId, AgentInfo, MessagePart, Project, Style } from '@tayang/shared';
+import { ArrowUp, AtSign, Check, ChevronDown, Star, File as FileIcon, Folder, FolderPlus, Palette, Paperclip, Plus, Slash, Square, X } from 'lucide-react';
+import type { AgentId, MessagePart, Project, Style } from '@bspace-sdlc-app/shared';
+import { Button } from '@/components/Button';
 import { AgentLogo } from '@/components/AgentLogo';
 import { FrameChip } from '@/components/MessageList';
 import { filterProjects, filterStyles, MentionMenu, styleKey, videoKey } from '@/components/MentionMenu';
@@ -11,19 +12,27 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { groupModels } from '@/components/FailoverCard';
+import { KNOWN_MODELS, parseSingle, singlePick, useFailover } from '@/state/failover';
+import { StepPicker, useModelName } from '@/components/Combos';
+import { usePick } from '@/lib/route';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AGENT_NAMES } from '@/lib/agents';
-import { assetUrl, attachFile, detectAgents, setAgentModel } from '@/lib/ipc';
+import { assetUrl, attachFile, setAgentModel } from '@/lib/ipc';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
-import { autoOn, useChat, type StyleRef } from '@/state/chat';
-import { modelOptions, useModels } from '@/state/models';
+import { autoOn, modeOf, useChat, type StyleRef } from '@/state/chat';
+import { EXACT_LIST, modelOptions, useModels } from '@/state/models';
+import { BumaLoading } from '@/components/buma/Loading';
+import { ModePicker } from '@/components/ModePicker';
+import { SLASH, SlashMenu, filterSkills, useSlashSkills, type SlashSkill } from '@/components/SlashMenu';
+import { folderTitle, useFolders } from '@/state/folders';
+import { pickFolder } from '@/lib/ipc';
 import { track } from '@/lib/analytics';
 
 export const QUICK_CHIPS = ['faster', 'bigger', 'colors', 'music', 'short'] as const;
@@ -70,11 +79,16 @@ function FileChip({ part, onRemove }: { part: FilePart; onRemove(): void }) {
   );
 }
 
-const AGENT_ORDER: AgentId[] = ['claude', 'opencode', 'codex', 'gemini', 'antigravity', 'custom'];
 
 /** Every toolbar control: a 32×32 icon button, same radius and hover. */
+/** No queued messages: one shared empty list, so the selector stays stable. */
+const NO_QUEUE: never[] = [];
+
+/** The tallest the message field grows before it scrolls. */
+const MAX_FIELD = 200;
+
 const ICON_BUTTON =
-  'inline-flex size-8 shrink-0 cursor-pointer items-center justify-center gap-0.5 rounded-md border-none bg-transparent p-0 text-text-2 transition-colors hover:bg-raised hover:text-foreground disabled:cursor-default disabled:opacity-50';
+  'inline-flex size-8 shrink-0 cursor-pointer items-center justify-center gap-1 rounded-md border-none bg-transparent p-0 text-text-2 transition-colors hover:bg-raised hover:text-foreground disabled:cursor-default disabled:opacity-50';
 
 /** A toolbar control with its full label as a tooltip. */
 function Tip({ label, children }: { label: string; children: React.ReactElement }) {
@@ -86,72 +100,80 @@ function Tip({ label, children }: { label: string; children: React.ReactElement 
   );
 }
 
-/** The agent's logo, its name and a small chevron. */
-const AgentFace = ({ agent }: { agent: AgentId }) => (
-  <>
-    <AgentLogo id={agent} size={16} />
-    <span className="max-w-28 truncate text-[12px]">{AGENT_NAMES[agent]}</span>
-    <ChevronDown size={12} strokeWidth={1.5} aria-hidden="true" className="shrink-0" />
-  </>
-);
-
-function AgentPicker({
-  agent,
-  disabled,
-  onChange,
-}: {
-  agent: AgentId;
-  disabled?: boolean;
-  onChange(id: AgentId): void;
-}) {
+/**
+ * What this chat runs on, under the message box: a combo (Agents › Combo) or one model on its own,
+ * picked per chat. The button names the pick and the model in use; the menu lists the combos (the
+ * starred one is for new chats), then every model of the connected agents, and links to the combos.
+ */
+function ComboPicker({ agent, chatId }: { agent: AgentId; chatId: string | null }) {
   const { t } = useTranslation();
-  const [agents, setAgents] = useState<AgentInfo[]>([]);
-  const load = (open: boolean) => {
-    if (!open) return;
-    detectAgents()
-      .then(setAgents)
-      .catch(() => {});
+  const [open, setOpen] = useState(false);
+  const pick = useFailover((s) => s.pickOf(chatId));
+  const combos = useFailover((s) => s.combos);
+  const defaultCombo = useFailover((s) => s.defaultCombo);
+  const ready = useFailover((s) => s.ready);
+  const live = useModels((s) => (chatId ? (s.byChat[chatId]?.current ?? null) : null));
+  const picked = useApp((s) => s.settings?.agentModels?.[agent] ?? null);
+  const name = useModelName(agent);
+  const single = parseSingle(pick);
+  const combo = single ? null : combos.find((c) => c.id === pick);
+  const model = live ?? picked;
+  const title = combo ? combo.name : single ? `${AGENT_NAMES[single.agent]} · ${name(single.model, t('composer.modelDefault'))}` : AGENT_NAMES[agent];
+  const agents = (ready.length ? ready : [agent]).filter((a) => a !== 'custom');
+  const choose = (next: string) => {
+    setOpen(false);
+    void usePick(chatId, next, chatId ? agent : null);
   };
-  const listed = AGENT_ORDER.map((id) => agents.find((a) => a.id === id)).filter((a): a is AgentInfo => !!a);
   return (
-    <DropdownMenu onOpenChange={load}>
-      <Tip label={t('composer.agentLabel', { name: AGENT_NAMES[agent] })}>
-        <DropdownMenuTrigger asChild disabled={disabled}>
-          <button
-            type="button"
-            disabled={disabled}
-            aria-label={t('composer.agentLabel', { name: AGENT_NAMES[agent] })}
-            className={cn(ICON_BUTTON, 'w-auto min-w-8 px-1.5')}
-          >
-            <AgentFace agent={agent} />
+    <Popover open={open} onOpenChange={setOpen}>
+      <Tip label={t('combos.pickAria', { name: title })}>
+        <PopoverTrigger asChild>
+          <button type="button" data-testid="route-badge" aria-label={t('combos.pickAria', { name: title })} className={cn(ICON_BUTTON, 'w-auto min-w-8 px-2.5')}>
+            <AgentLogo id={agent} size={16} />
+            <span className="max-w-32 truncate text-[12px]">{title}</span>
+            {combo && <span className="max-w-32 truncate text-[12px] text-text-3">· {name(model, AGENT_NAMES[agent])}</span>}
+            <ChevronDown size={12} strokeWidth={1.5} aria-hidden="true" className="shrink-0" />
           </button>
-        </DropdownMenuTrigger>
+        </PopoverTrigger>
       </Tip>
-      <DropdownMenuContent side="top" align="start" className="w-64 border-hairline bg-card">
-        {listed.map((a) => (
-          <DropdownMenuItem
-            key={a.id}
-            disabled={!a.installed}
-            onSelect={() => onChange(a.id)}
-            className="h-9 gap-2 text-[13px]"
-          >
-            <AgentLogo id={a.id} size={16} />
-            <span className="font-medium">{AGENT_NAMES[a.id]}</span>
-            {!a.installed && (
-              <span className="ml-auto text-[11px] text-text-3">{a.id === 'custom' ? t('composer.notSetUp') : t('composer.notInstalled')}</span>
-            )}
-            {a.id === agent && <Check data-testid="agent-check" size={14} strokeWidth={1.5} aria-hidden="true" className="ml-auto" />}
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={() => useApp.getState().navigate({ name: 'settings' })}
-          className="h-9 text-[13px]"
+      <PopoverContent side="top" align="start" className="flex w-[min(340px,calc(100vw-2rem))] flex-col gap-buma-xs border-hairline bg-card p-buma-xs">
+        <span className="px-buma-xs pt-buma-2xs text-[11px] font-medium tracking-[0.04em] text-text-3 uppercase">{t('combos.pickTitle')}</span>
+        <ul aria-label={t('combos.pickTitle')} className="m-0 flex list-none flex-col p-0">
+          {combos.map((c) => (
+            <li key={c.id}>
+              <button
+                type="button"
+                aria-current={c.id === pick ? 'true' : undefined}
+                onClick={() => choose(c.id)}
+                className={cn('flex w-full cursor-pointer items-center gap-buma-xs rounded-md border-0 bg-transparent px-buma-xs py-1.5 text-left text-[13px] hover:bg-raised', c.id === pick && 'bg-primary-soft')}
+              >
+                <Star size={13} aria-hidden="true" fill={c.id === defaultCombo ? 'currentColor' : 'none'} className={cn('shrink-0', c.id === defaultCombo ? 'text-warning' : 'text-transparent')} />
+                <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                <span className="shrink-0 text-[11px] text-text-3">{c.steps.length === 1 ? t('combos.single') : t('combos.steps', { count: c.steps.length })}</span>
+                {c.id === pick && <Check size={13} aria-hidden="true" className="text-primary" />}
+              </button>
+            </li>
+          ))}
+        </ul>
+        <StepPicker agents={agents} onPick={(s) => choose(singlePick(s.agent, s.model))}>
+          <button type="button" className="flex cursor-pointer items-center justify-between rounded-md border-0 bg-transparent px-buma-xs py-1.5 text-left text-[13px] text-text-2 hover:bg-raised">
+            <span>{single ? title : t('combos.singleTitle')}</span>
+            <ChevronDown size={12} aria-hidden="true" className="-rotate-90" />
+          </button>
+        </StepPicker>
+        <Button
+          variant="secondary"
+          small
+          className="self-start"
+          onClick={() => {
+            setOpen(false);
+            useApp.getState().navigate({ name: 'agents', tab: 'combo' });
+          }}
         >
-          {t('composer.setUpAgents')}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          {t('combos.manage')}
+        </Button>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -170,31 +192,57 @@ export function ModelPicker({ agent, chatId, disabled }: { agent: AgentId; chatI
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A pick is being applied (the running session switches, or the agent starts on it).
+  const [switching, setSwitching] = useState(false);
   const picked = useApp((s) => s.settings?.agentModels?.[agent] ?? null);
   const live = useModels((s) => (chatId ? (s.byChat[chatId]?.current ?? null) : null));
-  const options = useModels((s) => modelOptions(s, agent, chatId));
-  const loading = useModels((s) => !!s.loading[agent]);
+  const session = useModels((s) => modelOptions(s, agent, chatId));
+  const catalog = useModels((s) => s.catalog[agent]);
+  const catalogLoading = useModels((s) => !!s.catalogLoading[agent]);
+  const extra = useFailover((s) => s.extra[agent]);
+  // Every model of the agent: its own list (shortcuts such as Sonnet or Opus), then every version from the
+  // full list (Claude: Anthropic's; opencode: all providers), then the ones added by hand.
+  const options = useMemo(() => {
+    const seen = new Set<string>();
+    const own = catalog?.length && EXACT_LIST.includes(agent) ? [] : session;
+    return [...own, ...(catalog ?? []), ...(catalog?.length ? [] : (KNOWN_MODELS[agent] ?? [])), ...(extra ?? []).map((value) => ({ value, name: value }))].filter(
+      (m) => m.value !== 'default' && !seen.has(m.value) && !!seen.add(m.value),
+    );
+  }, [session, catalog, extra, agent]);
+  const loading = useModels((s) => !!s.loading[agent]) || catalogLoading;
   const failed = useModels((s) => s.failed[agent] ?? null);
   useEffect(() => useModels.getState().listen(), []);
 
   const current = live ?? picked;
+  // The agent's own entries first, then every version grouped by family.
+  const groups = useMemo(() => {
+    const g = groupModels(agent, options);
+    return [...g.filter((x) => x.family === null), ...g.filter((x) => x.family !== null)];
+  }, [agent, options]);
   const found = current ? options.find((o) => o.value === current) : undefined;
   const label = current ? (found ? modelName(agent, found.name) : shortModel(current)) : t('composer.modelDefault');
 
   const onOpenChange = (o: boolean) => {
     setOpen(o);
     setError(null);
-    if (o) void useModels.getState().load(agent);
+    if (o) {
+      void useModels.getState().load(agent);
+      // Every version, not only the agent's shortcuts.
+      void useModels.getState().loadCatalog(agent);
+    }
   };
 
   const choose = async (value: string | null) => {
     setOpen(false);
+    setSwitching(true);
     try {
       useApp.getState().setSettings(await setAgentModel(agent, value, chatId));
       track('model picked', { agent, model: value ?? 'default' });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setOpen(true);
+    } finally {
+      setSwitching(false);
     }
   };
 
@@ -206,11 +254,11 @@ export function ModelPicker({ agent, chatId, disabled }: { agent: AgentId; chatI
             type="button"
             disabled={disabled}
             aria-label={t('composer.modelLabel', { name: label })}
-            className={cn(ICON_BUTTON, 'w-auto max-w-44 px-1.5 text-[12px]')}
+            className={cn(ICON_BUTTON, 'w-auto max-w-44 px-2.5 text-[12px]')}
           >
             <span className="truncate">{label}</span>
-            {loading ? (
-              <Loader2 size={12} strokeWidth={1.5} aria-hidden="true" className="shrink-0 animate-spin motion-reduce:animate-none" />
+            {loading || switching ? (
+              <BumaLoading variant="data" label={false} size={16} labelText={t('composer.loadingModels', { agent: AGENT_NAMES[agent] })} className="shrink-0" />
             ) : (
               <ChevronDown size={12} strokeWidth={1.5} aria-hidden="true" className="shrink-0" />
             )}
@@ -222,11 +270,8 @@ export function ModelPicker({ agent, chatId, disabled }: { agent: AgentId; chatI
           <CommandInput placeholder={t('composer.findModel')} />
           <CommandList className="max-h-72">
             {loading && !options.length ? (
-              <div role="status" aria-busy="true" className="flex flex-col gap-1 px-1 py-1">
-                <span className="flex items-center gap-2 px-2 py-2 text-xs text-text-3">
-                  <Loader2 size={13} strokeWidth={1.5} aria-hidden="true" className="shrink-0 animate-spin motion-reduce:animate-none" />
-                  {t('composer.loadingModels', { agent: AGENT_NAMES[agent] })}
-                </span>
+              <div className="flex flex-col gap-1 px-1 py-1">
+                <BumaLoading variant="data" labelText={t('composer.loadingModels', { agent: AGENT_NAMES[agent] })} className="px-2 py-2 text-xs text-text-3" />
                 {[72, 56, 64, 48].map((w) => (
                   <span key={w} aria-hidden="true" className="flex h-9 items-center px-2">
                     <span className="h-3 animate-pulse rounded bg-raised motion-reduce:animate-none" style={{ width: `${w}%` }} />
@@ -236,10 +281,7 @@ export function ModelPicker({ agent, chatId, disabled }: { agent: AgentId; chatI
             ) : (
               <>
                 {loading && (
-                  <span role="status" className="flex items-center gap-2 px-3 pt-2 pb-1 text-[11px] text-text-3">
-                    <Loader2 size={12} strokeWidth={1.5} aria-hidden="true" className="shrink-0 animate-spin motion-reduce:animate-none" />
-                    {t('composer.refreshingModels')}
-                  </span>
+                  <BumaLoading variant="data" labelText={t('composer.refreshingModels')} className="px-3 pt-2 pb-1 text-[11px] text-text-3" />
                 )}
                 <CommandEmpty>{t('composer.noModelMatch')}</CommandEmpty>
                 {!options.length && <p className="m-0 px-3 pt-3 pb-1 text-xs text-text-3">{t('composer.noModels')}</p>}
@@ -247,24 +289,29 @@ export function ModelPicker({ agent, chatId, disabled }: { agent: AgentId; chatI
                   <span>{t('composer.modelDefault')}</span>
                   {!picked && <Check size={14} strokeWidth={1.5} aria-hidden="true" className="ml-auto" />}
                 </CommandItem>
-                {options.map((o) => (
-                  <CommandItem
-                    key={o.value}
-                    value={`${o.name} ${o.value}`}
-                    title={o.description ?? o.value}
-                    onSelect={() => void choose(o.value)}
-                    className="min-h-9 gap-2 text-[13px]"
-                  >
-                    <span className="min-w-0 flex-1 truncate">{modelName(agent, o.name)}</span>
-                    {o.value === current && <Check size={14} strokeWidth={1.5} aria-hidden="true" />}
-                  </CommandItem>
+                {groups.map((g) => (
+                  <CommandGroup key={g.family ?? '-'} heading={g.family ?? t('settings.route.shortcuts')}>
+                    {g.items.map((o) => (
+                      <CommandItem
+                        key={o.value}
+                        value={`${o.name} ${o.value}`}
+                        title={o.description ?? o.value}
+                        onSelect={() => void choose(o.value)}
+                        className="min-h-9 gap-2 text-[13px]"
+                      >
+                        <span className="min-w-0 flex-1 truncate">{modelName(agent, o.name)}</span>
+                        {o.name !== o.value && <span aria-hidden="true" className="max-w-[40%] truncate font-mono text-[10px] text-text-3">{o.value}</span>}
+                        {o.value === current && <Check size={14} strokeWidth={1.5} aria-hidden="true" />}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
                 ))}
               </>
             )}
           </CommandList>
         </Command>
         {(error || failed) && (
-          <p role="alert" className="m-0 border-t border-hairline px-3 py-2 text-xs text-orange-light">
+          <p role="alert" className="m-0 border-t border-hairline px-3 py-2 text-xs text-error">
             {error ?? t('composer.modelsFailed', { message: failed ?? '' })}
           </p>
         )}
@@ -333,6 +380,7 @@ export function Composer({
   const agent = agentId ?? defaultAgent;
   const settingsAuto = useApp((s) => s.settings?.autoMode ?? false);
   const auto = useChat((s) => autoOn(s, chatId, settingsAuto));
+  const mode = useChat((s) => modeOf(s, chatId, settingsAuto));
   const autoBusy = useChat((s) => !!chatId && !!s.autoBusy[chatId]);
   const attachments = useChat((s) => (chatId ? s.attachments[chatId] : undefined)) ?? NONE;
   const [text, setText] = useState(() => initialText ?? (draftKey ? useChat.getState().drafts[draftKey]?.text : undefined) ?? '');
@@ -343,6 +391,14 @@ export function Composer({
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [active, setActive] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
+  // The field grows with what is typed up to MAX_FIELD px, then scrolls inside (set by hand: older
+  // webviews don't have `field-sizing`).
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, MAX_FIELD)}px`;
+  }, [text]);
   const box = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
@@ -373,6 +429,23 @@ export function Composer({
       const picked = await openDialog({ multiple: true, directory: false });
       if (!picked) return;
       await attachPaths(Array.isArray(picked) ? picked : [picked]);
+    } catch (e) {
+      setAttachError(errorText(e));
+    }
+  };
+
+  // A folder attached to the chat: its agent works there, and the sidebar lists it as a group.
+  // A project chat works in its project's folder, so only other chats take one.
+  const allowFolder = !sees;
+  const folder = useFolders((s) => (chatId ? s.byChat[chatId] : undefined));
+  const attachFolder = async () => {
+    setAttachError(null);
+    try {
+      const path = await pickFolder();
+      if (!path) return;
+      const id = chatId ?? (await ensureChat?.());
+      if (!id) return;
+      await useFolders.getState().attach(id, path, useChat.getState().rows[id]?.title ?? t('chat.newChat'));
     } catch (e) {
       setAttachError(errorText(e));
     }
@@ -423,6 +496,20 @@ export function Composer({
     }
   }, [mentionSignal]);
 
+  // `/` at the start: the skills menu (every built-in and added skill).
+  const slash = SLASH.exec(text);
+  const skills = useSlashSkills(!!slash);
+  const slashItems = slash ? filterSkills(skills, slash[1] ?? '') : [];
+  const slashOpen = !!slash && dismissed !== text;
+  const [slashActive, setSlashActive] = useState(0);
+  const slashQuery = slash?.[1] ?? null;
+  useEffect(() => setSlashActive(0), [slashQuery]);
+  const pickSkill = (s: SlashSkill) => {
+    setText(`/${s.id} `);
+    setSlashActive(0);
+    ref.current?.focus();
+  };
+
   const mentions = !!projects || !!styles;
   const token = mentions ? TOKEN.exec(text) : null;
   const query = token?.[2] ?? '';
@@ -452,7 +539,11 @@ export function Composer({
     if (s) pickStyle(s);
   };
 
-  const canSend = !disabled && (text.trim().length > 0 || !!mention || !!styleRef || attachments.length > 0);
+  // While the agent works (`disabled` with a Stop), the box stays open: what is sent waits in the queue.
+  const working = !!disabled && !!onStop;
+  const locked = !!disabled && !working;
+  const queued = useChat((s) => (chatId ? s.queued[chatId] : undefined)) ?? NO_QUEUE;
+  const canSend = !locked && (text.trim().length > 0 || !!mention || !!styleRef || attachments.length > 0);
   const sending = useRef(false);
   const send = async () => {
     if (!canSend || sending.current) return;
@@ -480,6 +571,24 @@ export function Composer({
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (slashOpen) {
+      const n = slashItems.length;
+      if (n && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        e.preventDefault();
+        setSlashActive((i) => (Math.min(i, n - 1) + (e.key === 'ArrowDown' ? 1 : n - 1)) % n);
+        return;
+      }
+      if (n && (e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey) {
+        e.preventDefault();
+        pickSkill(slashItems[Math.min(slashActive, n - 1)]!);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setDismissed(text);
+        return;
+      }
+    }
     if (open && items.length > 0) {
       const i = Math.max(0, items.indexOf(current ?? ''));
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -507,6 +616,7 @@ export function Composer({
   };
 
   return (
+    <TooltipProvider delayDuration={300}>
     <div className="flex flex-col gap-3">
       {quickChips && (
         <div className="flex flex-wrap gap-2">
@@ -514,7 +624,7 @@ export function Composer({
             <button
               key={q}
               type="button"
-              disabled={disabled}
+              disabled={locked}
               onClick={() => void onSend([{ type: 'text', text: t(`composer.chips.${q}`) }])}
               className="h-8 cursor-pointer rounded-full border border-hairline bg-transparent px-3 text-[13px] text-text-2 transition-colors hover:bg-raised hover:text-foreground disabled:cursor-default disabled:opacity-50"
             >
@@ -528,23 +638,23 @@ export function Composer({
           <div
             ref={box}
             data-no-drag
-            className={`flex flex-col gap-3 rounded-lg border bg-card p-3 transition-colors ${dragging ? 'border-primary' : 'border-hairline focus-within:border-[#3A3A3A]'}`}
+            className={`relative flex flex-col gap-3 rounded-lg border bg-card p-3 transition-colors ${dragging ? 'border-primary' : 'border-hairline focus-within:border-text-3'}`}
           >
             {attachError && (
-              <p role="alert" className="m-0 text-xs text-orange-light">
+              <p role="alert" className="m-0 text-xs text-error">
                 {attachError}
               </p>
             )}
             {(mention || styleRef || attachments.length > 0) && (
               <div className="flex flex-wrap gap-2">
                 {mention && (
-                  <span className="inline-flex h-6 items-center gap-1 rounded-sm border border-deep-orange bg-tint pl-2 pr-1 text-[13px] font-medium text-orange-light">
+                  <span className="inline-flex h-6 items-center gap-1 rounded-sm border border-primary-border bg-primary-soft pl-2 pr-1 text-[13px] font-medium text-primary-text">
                     @{mention.title}
                     <button
                       type="button"
                       aria-label={t('composer.removeVideo')}
                       onClick={() => onMention?.(null)}
-                      className="inline-flex size-4 cursor-pointer items-center justify-center border-none bg-transparent p-0 text-orange-light"
+                      className="inline-flex size-4 cursor-pointer items-center justify-center border-none bg-transparent p-0 text-primary-text"
                     >
                       <X size={12} strokeWidth={1.5} aria-hidden="true" />
                     </button>
@@ -584,63 +694,149 @@ export function Composer({
               </div>
             )}
             {styleRef && styleHint && <p className="m-0 -mt-1 text-xs text-text-3">{styleHint}</p>}
+            {folder && chatId && (
+              <div className="flex flex-wrap gap-1.5">
+                <span data-testid="folder-chip" title={folder} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-hairline bg-raised pr-1 pl-2 text-[12px]">
+                  <Folder size={13} strokeWidth={1.5} aria-hidden="true" className="text-text-2" />
+                  {folderTitle(folder)}
+                  <button
+                    type="button"
+                    aria-label={t('composer.removeFolder', { name: folderTitle(folder) })}
+                    onClick={() => void useFolders.getState().detach(chatId)}
+                    className="inline-flex size-5 cursor-pointer items-center justify-center rounded border-0 bg-transparent text-text-3 hover:bg-hairline hover:text-foreground"
+                  >
+                    <X size={11} aria-hidden="true" />
+                  </button>
+                </span>
+              </div>
+            )}
+            {slashOpen && (
+              // Floats above the message box, like the @ menu.
+              <div className="absolute bottom-full left-0 z-30 mb-2">
+                <SlashMenu items={slashItems} active={Math.min(slashActive, Math.max(0, slashItems.length - 1))} onPick={pickSkill} onActive={setSlashActive} />
+              </div>
+            )}
+            {queued.length > 0 && chatId && (
+              <ul aria-label={t('composer.queuedTitle', { count: queued.length })} className="m-0 flex list-none flex-col gap-1 p-0">
+                {queued.map((q) => (
+                  <li key={q.id} className="flex items-center gap-2 rounded-md bg-raised px-2.5 py-1.5 text-[13px]">
+                    <span className="shrink-0 text-[11px] font-medium text-text-3">{t('composer.queued')}</span>
+                    <span className="min-w-0 flex-1 truncate">{q.parts.map((p) => (p.type === 'text' ? p.text : p.type === 'mention' ? `@${p.title}` : '')).join(' ')}</span>
+                    <button
+                      type="button"
+                      aria-label={t('composer.unqueue')}
+                      onClick={() => useChat.getState().unqueue(chatId, q.id)}
+                      className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded border-0 bg-transparent text-text-3 hover:bg-hairline hover:text-foreground"
+                    >
+                      <X size={12} aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
             <label htmlFor="composer-message" className="sr-only">
               {t('composer.message')}
             </label>
+            <div className="flex items-end gap-2">
+                <DropdownMenu>
+                  <Tip label={t('composer.add')}>
+                    <DropdownMenuTrigger asChild disabled={locked}>
+                      <button type="button" aria-label={t('composer.add')} className={ICON_BUTTON}>
+                        <Plus size={22} strokeWidth={1.5} aria-hidden="true" />
+                      </button>
+                    </DropdownMenuTrigger>
+                  </Tip>
+                  <DropdownMenuContent side="top" align="start" className="w-60">
+                    <DropdownMenuItem onSelect={() => void pickFiles()}>
+                      <Paperclip size={15} strokeWidth={1.5} aria-hidden="true" />
+                      {t('composer.addFiles')}
+                    </DropdownMenuItem>
+                    {allowFolder && (
+                      <DropdownMenuItem onSelect={() => void attachFolder()}>
+                        <FolderPlus size={15} strokeWidth={1.5} aria-hidden="true" />
+                        {t('composer.addFolder')}
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        setText('/');
+                        setDismissed(null);
+                        setTimeout(() => ref.current?.focus(), 0);
+                      }}
+                    >
+                      <Slash size={15} strokeWidth={1.5} aria-hidden="true" />
+                      {t('composer.addSkill')}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
             <Textarea
               id="composer-message"
               ref={ref}
-              rows={2}
+              rows={1}
               value={text}
-              disabled={disabled}
+              disabled={locked}
               placeholder={placeholder ?? t('composer.placeholder')}
               onChange={(e) => {
                 setText(e.target.value);
                 setActive('');
               }}
               onKeyDown={onKeyDown}
-              className="min-h-12 resize-none rounded-none border-0 bg-transparent p-0 text-[14px] leading-[1.6] shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
+              className="min-h-8 max-h-[200px] flex-1 resize-none overflow-y-auto [field-sizing:fixed] rounded-none border-0 bg-transparent px-0 py-[5px] text-[14px] leading-[1.6] shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
             />
-            <TooltipProvider delayDuration={300}>
-            <div className="flex items-center gap-1">
-              <Tip label={t('composer.attach')}>
-                <button
-                  type="button"
-                  aria-label={t('composer.attach')}
-                  disabled={disabled}
-                  onClick={() => void pickFiles()}
-                  className={ICON_BUTTON}
-                >
-                  <Paperclip size={16} strokeWidth={1.5} aria-hidden="true" />
-                </button>
-              </Tip>
-              {onAgentChange ? (
-                <AgentPicker agent={agent} disabled={disabled || autoBusy} onChange={onAgentChange} />
-              ) : (
-                <Tip label={t('composer.agentLabel', { name: AGENT_NAMES[agent] })}>
+                {/* One button: Stop while the agent works and the box is empty, otherwise Send (queued while it works). */}
+                {working && !canSend ? (
                   <button
                     type="button"
-                    aria-label={t('composer.agentLabel', { name: AGENT_NAMES[agent] })}
-                    className={cn(ICON_BUTTON, 'w-auto min-w-8 px-1.5')}
+                    aria-label={t('composer.stop')}
+                    title={t('composer.stopHint')}
+                    onClick={onStop}
+                    className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-hairline bg-raised text-foreground transition-colors hover:bg-hairline"
                   >
-                    <AgentFace agent={agent} />
+                    <Square size={12} strokeWidth={1.5} fill="currentColor" aria-hidden="true" />
                   </button>
-                </Tip>
-              )}
-              <ModelPicker agent={agent} chatId={chatId} disabled={disabled || autoBusy} />
-              {onAgentChange && (
-                <Tip label={`${auto ? t('composer.autoOn') : t('composer.autoOff')} · ${t('composer.autoTitle')}`}>
+                ) : (
                   <button
                     type="button"
-                    aria-pressed={auto}
-                    aria-label={t('composer.auto')}
-                    disabled={disabled || autoBusy}
-                    onClick={() => void useChat.getState().setAuto(chatId, !auto)}
-                    className={cn(ICON_BUTTON, auto && 'bg-tint text-orange-light hover:bg-tint hover:text-orange-light')}
+                    aria-label={working ? t('composer.queue') : t('composer.send')}
+                    title={working ? t('composer.queueHint') : undefined}
+                    disabled={!canSend}
+                    onClick={() => void send()}
+                    className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md border-none bg-primary text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-default disabled:opacity-50"
                   >
-                    <Zap size={16} strokeWidth={1.5} aria-hidden="true" />
+                    <ArrowUp size={16} strokeWidth={2} aria-hidden="true" />
                   </button>
-                </Tip>
+                )}
+            </div>
+          </div>
+        </PopoverAnchor>
+        <PopoverContent
+          side="top"
+          align="start"
+          className="w-[min(400px,calc(100vw-2rem))] border-hairline bg-card p-2"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
+        >
+          <MentionMenu
+            projects={videoMatches}
+            styles={styleMatches}
+            query={query}
+            value={current ?? ''}
+            onValueChange={setActive}
+            onPick={pick}
+            onPickStyle={pickStyle}
+          />
+        </PopoverContent>
+      </Popover>
+        <div data-no-drag className="-mt-1 flex flex-wrap items-center gap-x-4 gap-y-1.5 px-2">
+              {/* No model to pick here: the chat follows the agent route (Agents › Provider). */}
+              <ComboPicker agent={agent} chatId={chatId} />
+              {(onAgentChange || !chatId) && (
+                <ModePicker
+                  mode={mode}
+                  agent={agent}
+                  disabled={locked || autoBusy}
+                  onChange={(m) => void useChat.getState().setMode(chatId, m)}
+                />
               )}
               {mentions && (
                 <Tip label={t('composer.mention')}>
@@ -660,48 +856,8 @@ export function Composer({
                 </Tip>
               )}
               {sees && <span className="truncate text-xs text-text-3">{t('composer.sees', { title: sees })}</span>}
-              {disabled && onStop ? (
-                <button
-                  type="button"
-                  aria-label={t('composer.stop')}
-                  onClick={onStop}
-                  className="ml-auto inline-flex size-8 cursor-pointer items-center justify-center rounded-md border border-hairline bg-raised text-foreground transition-colors hover:bg-[#333333]"
-                >
-                  <Square size={12} strokeWidth={1.5} fill="currentColor" aria-hidden="true" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  aria-label={t('composer.send')}
-                  disabled={!canSend}
-                  onClick={() => void send()}
-                  className="ml-auto inline-flex size-8 cursor-pointer items-center justify-center rounded-md border-none bg-primary text-primary-foreground transition-colors hover:bg-accent-hover disabled:cursor-default disabled:opacity-50"
-                >
-                  <ArrowUp size={16} strokeWidth={2} aria-hidden="true" />
-                </button>
-              )}
-            </div>
-            </TooltipProvider>
-          </div>
-        </PopoverAnchor>
-        <PopoverContent
-          side="top"
-          align="start"
-          className="w-[400px] border-hairline bg-card p-2"
-          onOpenAutoFocus={(e) => e.preventDefault()}
-          onCloseAutoFocus={(e) => e.preventDefault()}
-        >
-          <MentionMenu
-            projects={videoMatches}
-            styles={styleMatches}
-            query={query}
-            value={current ?? ''}
-            onValueChange={setActive}
-            onPick={pick}
-            onPickStyle={pickStyle}
-          />
-        </PopoverContent>
-      </Popover>
+        </div>
     </div>
+    </TooltipProvider>
   );
 }

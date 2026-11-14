@@ -11,6 +11,12 @@ export const PREVIEW = { min: 300, max: 720, default: 380, share: 0.55 } as cons
 export const FILES = { min: 200, max: 420, default: 260 } as const;
 /** The chat column never gets narrower than this while the panels can still give way. */
 export const CHAT_MIN = 420;
+/**
+ * Below this window width (like Claude Desktop) the sidebar leaves the row and opens over the screen as
+ * a drawer, and side panels (the preview, the file list) hide.
+ */
+export const NARROW = 768;
+export const isNarrow = (width: number) => width < NARROW;
 /** Keyboard step of a resize handle. */
 export const STEP = 16;
 
@@ -39,7 +45,7 @@ export function layoutKey(): string {
   } catch {
     /* not inside Tauri (tests, a plain browser) */
   }
-  return `tayang.layout.${label}`;
+  return `buma.layout.${label}`;
 }
 
 export function loadLayout(): SavedLayout {
@@ -70,6 +76,12 @@ function saveLayout(s: SavedLayout) {
 
 interface LayoutState extends SavedLayout {
   windowWidth: number;
+  /** The title bar's sidebar button hid the sidebar (for this session). */
+  sidebarHidden: boolean;
+  toggleSidebarHidden(): void;
+  /** In a narrow window: the sidebar drawer is open over the screen. */
+  drawerOpen: boolean;
+  setDrawerOpen(open: boolean): void;
   /** `live`: mid-drag, shown but not saved yet (the drag's final call saves). */
   setSidebar(width: number, live?: boolean): void;
   setCollapsed(collapsed: boolean, live?: boolean): void;
@@ -95,6 +107,10 @@ export const useLayout = create<LayoutState>((set, get) => {
   return {
     ...loadLayout(),
     windowWidth: viewport(),
+    sidebarHidden: false,
+    toggleSidebarHidden: () => set({ sidebarHidden: !get().sidebarHidden }),
+    drawerOpen: false,
+    setDrawerOpen: (drawerOpen) => set({ drawerOpen }),
     setSidebar: (w, live) => save({ sidebar: clamp(Math.round(w), SIDEBAR.min, SIDEBAR.max) }, live),
     setCollapsed: (collapsed, live) => (get().collapsed !== collapsed || !live) && save({ collapsed }, live),
     toggleCollapsed: () => save({ collapsed: !get().collapsed }),
@@ -177,7 +193,7 @@ export function fitLayout({
  * The fitted widths, following the window and the saved layout, for a screen with or without the preview.
  * The file sidebar only shows next to the preview (the project chat).
  */
-export function useFittedLayout(previewOpen: boolean): Fitted & { collapsed: boolean } {
+export function useFittedLayout(previewOpen: boolean): Fitted & { collapsed: boolean; narrow: boolean } {
   const s = useLayout(
     useShallow(({ sidebar, collapsed, preview, files, filesOpen, windowWidth }) => ({
       sidebar,
@@ -188,7 +204,10 @@ export function useFittedLayout(previewOpen: boolean): Fitted & { collapsed: boo
       windowWidth,
     })),
   );
-  return { ...fitLayout({ ...s, previewOpen }), collapsed: s.collapsed };
+  const fitted = fitLayout({ ...s, previewOpen });
+  // A narrow window has no room beside the screen: the sidebar is a drawer, the side panels hide.
+  if (isNarrow(s.windowWidth)) return { ...fitted, preview: 0, files: 0, collapsed: false, narrow: true };
+  return { ...fitted, collapsed: s.collapsed, narrow: false };
 }
 
 /** Keeps the store's window width current. Mount once. */

@@ -1,9 +1,10 @@
 import { useTranslation } from 'react-i18next';
-import { Check, Download } from 'lucide-react';
-import type { SystemInfo, ToolId, ToolStatus } from '@tayang/shared';
+import { Check, Cloud, FileText } from 'lucide-react';
+import { siFigma, siFlutter, siGit, siPython, type SimpleIcon } from 'simple-icons';
+import type { SystemInfo, ToolId, ToolStatus } from '@bspace-sdlc-app/shared';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { installCommands, manualInstallUrl } from '@tayang/skills';
-import sleepy from '@/assets/brand/oyen-expr-sleepy.svg';
+import { installCommands, manualInstallUrl } from '@bspace-sdlc-app/skills';
+import { StatusIcon } from '@/components/StatusIcon';
 import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
 import { PermissionCard } from '@/components/PermissionCard';
@@ -12,10 +13,22 @@ import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { useInstall, type LogLine, type ToolInstall } from '@/state/install';
 
-export const TOOL_ORDER: ToolId[] = ['node', 'ffmpeg', 'chrome', 'ytdlp'];
+export const TOOL_ORDER: ToolId[] = ['node', 'git', 'python', 'figma-mcp', 'azure-cli', 'figma', 'flutter', 'word'];
 
-/** Tools whose "missing" line differs from the plain detail. */
-const HAS_MISSING = new Set<ToolId>(['node', 'ffmpeg', 'ytdlp']);
+/** Brand marks from simple-icons (CC0), in their own colors. Word has none there (Microsoft's marks were removed). */
+const MARKS: Partial<Record<ToolId, SimpleIcon>> = { git: siGit, python: siPython, 'figma-mcp': siFigma, figma: siFigma, flutter: siFlutter };
+
+function ToolIcon({ id }: { id: ToolId }) {
+  const mark = MARKS[id];
+  if (id === 'node') return <AgentLogo id="node" size={22} />;
+  if (id === 'azure-cli') return <Cloud size={20} strokeWidth={1.5} aria-hidden="true" className="text-info" />;
+  if (!mark) return <FileText size={20} strokeWidth={1.5} aria-hidden="true" />;
+  return (
+    <svg viewBox="0 0 24 24" width={20} height={20} fill={`#${mark.hex}`} aria-hidden="true">
+      <path d={mark.path} />
+    </svg>
+  );
+}
 
 function LogList({ log, done }: { log: LogLine[]; done: boolean }) {
   if (log.length === 0) return null;
@@ -31,7 +44,7 @@ function LogList({ log, done }: { log: LogLine[]; done: boolean }) {
                 'size-1.5 shrink-0 rounded-full',
                 state === 'done' && 'bg-text-3',
                 state === 'active' && 'bg-primary',
-                state === 'failed' && 'border border-[#4A4A4A]',
+                state === 'failed' && 'border border-hairline',
               )}
             />
             <span className={cn(state === 'active' ? 'text-foreground' : 'font-mono text-text-2')}>{l.title}</span>
@@ -64,7 +77,7 @@ export function ToolRow({ tool, sys, agentName, busy, onInstall }: {
   // Node, and Chrome on a Mac without Homebrew: the user installs it from the download page.
   const manualUrl = manualInstallUrl(tool.id, sys);
   const status = inst?.status ?? 'missing';
-  // Installed, but older than Tayang needs: say so, or "Install" reads as if nothing was found.
+  // Installed, but older than Buma needs: say so, or "Install" reads as if nothing was found.
   const tooOld = tool.id === 'node' && tool.found && !tool.ok && !!tool.version;
   const ok = tool.ok || status === 'done';
   const showMissing = !ok && (status === 'missing' || status === 'failed');
@@ -72,12 +85,7 @@ export function ToolRow({ tool, sys, agentName, busy, onInstall }: {
     ? status === 'done'
       ? t('tools.installedBy', { agent: agentName })
       : detailText
-    : (manualUrl && tool.id === 'chrome' && t('tools.chrome.missingManual')) ||
-      (tooOld && t('tools.node.tooOld', { version: tool.version ?? '' })) ||
-      (tool.id === 'node' && t('tools.node.missing')) ||
-      (tool.id === 'ffmpeg' && t('tools.ffmpeg.missing')) ||
-      (tool.id === 'ytdlp' && t('tools.ytdlp.missing')) ||
-      detailText;
+    : (tooOld && t('tools.node.tooOld', { version: tool.version ?? '' })) || t(`tools.${tool.id}.missing`, { defaultValue: detailText });
   const label = tooOld ? t('tools.update') : t('tools.install');
   const expected = sys ? installCommands(tool.id, sys, agent) : [];
 
@@ -85,14 +93,14 @@ export function ToolRow({ tool, sys, agentName, busy, onInstall }: {
     <li className="flex flex-col gap-3 border-b border-border px-4 py-3 last:border-b-0">
       <div className="flex items-center gap-4">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-raised text-text-2">
-          {tool.id === 'ytdlp' ? <Download size={20} strokeWidth={1.5} aria-hidden="true" /> : <AgentLogo id={tool.id} size={22} />}
+          <ToolIcon id={tool.id} />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="text-[15px] font-medium">{name}</span>
           <span className="text-[13px] text-text-3">{detail}</span>
         </div>
         {ok && (
-          <span className="inline-flex items-center gap-2 text-sm text-[#D9D9D9] tabular-nums">
+          <span className="inline-flex items-center gap-2 text-sm text-foreground tabular-nums">
             <Check size={16} strokeWidth={1.5} aria-hidden="true" className="text-foreground" />
             {tool.version ?? t('tools.found')}
           </span>
@@ -112,7 +120,7 @@ export function ToolRow({ tool, sys, agentName, busy, onInstall }: {
         )}
         {(status === 'running' || status === 'confirm') && !ok && (
           <span className="inline-flex items-center gap-2 text-[13px] text-text-2">
-            <img src={sleepy} alt="" aria-hidden="true" className="size-6" />
+            <StatusIcon kind="working" size={20} />
             {status === 'running' ? t('tools.installing') : t('tools.waiting')}
           </span>
         )}
@@ -124,7 +132,7 @@ export function ToolRow({ tool, sys, agentName, busy, onInstall }: {
       </div>
 
       {status === 'failed' && inst?.error && (
-        <p role="alert" className="m-0 text-[13px] text-orange-light">{inst.error}</p>
+        <p role="alert" className="m-0 text-[13px] text-error">{inst.error}</p>
       )}
 
       {status === 'failed' && inst?.reply?.trim() && (

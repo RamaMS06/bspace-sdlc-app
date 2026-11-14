@@ -4,8 +4,8 @@ import { create } from 'zustand';
 export interface RenderRun {
   /** ms since the epoch. */
   startedAt: number;
-  /** The agent's own render command, or Tayang's Render button. */
-  source: 'agent' | 'tayang';
+  /** The agent's own render command, or Buma's Render button. */
+  source: 'agent' | 'buma';
   /** The chat whose turn runs it (agent renders). */
   chatId?: string;
   /** The tool call that runs it (agent renders). */
@@ -43,7 +43,7 @@ export const useRender = create<RenderState>((set, get) => ({
   },
 }));
 
-/** The render command each project's tayang.json names, for spotting the agent's own render. */
+/** The render command each project's buma.json names, for spotting the agent's own render. */
 const renderArgv = new Map<string, string[]>();
 export const setRenderArgv = (projectId: string, argv: string[] | null) =>
   argv?.length ? renderArgv.set(projectId, argv) : renderArgv.delete(projectId);

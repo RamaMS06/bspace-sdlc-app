@@ -22,7 +22,7 @@ export function Workspace({ projectId, reloadKey, preview }: { projectId: string
         key={key ?? '__preview'}
         className={cn(
           'group flex h-full max-w-48 shrink-0 items-center border-r border-border',
-          selected ? 'bg-[#101010] text-foreground' : 'text-text-3 hover:text-foreground',
+          selected ? 'bg-panel text-foreground' : 'text-text-3 hover:text-foreground',
         )}
       >
         <button

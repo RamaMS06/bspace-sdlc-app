@@ -1,4 +1,4 @@
-import type { Project } from '@tayang/shared';
+import type { Project } from '@bspace-sdlc-app/shared';
 
 export type CalendarState = 'making' | 'needs-review' | 'ready' | 'posted' | 'draft';
 

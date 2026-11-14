@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowRight, RefreshCw } from 'lucide-react';
-import { requiredMissing, type SystemInfo, type ToolId, type ToolStatus } from '@tayang/shared';
+import { requiredMissing, type SystemInfo, type ToolId, type ToolStatus } from '@bspace-sdlc-app/shared';
 import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
 import { OnboardingHeader } from '@/components/OnboardingHeader';
@@ -59,7 +59,7 @@ export function Requirements() {
     void start(tool, { sys, agent: agentId });
   };
 
-  // The tools are ready: last comes the optional Tayang sign-in, which finishes onboarding.
+  // The tools are ready: last comes the optional Buma sign-in, which finishes onboarding.
   const begin = () => navigate({ name: 'onboarding-account' });
 
   const group = (title: string, note: string, tools: ToolStatus[]) => (
@@ -102,7 +102,7 @@ export function Requirements() {
           {sys && (
             <span className="ml-auto text-[13px] text-text-3">
               {t('onboarding.requirements.detected')}{' '}
-              <span className="text-[#D9D9D9]">
+              <span className="text-foreground">
                 {OS[sys.os]} {sys.osVersion}
                 {sys.packageManager ? ` · ${PM[sys.packageManager]}` : ''}
               </span>
@@ -110,7 +110,7 @@ export function Requirements() {
           )}
           <Button
             variant="secondary"
-            className="h-7 gap-1 rounded-sm bg-transparent px-2 text-xs text-[#D9D9D9]"
+            className="h-7 gap-1 rounded-sm bg-transparent px-2 text-xs text-foreground"
             disabled={!!active || closing}
             onClick={() => void check()}
           >
@@ -119,13 +119,13 @@ export function Requirements() {
           </Button>
         </div>
 
-        {checkError && <p role="alert" className="m-0 text-[13px] text-orange-light">{checkError}</p>}
+        {checkError && <p role="alert" className="m-0 text-[13px] text-error">{checkError}</p>}
 
         {group(t('onboarding.requirements.required'), missing.length ? t('onboarding.requirements.missingCount', { count: missing.length }) : t('onboarding.requirements.allReady'), required)}
         {group(t('onboarding.requirements.recommended'), t('onboarding.requirements.addLater'), recommended)}
 
         <div className="mt-2 flex items-center gap-4">
-          <Button variant="ghost" className="mr-auto h-12 px-0 text-[15px]" onClick={() => navigate({ name: 'connect' })}>
+          <Button variant="ghost" className="mr-auto h-12 px-5 text-[15px]" onClick={() => navigate({ name: 'connect' })}>
             {t('common.back')}
           </Button>
           {blocked && missing.length > 0 && (

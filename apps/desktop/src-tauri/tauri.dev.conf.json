@@ -1,17 +1,21 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Tayang Studio Dev",
-  "identifier": "app.tayang.studio.dev",
+  "productName": "BSpace SDLC Dev",
+  "identifier": "com.buma.bspace-sdlc-app.dev",
   "app": {
     "windows": [
       {
-        "title": "Tayang Studio Dev",
+        "title": "BSpace SDLC Dev",
         "width": 1280,
         "height": 800,
-        "minWidth": 1024,
-        "minHeight": 700,
+        "minWidth": 320,
+        "minHeight": 240,
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 14
+        }
       }
     ]
   }

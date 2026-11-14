@@ -1,8 +1,8 @@
-import type { Project } from '@tayang/shared';
+import type { Project } from '@bspace-sdlc-app/shared';
 
 /** A video that still needs its review is flagged this long before it is due. */
 export const REVIEW_LEAD_MS = 2 * 3_600_000;
-/** Reminders missed while Tayang was closed still show once on launch, for this long after the due time. */
+/** Reminders missed while Buma was closed still show once on launch, for this long after the due time. */
 export const MISSED_WINDOW_MS = 24 * 3_600_000;
 
 export interface Reminder {

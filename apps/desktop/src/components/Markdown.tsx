@@ -49,7 +49,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
       >
         {copied ? <Check size={14} strokeWidth={1.5} aria-hidden="true" /> : <Copy size={14} strokeWidth={1.5} aria-hidden="true" />}
       </button>
-      <pre className={`m-0 overflow-x-auto rounded-md border border-border bg-[#101010] p-3 font-mono text-[12.5px] leading-[1.55] ${lang ? 'pt-7' : ''}`}>
+      <pre className={`m-0 overflow-x-auto rounded-md border border-border bg-panel p-3 font-mono text-[12.5px] leading-[1.55] ${lang ? 'pt-7' : ''}`}>
         {children}
       </pre>
     </div>
@@ -64,7 +64,7 @@ function Code({ className, children }: { className?: string; children?: ReactNod
 const block = 'my-2 first:mt-0 last:mb-0';
 const InPre = createContext(false);
 const components: Components = {
-  p: (p) => <p className={`${block} text-[14px] leading-[1.6] text-[#D9D9D9]`}>{p.children}</p>,
+  p: (p) => <p className={`${block} text-[14px] leading-[1.6] text-foreground`}>{p.children}</p>,
   strong: (p) => <strong className="font-semibold text-foreground">{p.children}</strong>,
   em: (p) => <em className="italic">{p.children}</em>,
   del: (p) => <del className="text-text-3 line-through">{p.children}</del>,
@@ -75,11 +75,11 @@ const components: Components = {
   h5: (p) => <h5 className="mb-1 mt-3 text-[14px] font-semibold text-foreground first:mt-0">{p.children}</h5>,
   h6: (p) => <h6 className="mb-1 mt-3 text-[14px] font-semibold text-foreground first:mt-0">{p.children}</h6>,
   ul: ({ children, className }) => (
-    <ul className={`${block} list-disc pl-5 text-[14px] leading-[1.6] text-[#D9D9D9] marker:text-text-3 ${className?.includes('contains-task-list') ? 'list-none pl-0' : ''}`}>
+    <ul className={`${block} list-disc pl-5 text-[14px] leading-[1.6] text-foreground marker:text-text-3 ${className?.includes('contains-task-list') ? 'list-none pl-0' : ''}`}>
       {children}
     </ul>
   ),
-  ol: (p) => <ol start={p.start} className={`${block} list-decimal pl-5 text-[14px] leading-[1.6] text-[#D9D9D9] marker:text-text-3`}>{p.children}</ol>,
+  ol: (p) => <ol start={p.start} className={`${block} list-decimal pl-5 text-[14px] leading-[1.6] text-foreground marker:text-text-3`}>{p.children}</ol>,
   li: (p) => <li className="my-0.5">{p.children}</li>,
   input: (p: ComponentPropsWithoutRef<'input'>) => <input type="checkbox" checked={!!p.checked} disabled readOnly className="mr-1.5 align-middle" />,
   blockquote: (p) => <blockquote className={`${block} border-l-2 border-border pl-3 text-text-2`}>{p.children}</blockquote>,
@@ -92,7 +92,7 @@ const components: Components = {
   code: ({ className, children }) => <Code className={className}>{children}</Code>,
   table: (p) => (
     <div className={`${block} overflow-x-auto`}>
-      <table className="border-collapse text-[14px] text-[#D9D9D9]">{p.children}</table>
+      <table className="border-collapse text-[14px] text-foreground">{p.children}</table>
     </div>
   ),
   th: (p) => <th className="border border-border px-2 py-1 text-left font-medium text-foreground">{p.children}</th>,
@@ -104,7 +104,7 @@ const components: Components = {
       <a
         href={href}
         title={href}
-        className="text-orange-light underline underline-offset-2 hover:text-primary"
+        className="text-primary-text underline underline-offset-2 hover:text-primary"
         onClick={(e) => {
           e.preventDefault();
           openUrl(href).catch(() => {});

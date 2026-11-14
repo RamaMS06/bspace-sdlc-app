@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AutopilotFrequency } from '@tayang/shared';
+import type { AutopilotFrequency } from '@bspace-sdlc-app/shared';
 import { frequencyLabel, nextFreeTime, planSlots, slotTime, validTimes } from '@/lib/autopilot';
 import { inTime } from '@/lib/time';
 import { setUiLanguage } from '@/i18n';

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>using-bspace-sdlc — bspace-sdlc-skills</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/doc.css">
+<script src="assets/doc.js" defer></script>
+</head>
+<body data-page="using-bspace-sdlc">
+<div class="wrap">
+
+<div class="topbar"><a class="brand" href="index.html">bspace <span>sdlc</span> skills</a><span class="note">v1.0.7</span><div class="langswitch" aria-label="Language"><button type="button" data-lang="id" aria-pressed="true">ID</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div></div>
+
+<nav class="pages">
+  <a href="index.html">Overview</a>
+  <span class="navgroup">Intake</span><a href="stakeholder-intake.html">stakeholder-intake</a>
+  <span class="navgroup">Router</span><a href="using-bspace-sdlc.html" aria-current="page">using-bspace-sdlc</a>
+  <span class="navgroup">Dokumen</span><a href="blueprint-ftsd.html">blueprint-ftsd</a>
+  <span class="navgroup">Wireframe</span><a href="wireframe-lofi.html">wireframe-lofi</a>
+  <span class="navgroup">Design</span><a href="figma-generate-screen.html">figma-generate-screen</a>
+  <span class="navgroup">Flutter</span><a href="flutter-slice-screen.html">flutter-slice-screen</a><a href="flutter-match-component.html">flutter-match-component</a><a href="flutter-resolve-assets.html">flutter-resolve-assets</a><a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a><a href="flutter-run-verify.html">flutter-run-verify</a>
+  <span class="navgroup">Vue</span><a href="vue-slice-screen.html">vue-slice-screen</a><a href="vue-resolve-assets.html">vue-resolve-assets</a>
+  <span class="navgroup">Eksekusi</span><a href="subagent-driven-development.html">subagent-driven-development</a>
+</nav>
+
+<h1><em>using</em>-bspace-sdlc</h1>
+<p class="lede">Pintu masuk project BUMA, dari discovery sampai UI jadi. <b>P0 Discover selalu wajib</b>: tanpa <code>sdlc/project.md</code>, router tidak boleh membuat <code>intent.md</code>. Setelah discovery, project memakai workspace yang sama untuk intent, Blueprint/FSD, FTSD, API contract, design, slice, verify, dan close.</p>
+
+<div class="layer"><div class="layer-head"><span class="tag">Route contract</span><span class="note">START · E2E · RESUME</span></div><div class="layer-body"><div class="tablewrap"><table class="compact"><tr><th>Bagian</th><th>As-is</th></tr><tr><td>Trigger</td><td>Fitur baru tanpa intent; user bertanya "lanjut apa?"; intent/design gate belum pass.</td></tr><tr><td>Prasyarat</td><td>Brainstorm: belum perlu repo/SDK. Design: Blueprint Gate B pass, <code>sdlc/figma-reference-catalog.md</code>, akses Figma. Slice: Gate F2 pass, repo + platform target.</td></tr><tr><td>Memanggil</td><td><code>blueprint-ftsd</code> (P0–P2, Blueprint, FTSD, API); <code>figma-generate-screen</code> (Design); lalu <code>flutter-slice-screen</code> atau <code>vue-slice-screen</code>. Tidak memanggil direct repair skill sendiri.</td></tr><tr><td>Output</td><td><code>intent.md</code>, <code>design.md</code> + <code>design-evidence/</code>, lalu <code>close.md</code> sebagai state di disk.</td></tr><tr><td>Next</td><td>G1 → Blueprint → Gate B → Design (C1 reference, G2) → FTSD/F1 → API/F2 → slice → run-verify → close.</td></tr></table></div></div></div>
+
+<div class="layer">
+  <div class="layer-head"><span class="tag">Kapan dipakai</span><span class="note">SKILL.md · references/workflow.md · assets/</span></div>
+  <div class="layer-body"><ul>
+    <li>Fitur atau screen baru yang belum punya node Figma.</li>
+    <li>"Lanjut apa?" untuk fitur di <code>intent/&lt;ID&gt;-&lt;slug&gt;/</code>.</li>
+    <li><b>Tidak</b> dipakai kalau developer sudah punya node Figma. Dalam kasus itu, langsung ke <code>flutter-slice-screen</code> atau <code>vue-slice-screen</code>.</li>
+    <li>Fase 1–2 tidak butuh repo atau SDK (cukup app agent, browser, dan Figma). Fase 3 ke atas butuh developer dengan repo dan SDK platform.</li>
+  </ul></div>
+</div>
+
+<h2>Tabel routing</h2>
+<p class="lede">Dibaca dari atas ke bawah; baris pertama yang cocok yang dipakai. Sebelum bertindak, agent menulis satu baris <code>next: &lt;fase&gt; — &lt;alasan&gt;</code>.</p>
+<div class="tablewrap"><table>
+<tr><th>Kondisi</th><th>Berikutnya</th></tr>
+<tr><td>belum ada <code>sdlc/project.md</code></td><td><code>blueprint-ftsd</code> → P0 Discover</td></tr>
+<tr><td>feature aktif belum punya <code>intent.md</code> approved</td><td><code>blueprint-ftsd</code> → P1 Brainstorm</td></tr>
+<tr><td><code>data.md</code> belum ada/lengkap</td><td><code>blueprint-ftsd</code> → P2 Data</td></tr>
+<tr><td>belum ada <code>Blueprint.docx</code></td><td><code>blueprint-ftsd</code> → Blueprint fill; P3 blocked</td></tr>
+<tr><td>Gate B belum pass atau Blueprint berubah</td><td><code>blueprint-ftsd</code> → review/sign-off; P3 blocked</td></tr>
+<tr><td>belum ada <code>intent.md</code></td><td>1 Brainstorm (setelah P0)</td></tr>
+<tr><td>G1 gagal</td><td>1 Brainstorm, tanya ulang hanya item yang gagal</td></tr>
+<tr><td>Gate B pass, belum ada <code>design.md</code>, atau D0 gagal</td><td>2 <code>figma-generate-screen</code>: D0 minta referensi + lokasi (file, page, posisi) ke designer</td></tr>
+<tr><td>Gate B pass, D0 lulus, C1 gagal</td><td>2 <code>figma-generate-screen</code>: discovery dan rencana komponen</td></tr>
+<tr><td>Gate B pass, C1 lulus, G2 gagal</td><td>2 <code>figma-generate-screen</code>: build di lokasi pilihan designer, prototype, review</td></tr>
+<tr><td>flutter: <code>spec.md</code> belum di-pin ke intent, pin sudah basi, atau ada <code>score.json</code> yang belum pass</td><td>3 <code>flutter-slice-screen --intent intent/&lt;ID&gt;-&lt;slug&gt;/intent.md</code></td></tr>
+<tr><td>vue</td><td>3 manual: jalankan <code>vue-slice-screen</code> dengan intent sebagai referensi</td></tr>
+<tr><td>flutter: <code>plan.md</code> belum punya baris <code>run:</code>, atau <code>run: BLOCKED</code></td><td>4 <code>flutter-run-verify</code></td></tr>
+<tr><td>belum ada <code>close.md</code>, atau ada sel AC yang kosong</td><td>5 Close</td></tr>
+<tr><td>selain itu</td><td>DONE</td></tr>
+</table></div>
+
+<h2>Gate one-liner</h2>
+<p class="lede">Dijalankan di <code>intent/&lt;ID&gt;-&lt;slug&gt;/</code> (bash/zsh).</p>
+<pre>
+# hash intent: baris approval dibuang, jadi approve tidak membuat pin basi
+grep -vE '^(Wireframe|Status|Approved-by):' intent.md | shasum -a 256 | cut -c1-12
+# G1: hasil yang diharapkan 1 / 1 / 0 / 0
+grep -c '^Status: approved' intent.md; grep -c '^Approved-by: .\+ [0-9]\{4\}-' intent.md
+grep -c '\[NEEDS CLARIFICATION' intent.md; grep -cE '^- Q-[0-9]+' intent.md
+# C1: hasil yang diharapkan 1, lalu tanpa output (AC yang belum masuk rencana komponen)
+grep -c '^Components-approved-by: .\+ [0-9]\{4\}-' design.md
+comm -23 &lt;(grep -o 'AC-[0-9]\+' intent.md | sort -u) &lt;(grep -o 'AC-[0-9]\+' design.md | sort -u)
+# D0, C1 reference: jalankan one-liner di skills/figma-generate-screen/SKILL.md §Gate one-liners
+# G2: hasil yang diharapkan 1 / 1
+grep -c '^Reviewed-by: .\+ [0-9]\{4\}-' design.md; grep -c '^Metadata-hash: [0-9a-f]\{12\}' design.md
+</pre>
+
+<h2>Fase</h2>
+
+<div class="step"><h3><span class="n">1</span>Brainstorm → <code>intent.md</code> (G1)</h3>
+<ul>
+  <li>Template <code>assets/intent-template.md</code>, pertanyaan dari <code>assets/question-bank.md</code> (10 pertanyaan, berurutan). Pertanyaan dilewati kalau PRD, Figma, <code>intent/constitution.md</code>, atau kode sudah menjawabnya.</li>
+  <li>Satu pertanyaan per pesan, <b>tanpa jargon</b>. Contoh: "kalau saldo cuti 0, apa yang terjadi?", bukan "apa AC-nya?".</li>
+  <li>Untuk pilihan, opsi pertama diberi label <code>(Recommended)</code> beserta alasannya. Untuk skenario dan edge case, agent mengusulkan daftar dan user mencentang (multi-select).</li>
+  <li>Playback memakai kata-kata user. Kalau user bilang "setuju", agent menulis <code>Status: approved</code> dan <code>Approved-by</code>. User tidak perlu membuka file sama sekali.</li>
+</ul></div>
+
+<div class="step"><h3><span class="n">2</span>Design → <code>design.md</code> (C1, G2)</h3>
+<p>Router memanggil <b>REQUIRED SUB-SKILL</b> <a href="figma-generate-screen.html"><code>figma-generate-screen</code></a> dalam mode SDLC: sumber = Blueprint/FTSD yang sudah Gate B, <code>design.md</code> di <code>intent/&lt;ID&gt;-&lt;slug&gt;/</code>. Skill itu memegang D0 (referensi + lokasi target, selalu ditanya ke designer), C1, GD2, P1, dan G2. Router hanya menambah hard invariant Blueprint dan cek coverage AC.</p></div>
+
+<div class="step"><h3><span class="n">3–4</span>Slice dan run-verify</h3>
+<p>Flutter: <code>flutter-slice-screen --intent …</code> menulis pin <code>**Intent:** &lt;path&gt;@&lt;hash&gt;</code> di <code>spec.md</code> dan memetakan setiap AC (atau <code>N/A: &lt;alasan&gt;</code>). <code>--check</code> gagal kalau ada AC yang belum dipetakan atau pin sudah basi. Setelah itu <code>flutter-run-verify</code>. Vue: masih manual, belum ada pin.</p></div>
+
+<div class="step"><h3><span class="n">5</span>Close → <code>close.md</code></h3>
+<p>Tabel <code>| AC | flutter | vue |</code>, hanya untuk platform yang ada di <code>Platforms:</code>. Setiap sel berisi <code>done</code>, <code>N/A: …</code>, <code>diverged: …</code>, atau <code>manual</code>. Tidak boleh ada sel kosong.</p></div>
+
+<footer>Sumber: <code>skills/using-bspace-sdlc/SKILL.md</code>, <code>references/workflow.md</code>, <code>assets/intent-template.md</code>, <code>assets/question-bank.md</code>.</footer>
+</div>
+</body>
+</html>

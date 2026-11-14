@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>figma-generate-screen — bspace-sdlc-skills</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/doc.css">
+<script src="assets/doc.js" defer></script>
+</head>
+<body data-page="figma-generate-screen">
+<div class="wrap">
+
+<div class="topbar"><a class="brand" href="index.html">bspace <span>sdlc</span> skills</a><span class="note">v1.0.7</span><div class="langswitch" aria-label="Language"><button type="button" data-lang="id" aria-pressed="true">ID</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div></div>
+
+<nav class="pages">
+  <a href="index.html">Overview</a>
+  <span class="navgroup">Intake</span><a href="stakeholder-intake.html">stakeholder-intake</a>
+  <span class="navgroup">Router</span><a href="using-bspace-sdlc.html">using-bspace-sdlc</a>
+  <span class="navgroup">Dokumen</span><a href="blueprint-ftsd.html">blueprint-ftsd</a>
+  <span class="navgroup">Wireframe</span><a href="wireframe-lofi.html">wireframe-lofi</a>
+  <span class="navgroup">Design</span><a href="figma-generate-screen.html" aria-current="page">figma-generate-screen</a>
+  <span class="navgroup">Flutter</span><a href="flutter-slice-screen.html">flutter-slice-screen</a><a href="flutter-match-component.html">flutter-match-component</a><a href="flutter-resolve-assets.html">flutter-resolve-assets</a><a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a><a href="flutter-run-verify.html">flutter-run-verify</a>
+  <span class="navgroup">Vue</span><a href="vue-slice-screen.html">vue-slice-screen</a><a href="vue-resolve-assets.html">vue-resolve-assets</a>
+  <span class="navgroup">Eksekusi</span><a href="subagent-driven-development.html">subagent-driven-development</a>
+</nav>
+
+<h1><em>figma</em>-generate-screen</h1>
+<p class="lede">Generate screen apa pun di Figma dengan BUMA Design System. Bisa dipanggil <b>langsung oleh designer</b> (dengan atau tanpa FSD), atau oleh router <code>using-bspace-sdlc</code> sebagai fase P3 Design. Gate sama di dua mode; yang beda hanya sumber input.</p>
+
+<div class="layer"><div class="layer-head"><span class="tag">Route contract</span><span class="note">START · DIRECT · CALLED BY ROUTER</span></div><div class="layer-body"><div class="tablewrap"><table class="compact"><tr><th>Bagian</th><th>As-is</th></tr><tr><td>Trigger</td><td>"Buat screen di Figma", "generate design", atau router sampai di P3 Design.</td></tr><tr><td>Prasyarat</td><td>Akses Figma (remote MCP untuk write), designer yang menjawab D0. FSD tidak wajib saat mandiri.</td></tr><tr><td>Memanggil</td><td>Skill Figma <code>figma-use</code> + <code>figma-generate-design</code>; aturan BUMA di <code>references/figma-libraries.md</code> menang.</td></tr><tr><td>Output</td><td><code>design.md</code>, <code>design-evidence/</code>, frame Figma di lokasi pilihan designer.</td></tr><tr><td>Next</td><td>Mode SDLC: kembali ke router (FTSD). Mandiri: URL node ke <code>flutter-slice-screen</code> / <code>vue-slice-screen</code>.</td></tr></table></div></div></div>
+
+<h2>0 Intake — sumber adaptif</h2>
+<div class="tablewrap"><table>
+<tr><th>Ada apa?</th><th>Dibaca</th><th>Kolom Source</th></tr>
+<tr><td>FSD / Blueprint</td><td>Screen card SCR-xx, field, BR, AC</td><td><code>FSD SCR-xx</code></td></tr>
+<tr><td>Intent saja</td><td><code>intent.md</code> US/AC</td><td><code>intent AC-xx</code></td></tr>
+<tr><td>Tidak ada</td><td>Brief singkat ke designer → <code>## Screen Brief</code> + <code>Brief-approved-by</code></td><td><code>brief SCR-xx</code></td></tr>
+</table></div>
+<p>Brief: tujuan screen, user, platform (mobile 393 / web), data &amp; field, aksi dan tujuannya, state (loading, empty, error, disabled, success), do/don't. Jadi skill ini bisa untuk screen apa pun.</p>
+<p>Lokasi file: project SDLC → <code>intent/&lt;ID&gt;-&lt;slug&gt;/design.md</code>; mandiri → <code>design/&lt;slug&gt;/design.md</code> (atau folder pilihan user).</p>
+
+<h2>D0 — referensi + lokasi (selalu tanya designer)</h2>
+<ol>
+  <li><b>Referensi</b> per screen: frame mana yang diikuti, apa yang diambil, apa yang dihindari. Inspirasi luar (Pinterest, Dribbble) cukup URL + catatan, tidak di-fetch.</li>
+  <li><b>Target file</b>: URL <code>figma.com/design/&lt;fileKey&gt;/…</code>.</li>
+  <li><b>Target page</b>: URL page yang sudah ada, atau <b>nama page baru dari designer</b>. Tidak ada page default; AI tidak membuat/memilih page sendiri.</li>
+  <li><b>Placement</b>: di samping frame X (URL node), di dalam section Y, atau section baru.</li>
+</ol>
+<pre>
+Target-file: https://www.figma.com/design/AbC.../Attendance
+Target-page: https://www.figma.com/design/AbC.../Attendance?node-id=0-1
+Target-placement: new section "Clock in v2"
+Reference-brief-by: Dina 2026-10-29
+</pre>
+<p>AI hanya membuka URL dari brief dan catalog, jadi hemat token. Revisi normal: ubah baris, tanggal ulang, inspeksi hanya REF yang berubah.</p>
+
+<h2>Gate</h2>
+<div class="tablewrap"><table class="compact">
+<tr><th>Gate</th><th>Lulus jika</th></tr>
+<tr><td>D0</td><td><code>Reference-brief-by</code> bertanggal; <code>Target-file/page/placement</code> terisi (bukan placeholder); setiap SCR punya URL dengan <code>node-id</code> atau <code>new-pattern</code>; brief mode butuh <code>Brief-approved-by</code>.</td></tr>
+<tr><td>C1</td><td><code>Components-approved-by</code>; Traceability: Source + SCR + REF/new-pattern + decision; Inspection lengkap (bukan TBD); REF ada di catalog; new-pattern punya approval. Dicek grep.</td></tr>
+<tr><td>GD2</td><td>Read-back: 0 hardcoded, 100% Poppins, 0 Lorem, 0 raster, props = rencana.</td></tr>
+<tr><td>P1</td><td>Setiap aksi yang memindahkan user punya reaction prototype.</td></tr>
+<tr><td>G2</td><td><code>Reviewed-by</code> + <code>Metadata-hash</code> dari review designer.</td></tr>
+</table></div>
+
+<h2>Build</h2>
+<p>Discovery read-only → rencana komponen → C1 → <code>use_figma</code> hanya di <code>Target-page</code> + <code>Target-placement</code>, tidak pernah mengubah/memindah node yang sudah ada → GD2 → prototype/P1 → screenshot → review designer (G2). Hasilnya draft DS-compliant level junior–mid; designer yang memoles.</p>
+
+<h2>Library Figma BUMA</h2>
+<div class="tablewrap"><table class="compact">
+<tr><th>Library</th><th>fileKey</th></tr>
+<tr><td>Bspace Design System V2 (komponen)</td><td><code>HIHSBFb6tatYWQYl2LudlV</code></td></tr>
+<tr><td>Foundations (variable, text/effect style)</td><td><code>ULzzM260MtOJNxjuhbmxHc</code></td></tr>
+<tr><td>Icon</td><td><code>EFRs93Q9rAixMNcyXiQJgm</code></td></tr>
+</table></div>
+
+<footer>Sumber: <code>skills/figma-generate-screen/SKILL.md</code>, <code>references/figma-libraries.md</code>, <code>assets/design-template.md</code>, <code>assets/figma-reference-catalog-template.md</code>.</footer>
+</div>
+</body>
+</html>

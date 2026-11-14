@@ -1,13 +1,53 @@
+# ── Dependencies ──────────────────────────────
 node_modules/
-.superpowers/
-target/
+.pnpm-store/
+
+# ── Build output ──────────────────────────────
 dist/
-.wrangler/
-.DS_Store
-*.log
+dist-ssr/
+build/
+*.tsbuildinfo
+.vite/
+.turbo/
+coverage/
+
+# ── Rust / Tauri ──────────────────────────────
+target/
+**/src-tauri/gen/
+**/src-tauri/WixTools/
+*.pdb
+
+# ── Env & secrets ─────────────────────────────
 .env
 .env.*
 !.env.example
-coverage/
-.turbo/
+*.pem
+*.key
+*.p12
+*.keystore
+*.tauri-signing*
+
+# ── Logs & runtime ────────────────────────────
+*.log
+logs/
+*.pid
+*.sqlite
+*.sqlite3
+*.db
+
+# ── OS & editor ───────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*~
+
+# ── AI / tooling local state ──────────────────
+.claude/settings.local.json
 .claude/worktrees/
+.superpowers/
+.wrangler/
+# Buma registry install record: machine-specific absolute paths
+design-system/vue-source/.buma/

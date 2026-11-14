@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { AgentId, AgentUpdate, Job, JobStatus, PermissionRequest } from '@tayang/shared';
-import { buildStudyStylePrompt, parseStyleResult } from '@tayang/skills';
+import type { AgentId, AgentUpdate, Job, JobStatus, PermissionRequest } from '@bspace-sdlc-app/shared';
+import { buildStudyStylePrompt, parseStyleResult } from '@bspace-sdlc-app/skills';
 import {
   agentCancel,
   agentPrompt,
@@ -26,7 +26,7 @@ import { onAgentUpdate, onPermission } from '@/lib/events';
 import { refreshJobs } from '@/state/jobs';
 import { track } from '@/lib/analytics';
 
-/** `finishing`: the agent is done and Tayang is saving the style and making its preview; it can't be cancelled. */
+/** `finishing`: the agent is done and Buma is saving the style and making its preview; it can't be cancelled. */
 export type StudyPhase = 'idle' | 'running' | 'finishing' | 'done' | 'failed';
 
 interface StudyState {

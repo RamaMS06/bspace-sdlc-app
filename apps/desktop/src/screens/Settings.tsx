@@ -1,19 +1,15 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw } from 'lucide-react';
+import { Archive, ChevronDown, ChevronRight, RefreshCw, SlidersHorizontal, UserRound, Wrench, type LucideIcon } from 'lucide-react';
 import { getVersion } from '@tauri-apps/api/app';
 import { disable as disableAutostart, enable as enableAutostart } from '@tauri-apps/plugin-autostart';
-import { DEFAULT_SETTINGS, type AgentInfo, type Settings as SettingsT, type SystemInfo, type ToolId } from '@tayang/shared';
-import { AccountSection } from '@/components/Account';
+import { DEFAULT_SETTINGS, type AgentInfo, type Settings as SettingsT, type SystemInfo, type ToolId } from '@bspace-sdlc-app/shared';
 import { ArchiveSection } from '@/components/ArchiveSection';
-import { GiftCode } from '@/components/GiftCode';
-import { UsageTab } from '@/components/UsageTab';
 import { ClaudeAccountControl } from '@/components/ClaudeAccountControl';
 import { AgentLogo } from '@/components/AgentLogo';
 import { ApiSetupDialog } from '@/components/ApiSetupDialog';
 import { Button } from '@/components/Button';
 import { ToolRow, TOOL_ORDER } from '@/components/ToolRow';
-import { VoiceSourceCard } from '@/components/VoiceSourceCard';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
@@ -29,9 +25,21 @@ import { sendTestNotification } from '@/lib/scheduler';
 import { useApp } from '@/state/app';
 import { cn } from '@/lib/utils';
 import { useInstall } from '@/state/install';
+import { setTheme, useTheme, type ThemeChoice } from '@/lib/theme';
+import { bumaButtonClass } from '@/components/buma/Button';
+import { useDevops } from '@/state/devops';
+import { useClaudeAccount } from '@/state/claudeAccount';
+import { BumaBadge } from '@/components/buma/Badge';
 import { useUpdater } from '@/state/updater';
 
-const SECTIONS = ['general', 'agents', 'video', 'render', 'tools', 'usage', 'account', 'archive'] as const;
+const SECTIONS = ['general', 'tools', 'account', 'archive'] as const;
+/** The section list as a tree: Agents has Usage under it. */
+const TREE: ({ id: (typeof SECTIONS)[number]; icon: LucideIcon } | { group: 'agents'; icon: LucideIcon; children: { id: (typeof SECTIONS)[number]; icon: LucideIcon }[] })[] = [
+  { id: 'general', icon: SlidersHorizontal },
+  { id: 'tools', icon: Wrench },
+  { id: 'account', icon: UserRound },
+  { id: 'archive', icon: Archive },
+];
 export type SettingsTab = (typeof SECTIONS)[number];
 
 function isHttpUrl(v: string): boolean {
@@ -81,27 +89,59 @@ function UpdatesRow({ dev = import.meta.env.DEV }: { dev?: boolean }) {
   );
 }
 
-/** Settings › Account points to Social media, where the accounts and auto-posts live. */
-function SocialLink() {
+/** Settings › Account: the Azure DevOps account the app is signed in with. Signing out goes back to the
+ * sign-in step, since the app doesn't open without one. */
+function DevopsAccount() {
   const { t } = useTranslation();
   const navigate = useApp((s) => s.navigate);
+  const status = useDevops((s) => s.status);
+  useEffect(() => {
+    void useDevops.getState().init().catch(() => {});
+  }, []);
+  const p = status?.profile;
   return (
     <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
-      <div className="mr-auto flex flex-col gap-1">
-        <span className="text-sm font-medium">{t('social.settingsTitle')}</span>
-        <span className="text-xs text-text-3">{t('social.settingsHint')}</span>
+      <div className="mr-auto flex min-w-0 flex-col gap-1">
+        <span className="text-sm font-medium">{t('settings.devops.title')}</span>
+        <span className="truncate text-xs text-text-3">
+          {p ? t('settings.devops.signedInAs', { name: p.displayName, org: p.org }) : t('settings.devops.signedOut')}
+        </span>
       </div>
-      <Button variant="secondary" onClick={() => navigate({ name: 'social' })}>
-        {t('social.open')}
+      <Button
+        variant="secondary"
+        onClick={() =>
+          void useDevops
+            .getState()
+            .signOut()
+            .then(() => navigate({ name: 'onboarding-account' }))
+            .catch(() => {})
+        }
+      >
+        {t('onboarding.account.signOut')}
       </Button>
     </div>
   );
 }
 
+function ThemeRow() {
+  const { t } = useTranslation();
+  const { choice } = useTheme();
+  return (
+    <Row label={t('settings.appearance')} hint={t('settings.appearanceHint')}>
+      <Segmented<ThemeChoice>
+        label={t('settings.appearance')}
+        value={choice}
+        options={(['system', 'light', 'dark'] as const).map((v) => ({ value: v, label: t(`settings.themes.${v}`) }))}
+        onChange={setTheme}
+      />
+    </Row>
+  );
+}
+
 function Row({ label, hint, note, children }: { label: string; hint?: string; note?: string; children: ReactNode }) {
   return (
-    <div className="flex items-center gap-3 border-b border-[#222] px-4 py-3 last:border-b-0">
-      <div className="mr-auto flex min-w-0 flex-col gap-1">
+    <div className="flex items-center gap-buma-sm border-b border-border px-buma-md py-buma-sm last:border-b-0">
+      <div className="mr-auto flex min-w-0 flex-col gap-buma-2xs">
         <span className="text-sm">{label}</span>
         {hint && <span className="text-xs text-text-3">{hint}</span>}
         {note && <span className="text-xs text-text-3">{note}</span>}
@@ -136,7 +176,7 @@ function Segmented<T extends string>({
 }
 
 
-const TAB_KEY = 'tayang.settingsTab';
+const TAB_KEY = 'buma.settingsTab';
 const isTab = (v: unknown): v is SettingsTab => typeof v === 'string' && (SECTIONS as readonly string[]).includes(v);
 
 /** The tab Settings opens on: the one asked for, else the one last used, else General. */
@@ -153,7 +193,7 @@ function startTab(asked: string | undefined): SettingsTab {
 
 export function Settings() {
   const { t } = useTranslation();
-  // TAYANG_API_URL (a dev setup) wins over the address saved here: say so instead of showing a value that isn't used.
+  // BUMA_API_URL (a dev setup) wins over the address saved here: say so instead of showing a value that isn't used.
   const [apiOverride, setApiOverride] = useState<string | null>(null);
   useEffect(() => {
     Promise.resolve()
@@ -167,6 +207,8 @@ export function Settings() {
   useEffect(() => {
     if (isTab(askedTab)) setTab(askedTab);
   }, [askedTab]);
+  // Tree branches the user folded away (Agents › Usage shows by default).
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const pickTab = (id: SettingsTab) => {
     setTab(id);
     try {
@@ -178,6 +220,7 @@ export function Settings() {
   const setSettings = useApp((s) => s.setSettings);
   const navigate = useApp((s) => s.navigate);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const claude = useClaudeAccount((s) => s.account);
   const [apiOpen, setApiOpen] = useState(false);
   const reloadAgents = () => void detectAgents().then(setAgents, () => {});
   const removeApi = async () => {
@@ -283,40 +326,85 @@ export function Settings() {
   const tools = [...statuses].sort((a, b) => TOOL_ORDER.indexOf(a.id) - TOOL_ORDER.indexOf(b.id));
 
   return (
-    <div className="flex h-full flex-wrap content-start gap-8 overflow-y-auto p-8">
+    <div className="flex h-full flex-wrap content-start gap-buma-lg overflow-y-auto p-buma-md sm:gap-buma-xl sm:p-buma-xl">
       <h1 data-tauri-drag-region className="m-0 flex-[1_1_100%] text-[28px] font-semibold tracking-[-0.01em]">
         {t('settings.title')}
       </h1>
 
-      <div role="tablist" aria-orientation="vertical" aria-label={t('settings.sectionsAria')} className="flex flex-[0_0_180px] flex-col gap-1">
-        {SECTIONS.map((id) => (
-          <button
-            key={id}
-            id={`settings-tab-${id}`}
-            type="button"
-            role="tab"
-            aria-selected={tab === id}
-            aria-controls={id}
-            onClick={() => pickTab(id)}
-            className={cn(
-              'flex h-9 cursor-pointer items-center rounded-md px-3 text-left text-sm font-medium hover:bg-raised hover:text-foreground',
-              tab === id ? 'bg-raised text-foreground' : 'text-text-2',
-            )}
-          >
-            {t(`settings.sections.${id}`)}
-          </button>
-        ))}
+      <div role="tablist" aria-orientation="vertical" aria-label={t('settings.sectionsAria')} className="flex min-w-0 flex-[1_1_200px] flex-col gap-buma-xs self-start md:max-w-[200px]">
+        {TREE.map((node) => {
+          const item = (id: SettingsTab, Icon: LucideIcon, child = false) => (
+            <button
+              key={id}
+              id={`settings-tab-${id}`}
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
+              aria-controls={id}
+              onClick={() => pickTab(id)}
+              className={cn(
+                'relative flex min-h-9 min-w-0 flex-1 cursor-pointer items-center gap-buma-xs rounded-md border-0 bg-transparent px-buma-sm py-buma-xs text-left text-sm font-medium hover:bg-raised hover:text-foreground',
+                tab === id ? 'bg-raised text-foreground' : 'text-text-2',
+                child && 'min-h-8 text-[13px]',
+              )}
+            >
+              <Icon size={15} strokeWidth={1.75} aria-hidden="true" className={cn('shrink-0', tab === id && 'text-primary')} />
+              <span className="truncate">{t(`settings.sections.${id}`)}</span>
+            </button>
+          );
+          if (!('group' in node)) return item(node.id, node.icon);
+          const open = !collapsed.has(node.group);
+          const Icon = node.icon;
+          const inside = node.children.some((c) => c.id === tab);
+          return (
+            <div key={node.group} className="flex flex-col gap-buma-xs">
+              {/* A parent only folds its children open or shut; the children are the pages. */}
+              <button
+                type="button"
+                aria-expanded={open}
+                data-testid={`settings-group-${node.group}`}
+                onClick={() =>
+                  setCollapsed((c) => {
+                    const next = new Set(c);
+                    if (open) next.add(node.group);
+                    else next.delete(node.group);
+                    return next;
+                  })
+                }
+                className={cn(
+                  'flex min-h-9 cursor-pointer items-center gap-buma-xs rounded-md border-0 bg-transparent px-buma-sm py-buma-xs text-left text-sm font-medium hover:bg-raised hover:text-foreground',
+                  inside && !open ? 'bg-raised text-foreground' : 'text-text-2',
+                )}
+              >
+                <Icon size={15} strokeWidth={1.75} aria-hidden="true" className={cn('shrink-0', inside && 'text-primary')} />
+                <span className="flex-1 truncate">{t(`settings.groups.${node.group}`)}</span>
+                {open ? <ChevronDown size={14} aria-hidden="true" className="text-text-3" /> : <ChevronRight size={14} aria-hidden="true" className="text-text-3" />}
+              </button>
+              {open && (
+                // The tree's branch: a line down from the parent, an elbow into each child.
+                <div role="group" aria-label={t(`settings.groups.${node.group}`)} className="ml-[17px] flex flex-col gap-buma-xs border-l border-border pl-buma-sm">
+                  {node.children.map((c) => (
+                    <div key={c.id} className="relative flex">
+                      <span aria-hidden="true" className="absolute top-1/2 -left-3 w-2.5 border-t border-border" />
+                      {item(c.id, c.icon, true)}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      <div className="flex max-w-[720px] min-w-0 flex-[999_1_460px] flex-col gap-8">
+      <div className="flex max-w-[720px] min-w-0 flex-[999_1_280px] flex-col gap-buma-xl">
         {error && (
-          <p role="alert" className="m-0 text-[13px] text-orange-light">
+          <p role="alert" className="m-0 text-[13px] text-error">
             {error}
           </p>
         )}
 
         {tab === 'general' && (
-          <section id="general" role="tabpanel" aria-labelledby="settings-tab-general" className="flex flex-col gap-3">
+          <section id="general" role="tabpanel" aria-labelledby="settings-tab-general" className="flex flex-col gap-buma-sm">
             <h2 className="m-0 text-base font-medium">{t('settings.sections.general')}</h2>
             <Card>
               <Row label={t('settings.language')} hint={t('settings.languageHint')}>
@@ -327,114 +415,21 @@ export function Settings() {
                   onChange={(l) => void chooseLanguage(l)}
                 />
               </Row>
+              <ThemeRow />
+              <Row
+                label={t('settings.workingFolder')}
+                hint={t('settings.workingFolderHint')}
+                note={t('settings.workingFolderNote')}
+              >
+                <span className="max-w-[220px] truncate font-mono text-xs text-foreground" title={settings.workingFolder}>
+                  {settings.workingFolder}
+                </span>
+                <Button variant="secondary" className="h-7 rounded-sm px-2 text-xs" onClick={() => void changeFolder()}>
+                  {t('settings.change')}
+                </Button>
+              </Row>
               <UpdatesRow />
             </Card>
-          </section>
-        )}
-
-        {tab === 'agents' && (
-          <section id="agents" role="tabpanel" aria-labelledby="settings-tab-agents" className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1">
-              <h2 className="m-0 text-base font-medium">{t('settings.sections.agents')}</h2>
-              <span className="text-[13px] text-text-2">{t('settings.agentsIntro')}</span>
-            </div>
-            <span id="default-agent-label" className="text-[13px] font-medium">
-              {t('settings.defaultAgent')}
-            </span>
-            <Card>
-              <RadioGroup
-                aria-labelledby="default-agent-label"
-                value={settings.defaultAgent}
-                onValueChange={(v) => void save({ defaultAgent: v as SettingsT['defaultAgent'] })}
-                className="gap-0"
-              >
-                {agents.map((a) => (
-                  <div key={a.id} className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0">
-                    <RadioGroupItem value={a.id} id={`agent-${a.id}`} disabled={!a.installed} aria-label={t('settings.useByDefault', { name: AGENT_NAMES[a.id] })} />
-                    <AgentLogo id={a.id} size={20} />
-                    <div className="mr-auto flex min-w-0 flex-col gap-1">
-                      <span className="text-sm font-medium">{AGENT_NAMES[a.id]}</span>
-                      <span className="text-xs text-text-3">
-                        {a.id === 'custom'
-                          ? a.installed && a.version
-                            ? t('onboarding.connect.yourApiReady', { model: a.version })
-                            : t('onboarding.connect.yourApiHint')
-                          : a.installed
-                            ? a.version
-                              ? t('settings.connectedVersion', { version: a.version })
-                              : t('settings.connected')
-                            : t('settings.notInstalled')}
-                      </span>
-                    </div>
-                    {a.id === 'custom' ? (
-                      <div className="flex items-center gap-1">
-                        {a.installed && (
-                          <Button variant="ghost" className="h-8 px-2 text-[13px] text-text-2" onClick={() => void removeApi()}>
-                            {t('settings.apiRemove')}
-                          </Button>
-                        )}
-                        <Button variant="ghost" className="h-8 px-2 text-[13px] text-primary hover:text-accent-hover" onClick={() => setApiOpen(true)}>
-                          {a.installed ? t('settings.apiChange') : t('onboarding.connect.setUp')}
-                        </Button>
-                      </div>
-                    ) : a.id === 'claude' && a.installed ? (
-                      <ClaudeAccountControl showSignOut />
-                    ) : a.installed ? (
-                      <Button variant="ghost" className="h-8 px-2 text-[13px] text-primary hover:text-accent-hover" onClick={() => navigate({ name: 'connect' })}>
-                        {t('settings.reconnect')}
-                      </Button>
-                    ) : (
-                      // The agent's own install guide, in the browser: the onboarding screens have none.
-                      <a
-                        href={AGENT_INSTALL_URL[a.id]}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex h-8 items-center px-2 text-[13px] font-medium text-primary hover:text-accent-hover"
-                      >
-                        {t('settings.howToInstall')}
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </RadioGroup>
-            </Card>
-            <ApiSetupDialog
-              open={apiOpen}
-              onOpenChange={setApiOpen}
-              onSaved={(next) => {
-                setSettings(next);
-                reloadAgents();
-              }}
-            />
-            <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
-              <div className="mr-auto flex flex-col gap-1">
-                <label htmlFor="frame-check" className="text-sm font-medium">
-                  {t('settings.frameCheck')}
-                </label>
-                <span className="text-xs text-text-3">{t('settings.frameCheckHint')}</span>
-              </div>
-              <Switch
-                id="frame-check"
-                checked={settings.frameCheck}
-                aria-label={t('settings.frameCheck')}
-                onCheckedChange={(v) => void save({ frameCheck: v })}
-              />
-            </div>
-            <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
-              <div className="mr-auto flex flex-col gap-1">
-                <label htmlFor="auto-mode" className="text-sm font-medium">
-                  {t('settings.autoMode')}
-                </label>
-                <span className="text-xs text-text-3">{t('settings.autoModeHint')}</span>
-                <span className="text-xs text-text-3">{t('settings.autoModeAutopilots')}</span>
-              </div>
-              <Switch
-                id="auto-mode"
-                checked={settings.autoMode}
-                aria-label={t('settings.autoMode')}
-                onCheckedChange={(v) => void save({ autoMode: v })}
-              />
-            </div>
             <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
               <div className="mr-auto flex flex-col gap-1">
                 <label htmlFor="background-mode" className="text-sm font-medium">
@@ -480,76 +475,6 @@ export function Settings() {
           </section>
         )}
 
-        {tab === 'video' && (
-          <section id="video" role="tabpanel" aria-labelledby="settings-tab-video" className="flex flex-col gap-3">
-            <h2 className="m-0 text-base font-medium">{t('settings.sections.video')}</h2>
-            <Card>
-              <Row label={t('settings.videoLanguage')}>
-                <Segmented
-                  label={t('settings.videoLanguage')}
-                  value={settings.language}
-                  options={[
-                    { value: 'id', label: LANGUAGE_NAMES.id },
-                    { value: 'en', label: LANGUAGE_NAMES.en },
-                  ]}
-                  onChange={(language) => void save({ language })}
-                />
-              </Row>
-              <Row label={t('settings.format')}>
-                <Segmented
-                  label={t('settings.format')}
-                  value={settings.format}
-                  options={[
-                    { value: '9:16', label: '9:16' },
-                    { value: '1:1', label: '1:1' },
-                    { value: '16:9', label: '16:9' },
-                  ]}
-                  onChange={(format) => void save({ format })}
-                />
-              </Row>
-              <Row label={t('settings.frameRate')}>
-                <Segmented
-                  label={t('settings.frameRate')}
-                  value={String(settings.fps)}
-                  options={['24', '30', '60'].map((v) => ({ value: v, label: t('settings.fps', { n: v }) }))}
-                  onChange={(v) => void save({ fps: Number(v) })}
-                />
-              </Row>
-            </Card>
-          </section>
-        )}
-
-        {tab === 'render' && (
-          <section id="render" role="tabpanel" aria-labelledby="settings-tab-render" className="flex flex-col gap-3">
-            <h2 className="m-0 text-base font-medium">{t('settings.sections.render')}</h2>
-            <Card>
-              <Row
-                label={t('settings.workingFolder')}
-                hint={t('settings.workingFolderHint')}
-                note={t('settings.workingFolderNote')}
-              >
-                <span className="max-w-[220px] truncate font-mono text-xs text-[#D9D9D9]" title={settings.workingFolder}>
-                  {settings.workingFolder}
-                </span>
-                <Button variant="secondary" className="h-7 rounded-sm px-2 text-xs" onClick={() => void changeFolder()}>
-                  {t('settings.change')}
-                </Button>
-              </Row>
-              <Row label={t('settings.whereToRender')} hint={t('settings.whereToRenderHint')}>
-                <Segmented
-                  label={t('settings.whereToRender')}
-                  value="local"
-                  options={[
-                    { value: 'local', label: t('settings.thisComputer') },
-                    { value: 'cloud', label: t('settings.cloud'), disabled: true },
-                  ]}
-                  onChange={() => {}}
-                />
-              </Row>
-            </Card>
-          </section>
-        )}
-
         {tab === 'tools' && (
           <section id="tools" role="tabpanel" aria-labelledby="settings-tab-tools" className="flex flex-col gap-3">
             <div className="flex items-center gap-3">
@@ -559,7 +484,7 @@ export function Settings() {
               </div>
               <Button
                 variant="secondary"
-                className="h-7 gap-1 rounded-sm bg-transparent px-2 text-xs text-[#D9D9D9]"
+                className="h-7 gap-1 rounded-sm bg-transparent px-2 text-xs text-foreground"
                 disabled={!!active || closing}
                 onClick={check}
               >
@@ -579,11 +504,18 @@ export function Settings() {
                 />
               ))}
             </ul>
-            <h3 className="m-0 mt-3 text-sm font-medium">{t('voice.title')}</h3>
-            <VoiceSourceCard settings={settings} onSaved={setSettings} />
           </section>
         )}
 
+        {/* One dialog for Agents and Account alike. */}
+        <ApiSetupDialog
+          open={apiOpen}
+          onOpenChange={setApiOpen}
+          onSaved={(next) => {
+            setSettings(next);
+            reloadAgents();
+          }}
+        />
         {tab === 'archive' && (
           <section id="archive" role="tabpanel" aria-labelledby="settings-tab-archive" className="flex flex-col gap-3">
             <h2 className="m-0 text-base font-medium">{t('settings.sections.archive')}</h2>
@@ -591,19 +523,56 @@ export function Settings() {
           </section>
         )}
 
-        {tab === 'usage' && (
-          <section id="usage" role="tabpanel" aria-labelledby="settings-tab-usage" className="flex flex-col gap-3">
-            <h2 className="m-0 text-base font-medium">{t('settings.sections.usage')}</h2>
-            <UsageTab onAccount={() => pickTab('account')} />
-          </section>
-        )}
-
         {tab === 'account' && (
           <section id="account" role="tabpanel" aria-labelledby="settings-tab-account" className="flex flex-col gap-3">
             <h2 className="m-0 text-base font-medium">{t('settings.sections.account')}</h2>
-            <AccountSection />
-            <GiftCode />
-            <SocialLink />
+            <DevopsAccount />
+            <div className="mt-3 flex flex-col gap-1">
+              <h3 className="m-0 text-sm font-medium">{t('settings.aiAccounts.title')}</h3>
+              <span className="text-[13px] text-text-2">{t('settings.aiAccounts.intro')}</span>
+            </div>
+            <Card>
+              {agents.filter((a) => a.installed).length === 0 && (
+                <div className="px-4 py-3 text-[13px] text-text-3">{t('settings.aiAccounts.none')}</div>
+              )}
+              {agents
+                .filter((a) => a.installed)
+                .map((a) => (
+                  <div key={a.id} data-testid={`ai-account-${a.id}`} className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0">
+                    <AgentLogo id={a.id} size={20} />
+                    <div className="mr-auto flex min-w-0 flex-col gap-1">
+                      <span className="flex items-center gap-2 text-sm font-medium">
+                        {AGENT_NAMES[a.id]}
+                        {settings.defaultAgent === a.id && <BumaBadge variant="success" label={t('settings.aiAccounts.default')} />}
+                      </span>
+                      <span className="truncate text-xs text-text-3">
+                        {a.id === 'claude'
+                          ? claude?.signedIn
+                            ? [claude.email, claude.plan && t('settings.aiAccounts.plan', { plan: claude.plan })].filter(Boolean).join(' · ') || t('claudeAccount.signedIn')
+                            : t('settings.aiAccounts.claudeSignedOut')
+                          : a.id === 'custom'
+                            ? t('settings.aiAccounts.apiKey', { model: a.version ?? '' })
+                            : (a.account ?? t('connection.notSignedIn'))}
+                      </span>
+                    </div>
+                    {a.id !== 'custom' ? (
+                      // Sign-ins (and sign-outs) of every agent are managed in one place: Agents › Provider.
+                      <Button variant="secondary" small onClick={() => navigate({ name: 'agents', tab: 'provider' })}>
+                        {t('settings.aiAccounts.manage')}
+                      </Button>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <Button variant="secondary" small onClick={() => void removeApi()}>
+                          {t('settings.apiRemove')}
+                        </Button>
+                        <Button variant="secondary" small onClick={() => setApiOpen(true)}>
+                          {t('settings.apiChange')}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+            </Card>
             <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
               <div className="mr-auto flex flex-col gap-1">
                 <label htmlFor="share-install-stats" className="text-sm font-medium">
@@ -618,49 +587,6 @@ export function Settings() {
                 onCheckedChange={(v) => void save({ shareInstallStats: v })}
               />
             </div>
-            {/* For developers only: closed unless the address was changed. */}
-            <details open={settings.apiUrl !== DEFAULT_SETTINGS.apiUrl || !!apiOverride} className="group">
-              <summary className="cursor-pointer px-1 py-1 text-[13px] text-text-2 hover:text-foreground">{t('settings.advanced')}</summary>
-            <div className="mt-2 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
-              <div className="mr-auto flex flex-col gap-1">
-                <label htmlFor="api-url" className="text-sm font-medium">
-                  {t('settings.apiAddress')}
-                </label>
-                <span className="text-xs text-text-3">{t('settings.apiHint')}</span>
-                <span className="text-xs text-text-3">{t('settings.apiDefault', { url: DEFAULT_SETTINGS.apiUrl })}</span>
-                {apiOverride && (
-                  <span role="note" className="text-xs text-orange-light">
-                    {t('settings.apiOverridden', { url: apiOverride })}
-                  </span>
-                )}
-              </div>
-              <Input
-                id="api-url"
-                key={apiOverride ?? settings.apiUrl}
-                defaultValue={apiOverride ?? settings.apiUrl}
-                disabled={!!apiOverride}
-                placeholder={DEFAULT_SETTINGS.apiUrl}
-                spellCheck={false}
-                className="h-8 w-[260px] bg-background font-mono text-xs"
-                aria-invalid={apiError ? true : undefined}
-                onBlur={(e) => {
-                  const v = e.target.value.trim() || DEFAULT_SETTINGS.apiUrl;
-                  if (!isHttpUrl(v)) {
-                    setApiError(t('settings.apiInvalid'));
-                    return;
-                  }
-                  setApiError(null);
-                  if (v !== settings.apiUrl) void save({ apiUrl: v });
-                  else e.target.value = v;
-                }}
-              />
-              {apiError && (
-                <span role="alert" className="basis-full text-xs text-orange-light">
-                  {apiError}
-                </span>
-              )}
-            </div>
-            </details>
           </section>
         )}
       </div>

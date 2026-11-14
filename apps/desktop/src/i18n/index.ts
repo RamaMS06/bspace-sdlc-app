@@ -1,6 +1,6 @@
 import i18next from 'i18next';
 import { initReactI18next } from 'react-i18next';
-import type { UiLanguage } from '@tayang/shared';
+import type { UiLanguage } from '@bspace-sdlc-app/shared';
 import { en } from './en';
 import { id } from './id';
 

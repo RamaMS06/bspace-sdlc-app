@@ -1,7 +1,7 @@
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { Settings } from '@tayang/shared';
+import type { Settings } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   listJobs: vi.fn().mockResolvedValue([]),
@@ -87,14 +87,14 @@ describe('translations', () => {
 });
 
 const settings: Settings = {
-  workingFolder: '/w/Tayang',
+  workingFolder: '/w/Buma',
   defaultAgent: 'claude',
   frameCheck: true,
   language: 'id',
   format: '9:16',
   fps: 30,
   onboarded: true,
-  apiUrl: 'https://studio.tayang.app/api',
+  apiUrl: 'https://bspace.buma.internal/api',
   installId: '',
   shareInstallStats: true,
   autoMode: false,
@@ -117,10 +117,10 @@ describe('Indonesian interface', () => {
     setUiLanguage('id');
     render(<Sidebar active="chat" />);
     const nav = screen.getByRole('navigation', { name: 'Utama' });
-    for (const label of ['Chat', 'Video', 'Gaya', 'Agen', 'Kalender', 'Pengaturan']) {
+    for (const label of ['Baru', 'Alur kerja', 'Skill']) {
       expect(within(nav).getByRole('link', { name: new RegExp(`^${label}`) })).toBeInTheDocument();
     }
-    expect(screen.getByRole('button', { name: 'Chat baru' })).toBeInTheDocument();
+    expect(within(nav).getByRole('button', { name: 'Pengaturan' })).toBeInTheDocument();
     expect(screen.getByText('Terbaru')).toBeInTheDocument();
   });
 
@@ -134,7 +134,7 @@ describe('Indonesian interface', () => {
     expect(useApp.getState().settings?.uiLanguage).toBe('id');
     expect(document.documentElement.lang).toBe('id');
     // The section names follow too.
-    expect(screen.getByRole('tab', { name: 'Default video' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Alat' })).toBeInTheDocument();
     // and back, with no restart
     await userEvent.click(within(screen.getByRole('tablist', { name: 'Bahasa' })).getByRole('tab', { name: 'English' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
@@ -155,7 +155,7 @@ describe('Indonesian interface', () => {
     expect(screen.getByRole('button', { name: 'EN' })).toHaveAttribute('aria-pressed', 'true');
     await userEvent.click(screen.getByRole('button', { name: 'ID' }));
     expect(await screen.findByRole('button', { name: 'Mulai' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Video motion graphic,tanpa pusing nulis prompt.');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Setiap fitur,dari ide sampai deploy.');
     expect(screen.getByRole('button', { name: 'ID' })).toHaveAttribute('aria-pressed', 'true');
     expect(updateSettings).toHaveBeenCalledWith({ uiLanguage: 'id' });
     expect(document.documentElement.lang).toBe('id');
@@ -227,11 +227,11 @@ it('re-renders without a restart', async () => {
 
 describe('tool names and details', () => {
   it('are said by tool id, and unknown ones pass through', () => {
-    const tool = { id: 'chrome', name: 'Chrome browser', detail: 'Draws each frame of your video' } as const;
-    expect(toolName(tool)).toBe('Google Chrome');
+    const tool = { id: 'figma-mcp', name: 'Figma MCP server', detail: 'From Rust' } as const;
+    expect(toolName(tool)).toBe('Figma MCP');
     setUiLanguage('id');
-    expect(toolName(tool)).toBe('Google Chrome');
-    expect(toolDetail({ id: 'chrome', detail: 'Draws each frame of your video' })).toBe('Menggambar setiap frame sebelum di-encode');
+    expect(toolName(tool)).toBe('Figma MCP');
+    expect(toolDetail({ id: 'figma-mcp', detail: 'From Rust' })).toBe('Agar agenmu bisa membaca dan menggambar desain Figma dengan BUMA Design System');
     const unknown = { id: 'newtool', name: 'New tool', detail: 'Does a thing' } as unknown as typeof tool;
     expect(toolName(unknown)).toBe('New tool');
     expect(toolDetail(unknown)).toBe('Does a thing');
@@ -241,14 +241,14 @@ describe('tool names and details', () => {
     setUiLanguage('id');
     render(
       <ToolRow
-        tool={{ id: 'chrome', name: 'Google Chrome', required: true, found: false, version: null, ok: false, detail: 'Draws each frame of your video' }}
+        tool={{ id: 'flutter', name: 'Flutter SDK', required: false, found: true, version: '3.27.4', ok: true, detail: 'From Rust' }}
         sys={{ os: 'linux', osVersion: '1', packageManager: 'apt' }}
         agentName="Claude Code"
         busy={false}
         onInstall={() => {}}
       />,
     );
-    expect(screen.getByText('Menggambar setiap frame sebelum di-encode')).toBeInTheDocument();
-    expect(screen.queryByText('Draws each frame of your video')).toBeNull();
+    expect(screen.getByText('Slicing dan menjalankan layar Flutter · BUMA memakai 3.27.4 lewat fvm')).toBeInTheDocument();
+    expect(screen.queryByText('From Rust')).toBeNull();
   });
 });

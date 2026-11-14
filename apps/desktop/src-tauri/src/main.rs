@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    tayang_studio_lib::run()
+    bspace_sdlc_app_lib::run()
 }

@@ -1,5 +1,5 @@
-import type { ChatMessage, MessagePart, Project, Settings, Style, StyleAspect } from '@tayang/shared';
-import { buildProjectBrief } from '@tayang/skills';
+import type { ChatMessage, MessagePart, Project, Settings, Style, StyleAspect } from '@bspace-sdlc-app/shared';
+import { buildProjectBrief } from '@bspace-sdlc-app/skills';
 import { listStyles } from '@/lib/ipc';
 
 /** The videos the user mentioned in the chat so far: the agent already has their briefs. */
@@ -25,7 +25,7 @@ export async function mentionContext(
     out.push({
       type: 'text',
       // i18n-ignore: this goes to the agent, not the user
-      text: `The user attached the video "${p.title}". Its Tayang id is ${p.id}. Its project folder is ${p.folder}.\n\n${buildProjectBrief(p, style, settings)}`,
+      text: `The user attached the feature "${p.title}". Its Buma id is ${p.id}. Its project folder is ${p.folder}.\n\n${buildProjectBrief(p, style, settings)}`,
     });
   }
   return out;
@@ -63,9 +63,9 @@ export function styleContext(parts: MessagePart[], styles: Style[]): MessagePart
       noLinks(style.prompt),
       ...notes,
       // i18n-ignore: this goes to the agent, not the user
-      style.template ? 'This style has a starter template; Tayang sets it up when a new video starts from it.' : '',
+      style.template ? 'This style has a starter template; Buma sets it up when a new video starts from it.' : '',
       // i18n-ignore: this goes to the agent, not the user
-      `Its Tayang style id is "${style.id}": put exactly this id in a topic card's styleId.`,
+      `Its Buma style id is "${style.id}": put exactly this id in a topic card's styleId.`,
     ].filter(Boolean);
     out.push({ type: 'text', text: lines.join('\n') });
   }

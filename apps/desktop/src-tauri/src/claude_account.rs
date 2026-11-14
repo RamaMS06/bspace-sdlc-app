@@ -1,7 +1,7 @@
-//! Tayang's own Claude sign-in. Claude Code runs with `CLAUDE_CONFIG_DIR` set to a folder in
-//! Tayang's app data, so a session starts clean (none of the user's own plugins, MCP servers or
-//! CLAUDE.md, which only cost tokens here) and signs in once, from Tayang, through Claude Code's
-//! own `claude auth login`. Tayang never sees the OAuth exchange: Claude Code keeps its tokens
+//! Buma's own Claude sign-in. Claude Code runs with `CLAUDE_CONFIG_DIR` set to a folder in
+//! Buma's app data, so a session starts clean (none of the user's own plugins, MCP servers or
+//! CLAUDE.md, which only cost tokens here) and signs in once, from Buma, through Claude Code's
+//! own `claude auth login`. Buma never sees the OAuth exchange: Claude Code keeps its tokens
 //! where it always does for a config dir of its own (a Keychain item on macOS, a file elsewhere).
 
 use serde::Serialize;
@@ -20,7 +20,7 @@ pub const CONFIG_ENV: &str = "CLAUDE_CONFIG_DIR";
 /// How long a sign-in may wait for the user to finish in the browser.
 pub const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(600);
 
-/// Tayang's Claude config folder inside its app data folder.
+/// Buma's Claude config folder inside its app data folder.
 pub fn config_dir(app_data: &Path) -> PathBuf {
     app_data.join("claude")
 }
@@ -34,7 +34,7 @@ pub fn keychain_service(config_dir: &str) -> String {
     format!("Claude Code-credentials-{hex}")
 }
 
-/// Who is signed in to Claude in Tayang.
+/// Who is signed in to Claude in Buma.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeAccount {
@@ -96,7 +96,7 @@ pub async fn status(claude: &Path, config_dir: &Path) -> ClaudeAccount {
     }
 }
 
-/// Signs out of Claude in Tayang (the user's own Claude Code sign-in is untouched).
+/// Signs out of Claude in Buma (the user's own Claude Code sign-in is untouched).
 pub async fn sign_out(claude: &Path, config_dir: &Path) -> ClaudeAccount {
     let _ = tokio::time::timeout(
         Duration::from_secs(30),
@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn keychain_service_matches_claude_code() {
         // Claude Code: `-${sha256(dir).hex.substring(0, 8)}` after "Claude Code-credentials".
-        let dir = "/Users/x/Library/Application Support/app.tayang.studio/claude";
+        let dir = "/Users/x/Library/Application Support/com.buma.bspace-sdlc-app/claude";
         let hex = format!("{:x}", Sha256::digest(dir.as_bytes()));
         assert_eq!(keychain_service(dir), format!("Claude Code-credentials-{}", &hex[..8]));
     }

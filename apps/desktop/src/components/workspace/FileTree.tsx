@@ -128,7 +128,7 @@ export function FileTree({
           onClick={() => (entry.dir ? toggle(entry.path) : onOpen(entry.path))}
           className={cn(
             'flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-sm pr-2 text-left text-[13px] hover:bg-raised/60',
-            active ? 'bg-raised text-foreground' : entry.dim ? 'text-text-3' : 'text-[#D9D9D9]',
+            active ? 'bg-raised text-foreground' : entry.dim ? 'text-text-3' : 'text-foreground',
           )}
           style={{ paddingLeft: 8 + depth * 12 }}
         >
@@ -188,7 +188,7 @@ export function FileTree({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2">
         {error ? (
-          <p role="alert" className="m-0 px-2 text-xs text-orange-light">
+          <p role="alert" className="m-0 px-2 text-xs text-error">
             {error}
           </p>
         ) : found ? (

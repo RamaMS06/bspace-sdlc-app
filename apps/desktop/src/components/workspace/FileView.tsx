@@ -50,7 +50,7 @@ export function FileView({ projectId, path, reloadKey }: { projectId: string; pa
   const reveal = () => file && void revealItemInDir(file.absPath).catch(() => {});
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#101010]">
+    <div className="flex h-full min-h-0 flex-col bg-panel">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-3" title={path}>
           {path}
@@ -70,7 +70,7 @@ export function FileView({ projectId, path, reloadKey }: { projectId: string; pa
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         {error ? (
-          <p role="alert" className="m-0 p-4 text-xs text-orange-light">
+          <p role="alert" className="m-0 p-4 text-xs text-error">
             {error}
           </p>
         ) : !file ? (

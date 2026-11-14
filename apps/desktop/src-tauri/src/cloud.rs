@@ -1,4 +1,4 @@
-//! The Tayang account's paid features through the Tayang API: credits and auto-posts left, social
+//! The Buma account's paid features through the Buma API: credits and auto-posts left, social
 //! accounts, posting a video, and AI images and voice. The sign-in token stays in Rust; the webview
 //! (and an agent) only ever see what the API answered.
 
@@ -30,9 +30,9 @@ pub enum CloudError {
     Invalid,
     Network,
     Server,
-    /// A URL the API gave isn't one Tayang will fetch or open.
+    /// A URL the API gave isn't one Buma will fetch or open.
     BadUrl,
-    /// What came back is bigger than Tayang keeps.
+    /// What came back is bigger than Buma keeps.
     TooLarge,
     /// Gift codes: no such code, its promo has ended, its uses are taken, this account or this
     /// computer has this promo's gift already, or too many tries.

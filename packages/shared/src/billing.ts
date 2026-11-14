@@ -28,7 +28,7 @@ export const creditReach = (credits: number) => ({
 export interface Plan {
   id: PaidPlanId;
   name: string;
-  /** Rupiah per period, the fee included (Tayang pays the QRIS fee). */
+  /** Rupiah per period, the fee included (Buma pays the QRIS fee). */
   price: number;
   currency: 'IDR';
   interval: 'month';

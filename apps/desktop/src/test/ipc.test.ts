@@ -1,6 +1,6 @@
 import { mockIPC, clearMocks } from '@tauri-apps/api/mocks';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { NewProject } from '@tayang/shared';
+import type { NewProject } from '@bspace-sdlc-app/shared';
 import * as ipc from '@/lib/ipc';
 
 afterEach(() => clearMocks());

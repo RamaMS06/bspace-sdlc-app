@@ -1,14 +1,18 @@
 import { notifyAgent } from '@/lib/agentNotify';
 import { create } from 'zustand';
-import { FOREGROUND_RULE, RENDERS_RULE, buildSessionPreamble, languageHint, sessionFacts, stripFramesToken, userSkillsText } from '@tayang/skills';
-import type { AgentId, AgentQuestion, AgentUpdate, Chat, ChatMessage, Style, FileInfo, JobStatus, MessagePart, PermissionRequest, QuestionResponse } from '@tayang/shared';
+import { FOREGROUND_RULE, buildSessionPreamble, languageHint, sessionFacts, stripFramesToken, userSkillsText } from '@bspace-sdlc-app/skills';
+import type { AgentId, AgentQuestion, AgentUpdate, Chat, ChatMessage, Style, FileInfo, JobStatus, MessagePart, PermissionRequest, QuestionResponse } from '@bspace-sdlc-app/shared';
 import {
   addMessage,
   agentCancel,
+  agentFailoverRecord,
+  setAgentModel,
   agentRespondPermission,
   agentRespondQuestion,
   agentPrompt,
   agentSetAuto,
+  agentSetMode,
+  type PermissionMode,
   agentStart,
   listSkills,
   agentStop,
@@ -32,6 +36,9 @@ import { useApp } from '@/state/app';
 import { refreshJobs, useJobs } from '@/state/jobs';
 import { renderArgvOf, useRender } from '@/state/render';
 import { track } from '@/lib/analytics';
+import { failoverReason, stepKey, useFailover, type Step } from '@/state/failover';
+import { DEFAULT_ACCOUNT, MULTI_ACCOUNT, useAccounts } from '@/state/accounts';
+import { applyStep, stepFor } from '@/lib/route';
 
 
 /** A project chat's turns show up on the Agents board as this build job. */
@@ -42,20 +49,31 @@ export interface ChatJob {
   auto?: boolean;
 }
 
+/** A message waiting for the agent's turn to end. */
+export interface QueuedMessage {
+  id: string;
+  parts: MessagePart[];
+  opts?: SendOpts;
+}
+
 export interface SendOpts {
+  /** Sent by the queue after a turn ended: never queued again. */
+  fromQueue?: boolean;
   /** What the agent receives instead of the visible message (extra context, topic prompts). */
   promptParts?: MessagePart[];
   /** Track this chat's turns as a `build` job. */
   job?: ChatJob;
   /** The chat's own agent; defaults to the agent picked in Settings. */
   agentId?: AgentId;
-  /** Leave the composer's attachments where they are (a message Tayang sends on the user's behalf). */
+  /** Leave the composer's attachments where they are (a message Buma sends on the user's behalf). */
   keepAttachments?: boolean;
   /**
    * Sent by the autopilot, with nobody watching: a refusal because the agent is still working comes
    * back as an error too, and every error comes back in English (it is saved on the slot).
    */
   background?: boolean;
+  /** Sent again after a failover: the user's message is already in the chat, so it is not added twice. */
+  resend?: boolean;
 }
 
 interface ChatState {
@@ -67,7 +85,7 @@ interface ChatState {
   permissions: Record<string, PermissionRequest[]>;
   /** The agent's open questions per chat (ACP elicitation), oldest first. */
   questions: Record<string, AgentQuestion[]>;
-  /** What the agent asked Tayang to do (POST /video, /schedule), waiting for its turn to end. */
+  /** What the agent asked Buma to do (POST /video, /schedule), waiting for its turn to end. */
   actions: Record<string, AgentAction[]>;
   /** Takes the chat's oldest waiting action of this kind. */
   takeAction(chatId: string, name: AgentAction['name']): AgentAction | undefined;
@@ -80,6 +98,14 @@ interface ChatState {
   pendingAuto: boolean | null;
   /** Chats whose Auto switch is being applied to the running session. */
   autoBusy: Record<string, boolean>;
+  /** Per-chat permission mode beyond Ask / Auto (accept edits, plan, bypass). Chats without one follow `auto`. */
+  mode: Record<string, PermissionMode>;
+  /** The mode on a new chat that has no id yet. */
+  pendingMode: PermissionMode | null;
+  /** Messages the user sent while the agent was still working, oldest first; they go as one message when its turn ends. */
+  queued: Record<string, QueuedMessage[]>;
+  /** Takes a queued message back out before it is sent. */
+  unqueue(chatId: string, id: string): void;
   /** Chat rows seen in this app session, so a screen knows a chat's project before asking Rust. */
   rows: Record<string, Chat>;
   /** Unsent composer text and style chip per chat; `new` is the New chat screen's, which has no chat yet. */
@@ -89,6 +115,10 @@ interface ChatState {
 
   /** Turns auto mode on or off; a running session switches right away. */
   setAuto(chatId: string | null, on: boolean): Promise<void>;
+  /** Sets the permission mode; a running session switches right away. */
+  setMode(chatId: string | null, mode: PermissionMode): Promise<void>;
+  /** Kills the chat's agent process: for a turn that doesn't stop when asked. */
+  terminate(chatId: string): Promise<void>;
   rememberChat(chat: Chat): void;
   setDraft(key: string, draft: Draft): void;
   /** A new chat just got its id: it takes over the draft's Auto choice. */
@@ -161,13 +191,21 @@ const clientKeys = new Map<string, string>();
 /** A key for a message that stays the same when the local copy is swapped for the stored one. */
 export const messageKey = (m: ChatMessage) => clientKeys.get(m.id) ?? m.id;
 
-/** Things the agent should know before the user's next message, such as a schedule Tayang made from its card. */
+/** Things the agent should know before the user's next message, such as a schedule Buma made from its card. */
 const agentNotes = new Map<string, string[]>();
 /** Tells the agent `text` in front of the next prompt in this chat, without a turn of its own. */
 export const noteForAgent = (chatId: string, text: string) => agentNotes.set(chatId, [...(agentNotes.get(chatId) ?? []), text]);
 
 /** Recaps waiting for the first prompt of a new session: after an agent switch, or a retired session. */
 const pendingRecap = new Map<string, { text: string; switched: boolean }>();
+
+/** A route step as people read it: "Claude Code · claude-opus-5-5". */
+const stepName = (s: Step) => (s.model ? `${AGENT_NAMES[s.agent]} · ${s.model}` : AGENT_NAMES[s.agent]);
+
+/** Each chat's last prompt from the user, sent again to the next agent after a failover. */
+const lastPrompt = new Map<string, { parts: MessagePart[]; opts?: SendOpts }>();
+/** How many failovers a chat's current message has had; reset once a turn ends well. */
+const failoverHops = new Map<string, number>();
 
 /** What `agent_prompt` says when a turn is still running; that turn goes on untouched. */
 const BUSY = /still working/i;
@@ -350,6 +388,15 @@ const localMessage = (chatId: string, role: ChatMessage['role'], parts: MessageP
 
 let unlisten: Promise<() => void>[] = [];
 
+/** How long Stop waits for the agent to end its turn before it kills the process. */
+export const STOP_GRACE_MS = 4000;
+/** The pending "kill it if it doesn't stop" of each chat; a turn that ends on its own cancels it. */
+const stopTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const clearStopTimer = (chatId: string) => {
+  clearTimeout(stopTimers.get(chatId));
+  stopTimers.delete(chatId);
+};
+
 const NO_PERMISSION = null;
 /** The permission request a chat's card shows: the oldest open one. */
 const NO_QUESTION = null;
@@ -359,6 +406,13 @@ export const headQuestion = (s: { questions: Record<string, AgentQuestion[]> }, 
 
 export const headPermission = (s: { permissions: Record<string, PermissionRequest[]> }, chatId: string | null) =>
   (chatId ? s.permissions[chatId]?.[0] : undefined) ?? NO_PERMISSION;
+
+/** The chat's permission mode: its own (the unsent New chat uses its draft), else Auto or Ask from the toggle. */
+export const modeOf = (
+  s: { auto: Record<string, boolean>; pendingAuto: boolean | null; mode: Record<string, PermissionMode>; pendingMode: PermissionMode | null },
+  chatId: string | null,
+  settingsAuto: boolean,
+): PermissionMode => (chatId ? s.mode[chatId] : s.pendingMode) ?? (autoOn(s, chatId, settingsAuto) ? 'auto' : 'ask');
 
 /** Whether the Auto toggle is on: the chat's own value (the unsent New chat uses its draft), else Settings. */
 export const autoOn = (
@@ -423,7 +477,18 @@ export const useChat = create<ChatState>((set, get) => {
   };
 
   /** The turn is over: answer whatever is still queued with null and clear the queue. */
+  /** The turn ended: everything the user queued meanwhile goes to the agent as one message. */
+  const flushQueue = (chatId: string) => {
+    const waiting = get().queued[chatId] ?? [];
+    if (!waiting.length) return;
+    set((s) => ({ queued: { ...s.queued, [chatId]: [] } }));
+    const parts: MessagePart[] = waiting.flatMap((q, i) => (i === 0 ? q.parts : [{ type: 'text' as const, text: '\n\n' }, ...q.parts]));
+    const opts = waiting.at(-1)?.opts;
+    void get().send(chatId, parts, { ...opts, promptParts: undefined, fromQueue: true });
+  };
+
   const finish = (chatId: string) => {
+    clearStopTimer(chatId);
     const open = get().permissions[chatId] ?? [];
     const { [chatId]: _, ...turns } = get().turnStartedAt;
     set((s) => ({
@@ -624,6 +689,7 @@ export const useChat = create<ChatState>((set, get) => {
       return;
     }
     if (u.kind === 'done') {
+      if (u.stopReason !== 'cancelled') failoverHops.delete(chatId);
       const startedAt = get().turnStartedAt[chatId] ?? Date.now();
       const job = chatJobs.get(chatId);
       // A Stop is the user's choice, not a failure: done, with a note saying so (never "needs you").
@@ -633,6 +699,7 @@ export const useChat = create<ChatState>((set, get) => {
       else writeJob(chatId, 'done');
       settleTools(chatId, u.stopReason === 'cancelled' ? 'failed' : 'done');
       finish(chatId);
+      flushQueue(chatId);
       // The message is stored once, with every image the turn made.
       endTurnImages(chatId, turnMessage(chatId)?.id, true);
       // Tell the user, unless they stopped it themselves: it waits for their pick, or it is done.
@@ -655,6 +722,73 @@ export const useChat = create<ChatState>((set, get) => {
     const sys = localMessage(chatId, 'system', [{ type: 'text', text }]);
     append(chatId, sys);
     void persist(chatId, sys);
+    void failover(chatId, u.message);
+  };
+
+  /**
+   * Like 9router: when the chat's agent fails because its limit ran out, its sign-in failed or it stopped
+   * answering, the chat moves to the next agent in Settings › Agents › Failover (with a recap) and the
+   * user's last message is sent again. A failed agent rests for a while; each message tries every agent once.
+   */
+  const failover = async (chatId: string, message: string | undefined) => {
+    const fo = useFailover.getState();
+    const reason = failoverReason(message);
+    const agent = chatAgent.get(chatId);
+    const last = lastPrompt.get(chatId);
+    if (!reason || !agent || isScratchChat(chatId)) return;
+    if (reason === 'model' && (!fo.on || !last || last.opts?.background)) {
+      // No failover to make: still hide the model for this account, so it isn't tried again.
+      const model = useApp.getState().settings?.agentModels?.[agent] ?? null;
+      if (model) fo.markIncompatible(agent, useAccounts.getState().activeOf(agent), model);
+      const settings = await setAgentModel(agent, null, null).catch(() => null);
+      if (settings) useApp.getState().setSettings(settings);
+      if (model) await get().appendSystem(chatId, stored('chat.failoverModel', { from: model }));
+      return;
+    }
+    if (!fo.on || !last || last.opts?.background) return;
+    // The step the chat was on: its agent, on the model picked for that agent.
+    const accounts = useAccounts.getState();
+    const from: Step = { agent, account: accounts.activeOf(agent), model: useApp.getState().settings?.agentModels?.[agent] ?? null };
+    if (reason === 'model') {
+      // The account can't use this model: hide it for that account and go back to the agent's default.
+      if (from.model) fo.markIncompatible(agent, from.account, from.model);
+      const settings = await setAgentModel(agent, null, null).catch(() => null);
+      if (settings) useApp.getState().setSettings(settings);
+    } else fo.rest(from, reason);
+    const hops = failoverHops.get(chatId) ?? 0;
+    // Failover stays inside the chat's own combo.
+    const pick = fo.pickOf(chatId);
+    const to = fo.next(from, undefined, pick);
+    if (!to || hops >= fo.steps(pick).length) {
+      await get().appendSystem(chatId, stored('chat.failoverNone', { from: stepName(from) }));
+      return;
+    }
+    failoverHops.set(chatId, hops + 1);
+    try {
+      void agentFailoverRecord(chatId, stepKey(from), stepKey(to), reason).catch(() => {});
+    } catch {
+      /* the Usage screen just misses this line */
+    }
+    try {
+      // The next step's model is picked for its agent before its session starts.
+      if ((to.model ?? null) !== (useApp.getState().settings?.agentModels?.[to.agent] ?? null)) {
+        const settings = await setAgentModel(to.agent, to.model, null);
+        if (settings) useApp.getState().setSettings(settings);
+      }
+      // The next step's account is made the agent's active one before its session starts.
+      const toAccount = to.account ?? DEFAULT_ACCOUNT;
+      if (MULTI_ACCOUNT.includes(to.agent) && toAccount !== accounts.activeOf(to.agent)) await accounts.use(to.agent, toAccount);
+      if (to.agent !== agent) await get().switchAgent(chatId, to.agent);
+      else {
+        // Same agent, another model: a fresh session that gets a recap of the chat.
+        pendingRecap.set(chatId, { text: buildRecap(get().messages[chatId] ?? []), switched: false });
+        await get().stop(chatId);
+      }
+    } catch {
+      return;
+    }
+    await get().appendSystem(chatId, stored(`chat.failover.${reason}`, { from: stepName(from), to: stepName(to) }));
+    await get().send(chatId, last.parts, { ...last.opts, agentId: to.agent, fromQueue: true, resend: true, keepAttachments: true });
   };
 
   return {
@@ -667,6 +801,12 @@ export const useChat = create<ChatState>((set, get) => {
     attachments: {},
     started: {},
     auto: {},
+    mode: {},
+    pendingMode: null,
+    queued: {},
+    unqueue(chatId, id) {
+      set((s) => ({ queued: { ...s.queued, [chatId]: (s.queued[chatId] ?? []).filter((q) => q.id !== id) } }));
+    },
     pendingAuto: null,
     autoBusy: {},
     rows: {},
@@ -712,8 +852,52 @@ export const useChat = create<ChatState>((set, get) => {
 
     adoptPendingAuto(chatId) {
       const pending = get().pendingAuto;
+      const mode = get().pendingMode;
+      if (mode !== null) set((s) => ({ mode: { ...s.mode, [chatId]: mode }, pendingMode: null }));
       if (pending === null) return;
       set((s) => ({ auto: { ...s.auto, [chatId]: pending }, pendingAuto: null }));
+    },
+
+    async setMode(chatId, mode) {
+      // Ask and Auto are the Auto toggle; the other modes ride on Ask's session settings.
+      if (!chatId) {
+        set({ pendingMode: mode, pendingAuto: mode === 'auto' });
+        return;
+      }
+      if (mode === 'auto' || mode === 'ask') {
+        const was = get().mode[chatId];
+        // Ask and Auto show what the session confirmed (the Auto toggle's state), not the request.
+        set((s) => {
+          const { [chatId]: _dropped, ...rest } = s.mode;
+          return { mode: rest };
+        });
+        // From plan, accept edits or bypass back to Ask, the agent has to leave that mode.
+        if (mode === 'ask' && was && was !== 'ask' && was !== 'auto' && get().started[chatId]) {
+          await agentSetMode(chatId, 'ask').catch(() => {});
+        }
+        await get().setAuto(chatId, mode === 'auto');
+        return;
+      }
+      set((s) => ({ mode: { ...s.mode, [chatId]: mode }, auto: { ...s.auto, [chatId]: false } }));
+      if (!get().started[chatId]) return;
+      try {
+        await agentSetMode(chatId, mode);
+      } catch (e) {
+        set((s) => ({ mode: { ...s.mode, [chatId]: 'ask' } }));
+        await get().appendSystem(chatId, stored('chat.modeFailed', { reason: e instanceof Error ? e.message : String(e) }));
+      }
+    },
+
+    async terminate(chatId) {
+      await agentStop(chatId).catch(() => {});
+      set((s) => ({
+        started: { ...s.started, [chatId]: false },
+        streaming: { ...s.streaming, [chatId]: false },
+        permissions: { ...s.permissions, [chatId]: [] },
+        questions: { ...s.questions, [chatId]: [] },
+      }));
+      writeJob(chatId, 'done', stored('agents.cancelled'));
+      await get().appendSystem(chatId, stored('chat.terminated'));
     },
 
     async load(chatId) {
@@ -740,6 +924,12 @@ export const useChat = create<ChatState>((set, get) => {
 
     async send(chatId, parts, opts) {
       tracked.add(chatId);
+      // The agent is still working: the message waits for its turn to end (see flushQueue).
+      if (get().streaming[chatId] && !opts?.fromQueue && !opts?.background) {
+        const item: QueuedMessage = { id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, parts, opts };
+        set((s) => ({ queued: { ...s.queued, [chatId]: [...(s.queued[chatId] ?? []), item] } }));
+        return null;
+      }
       const attached = opts?.keepAttachments ? [] : (get().attachments[chatId] ?? []);
       const visible = [...attached, ...parts];
       turnSeq.set(chatId, (turnSeq.get(chatId) ?? 0) + 1);
@@ -752,9 +942,13 @@ export const useChat = create<ChatState>((set, get) => {
         // A send refused because a turn is running keeps that turn's start.
         turnStartedAt: { ...s.turnStartedAt, [chatId]: s.streaming[chatId] ? (s.turnStartedAt[chatId] ?? Date.now()) : Date.now() },
       }));
-      const user = localMessage(chatId, 'user', visible);
-      append(chatId, user);
-      void persist(chatId, user);
+      if (!opts?.resend) {
+        const user = localMessage(chatId, 'user', visible);
+        append(chatId, user);
+        void persist(chatId, user);
+        failoverHops.delete(chatId);
+        lastPrompt.set(chatId, { parts: opts?.promptParts ? [...attached, ...opts.promptParts] : visible, opts: opts?.promptParts ? { ...opts, promptParts: undefined } : opts });
+      }
       try {
         const agent = opts?.agentId ?? chatAgent.get(chatId) ?? useApp.getState().settings?.defaultAgent ?? 'claude';
         chatAgent.set(chatId, agent);
@@ -764,25 +958,35 @@ export const useChat = create<ChatState>((set, get) => {
         let fresh = false;
         let noPlugin = false;
         if (!get().started[chatId]) {
+          // The session starts on the agent's step of the route (its account and model), skipping resting ones.
+          const step = stepFor(agent, useFailover.getState().pickOf(chatId));
+          if (step) await applyStep(step).catch(() => {});
           const auto = autoOn(get(), chatId, useApp.getState().settings?.autoMode ?? false);
           // Keep the toggle's value with the chat once it has a session.
           set((s) => ({ auto: { ...s.auto, [chatId]: auto } }));
           noPlugin = (auto ? await agentStart(chatId, agent, true) : await agentStart(chatId, agent)) === true;
           set((s) => ({ started: { ...s.started, [chatId]: true } }));
           fresh = true;
+          const mode = get().mode[chatId];
+          if (mode === 'acceptEdits' || mode === 'plan' || mode === 'bypass') {
+            await agentSetMode(chatId, mode).catch(async (e) => {
+              set((s) => ({ mode: { ...s.mode, [chatId]: 'ask' } }));
+              await get().appendSystem(chatId, stored('chat.modeFailed', { reason: e instanceof Error ? e.message : String(e) }));
+            });
+          }
         }
         const sent = opts?.promptParts ? [...attached, ...opts.promptParts] : visible;
         const lead: MessagePart[] = [];
-        // Claude loads the Tayang plugin itself (unless the app shipped without it); other agents get
+        // Claude loads the Buma plugin itself (unless the app shipped without it); other agents get
         // the skills as text, once per session.
         const uiLang = uiLanguage();
         if (fresh && !isInternalChat(chatId)) {
-          // The agent's clock for scheduling, and the id that lets it schedule this project's video.
+          // The agent's clock, and the id of the feature a project chat is about.
           const projectId = opts?.job?.projectId ?? chatJobs.get(chatId)?.projectId;
           const facts = { ...localClock(), ...(projectId ? { projectId } : {}) };
           if (agent !== 'claude' || noPlugin) lead.push({ type: 'text', text: buildSessionPreamble(uiLang, facts) });
-          // The foreground and renders/ rules too: a project made before them has no copy in its AGENTS.md or CLAUDE.md.
-          else lead.push({ type: 'text', text: [languageHint(uiLang), sessionFacts(facts), FOREGROUND_RULE, RENDERS_RULE].filter(Boolean).join('\n\n') });
+          // The foreground rule too: long work (installs, test runs) must not be backgrounded and lost.
+          else lead.push({ type: 'text', text: [languageHint(uiLang), sessionFacts(facts), FOREGROUND_RULE].filter(Boolean).join('\n\n') });
           // Claude loads the user's own skills as a plugin; other agents get a list of them.
           if (agent !== 'claude') {
             const mine = await userSkills();
@@ -850,10 +1054,20 @@ export const useChat = create<ChatState>((set, get) => {
 
     async cancel(chatId) {
       await agentCancel(chatId).catch(() => {});
+      // An agent that doesn't end its turn when asked is stopped for good.
+      clearTimeout(stopTimers.get(chatId));
+      stopTimers.set(
+        chatId,
+        setTimeout(() => {
+          stopTimers.delete(chatId);
+          if (get().streaming[chatId]) void get().terminate(chatId);
+        }, STOP_GRACE_MS),
+      );
     },
 
     async stop(chatId) {
-      set((s) => ({ started: { ...s.started, [chatId]: false } }));
+      // The process goes away mid-turn without a `done`: the turn is over too.
+      set((s) => ({ started: { ...s.started, [chatId]: false }, streaming: { ...s.streaming, [chatId]: false } }));
       await agentStop(chatId).catch(() => {});
     },
 
@@ -902,7 +1116,7 @@ export const useChat = create<ChatState>((set, get) => {
       unlisten = [
         onAgentUpdate(({ chatId, update }) => onUpdate(chatId, update)),
         onAgentAction((a) => {
-          if (!tracked.has(a.chatId)) return;
+          if (!tracked.has(a.chatId) || a.name === 'office_state') return;
           set((s) => ({ actions: { ...s.actions, [a.chatId]: [...(s.actions[a.chatId] ?? []), a] } }));
         }),
         onQuestion((q) => {
@@ -926,6 +1140,8 @@ export const useChat = create<ChatState>((set, get) => {
       unlisten.forEach((p) => void p.then((fn) => fn()));
       unlisten = [];
       tracked.clear();
+      lastPrompt.clear();
+      failoverHops.clear();
       chatAgent.clear();
       chatJobs.clear();
       pendingRecap.clear();
@@ -941,7 +1157,8 @@ export const useChat = create<ChatState>((set, get) => {
       resetProjectStatus();
       stopAllWatches();
       useRender.setState({ runs: {} });
-      set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, questions: {}, actions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {}, rows: {}, drafts: {}, styles: [] });
+      for (const id of [...stopTimers.keys()]) clearStopTimer(id);
+      set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, questions: {}, actions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, mode: {}, pendingMode: null, queued: {}, autoBusy: {}, rows: {}, drafts: {}, styles: [] });
     },
   };
 });

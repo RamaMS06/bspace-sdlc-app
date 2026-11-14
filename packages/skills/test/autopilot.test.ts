@@ -92,7 +92,7 @@ describe('buildAutopilotBuildPrompt', () => {
     expect(p).toContain('45 seconds');
     expect(p).toContain('Indonesian');
     expect(p).toMatch(/script/i);
-    expect(p).toMatch(/tayang\.json/);
+    expect(p).toMatch(/buma\.json/);
     expect(p).toMatch(/frames/i);
     expect(p).toMatch(/rendered file/i);
     expect(p).toMatch(/without asking/i);
@@ -109,7 +109,7 @@ describe('follow-ups', () => {
     expect(AUTOPILOT_TOPIC_RETRY).toContain('```json');
     expect(AUTOPILOT_TOPIC_RETRY).toMatch(/earlier titles/);
     expect(AUTOPILOT_RENDER_NOW).toMatch(/^Render it now/);
-    expect(AUTOPILOT_RENDER_NOW).toMatch(/tayang\.json/);
+    expect(AUTOPILOT_RENDER_NOW).toMatch(/buma\.json/);
   });
 
   it('names the voice only when one is picked, and always asks for post.json', () => {
@@ -131,7 +131,7 @@ describe('buildAutopilotChatPrompt', () => {
 
   it('gives the agent every option, in the language of the user, and the way to hand over', () => {
     const p = buildAutopilotChatPrompt(input);
-    for (const part of ['science: Science explained', 'Rachel: Calm narrator', 'atlas: Atlas', 'sa_1: tiktok @oyen', 'Indonesian', '$TAYANG_AI_URL/autopilot', '45, 60 or 90', 'weekdays']) {
+    for (const part of ['science: Science explained', 'Rachel: Calm narrator', 'atlas: Atlas', 'sa_1: tiktok @oyen', 'Indonesian', '$BUMA_AI_URL/autopilot', '45, 60 or 90', 'weekdays']) {
       expect(p).toContain(part);
     }
     expect(p).toMatch(/cannot start it yourself/);

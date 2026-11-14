@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Tayang Studio",
+  "productName": "BSpace SDLC",
   "version": "0.0.10",
-  "identifier": "app.tayang.studio",
+  "identifier": "com.buma.bspace-sdlc-app",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,17 +12,21 @@
   "app": {
     "windows": [
       {
-        "title": "Tayang Studio",
+        "title": "BSpace SDLC",
         "width": 1280,
         "height": 800,
-        "minWidth": 1024,
-        "minHeight": 700,
+        "minWidth": 320,
+        "minHeight": 240,
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 14
+        }
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data: blob: https://studio.tayang.app http://localhost:8787 http://127.0.0.1:8787 https://i.ytimg.com; media-src 'self' asset: http://asset.localhost blob: https://studio.tayang.app http://localhost:8787 http://127.0.0.1:8787; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://us.i.posthog.com",
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data: blob: https://bspace.buma.internal http://localhost:8787 http://127.0.0.1:8787 https://i.ytimg.com; media-src 'self' asset: http://asset.localhost blob: https://bspace.buma.internal http://localhost:8787 http://127.0.0.1:8787; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://us.i.posthog.com",
       "assetProtocol": {
         "enable": true,
         "scope": {
@@ -63,7 +67,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVEREVFOEQ0MzI3MTVDNzEKUldSeFhIRXkxT2plN2VmMmZNQXBOL1lhS2dqeVB6aUN2dTdTV040TXlKUjM5UzVLR2txaGJNbG0K",
       "endpoints": [
-        "https://github.com/Maru-Yasa/tayang-studio/releases/latest/download/latest.json"
+        "https://github.com/<github-owner>/bspace-sdlc-app/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

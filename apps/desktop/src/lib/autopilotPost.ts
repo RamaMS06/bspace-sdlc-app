@@ -1,4 +1,4 @@
-import type { Autopilot, AutopilotSlot, Project } from '@tayang/shared';
+import type { Autopilot, AutopilotSlot, Project } from '@bspace-sdlc-app/shared';
 import { socialPost } from '@/lib/cloud';
 import { approveProject, listAutopilots, listSlots, updateSlot } from '@/lib/ipc';
 import { captionOf, readPostDraft } from '@/lib/postDraft';
@@ -26,7 +26,7 @@ export async function postAutopilotVideo(project: Pick<Project, 'id' | 'title'>,
     });
     return null;
   } catch (e) {
-    console.error('Tayang: autopilot post failed', e);
+    console.error('Buma: autopilot post failed', e);
     return stored('autopilot.slot.postFailed');
   }
 }

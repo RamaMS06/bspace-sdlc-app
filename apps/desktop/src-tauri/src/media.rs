@@ -207,8 +207,8 @@ fn changed_at(meta: &std::fs::Metadata) -> Option<std::time::SystemTime> {
 }
 
 const IMAGE_EXTS: [&str; 5] = ["png", "jpg", "jpeg", "webp", "gif"];
-/// Folders never searched for images: dependencies, git, Tayang's own scratch, and every dot folder.
-const SKIP_DIRS: [&str; 3] = ["node_modules", ".git", ".tayang"];
+/// Folders never searched for images: dependencies, git, Buma's own scratch, and every dot folder.
+const SKIP_DIRS: [&str; 3] = ["node_modules", ".git", ".buma"];
 const IMAGES_MAX_DEPTH: usize = 6;
 const IMAGES_MAX_ENTRIES: usize = 5_000;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
@@ -827,16 +827,16 @@ fn build_into(tools: &MediaTools, source: &Path, dir: &Path, limit: std::time::D
     Some(clip_ok)
 }
 
-/// `<working>/.tayang/style-study`, only when it is the real thing: the working folder is absolute, and neither
-/// `.tayang` nor `style-study` is a symlink (so nothing can point the deletes elsewhere). `Ok(None)` when it
+/// `<working>/.buma/style-study`, only when it is the real thing: the working folder is absolute, and neither
+/// `.buma` nor `style-study` is a symlink (so nothing can point the deletes elsewhere). `Ok(None)` when it
 /// doesn't exist yet.
 fn confined_study_root(working: &Path) -> Result<Option<PathBuf>> {
     if !working.is_absolute() {
         return Err("The working folder must be an absolute path".into());
     }
-    let tayang = working.join(".tayang");
-    let root = tayang.join("style-study");
-    for p in [&tayang, &root] {
+    let buma = working.join(".buma");
+    let root = buma.join("style-study");
+    for p in [&buma, &root] {
         match std::fs::symlink_metadata(p) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(e) => return Err(e.to_string()),
@@ -846,14 +846,14 @@ fn confined_study_root(working: &Path) -> Result<Option<PathBuf>> {
             Ok(_) => {}
         }
     }
-    let want = std::fs::canonicalize(working).map_err(|e| e.to_string())?.join(".tayang").join("style-study");
+    let want = std::fs::canonicalize(working).map_err(|e| e.to_string())?.join(".buma").join("style-study");
     if std::fs::canonicalize(&root).map_err(|e| e.to_string())? != want {
         return Err("The study folder is not where it should be".into());
     }
     Ok(Some(root))
 }
 
-/// Deletes one study's folder `<working>/.tayang/style-study/<id>` (the download, frames, everything). The id
+/// Deletes one study's folder `<working>/.buma/style-study/<id>` (the download, frames, everything). The id
 /// is validated and the study root must be the real folder inside the working folder; a missing folder is
 /// fine, a symlinked study folder is removed as a link without following it.
 pub fn remove_study_dir(working: &Path, study_id: &str) -> Result<()> {
@@ -902,7 +902,7 @@ pub fn render_args(folder: &Path) -> Vec<String> {
     ]
 }
 
-/// What `tayang.json` asks for (`engine` and `readme` are for the agent, not for rendering).
+/// What `buma.json` asks for (`engine` and `readme` are for the agent, not for rendering).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 struct RenderManifest {
     render: Vec<String>,
@@ -939,22 +939,22 @@ fn check_allowed_program(argv: &[String]) -> Result<()> {
     if bare && ALLOWED_PROGRAMS.contains(&base.as_str()) {
         Ok(())
     } else {
-        Err(format!("This template asks to run {name}, which Tayang doesn't allow"))
+        Err(format!("This template asks to run {name}, which Buma doesn't allow"))
     }
 }
 
-/// `Ok(None)` when the folder has no `tayang.json` (use the HyperFrames default).
+/// `Ok(None)` when the folder has no `buma.json` (use the HyperFrames default).
 pub fn render_plan(folder: &Path, unix_secs: u64) -> Result<Option<RenderPlan>> {
-    let path = folder.join("tayang.json");
+    let path = folder.join("buma.json");
     let raw = match std::fs::read_to_string(&path) {
         Ok(r) => r,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(format!("could not read tayang.json: {e}")),
+        Err(e) => return Err(format!("could not read buma.json: {e}")),
     };
     let m: RenderManifest =
-        serde_json::from_str(&raw).map_err(|e| format!("tayang.json is not valid: {e}"))?;
+        serde_json::from_str(&raw).map_err(|e| format!("buma.json is not valid: {e}"))?;
     if m.render.is_empty() {
-        return Err("tayang.json has an empty render command".into());
+        return Err("buma.json has an empty render command".into());
     }
     check_allowed_program(&m.render)?;
     if let Some(install) = &m.install {
@@ -971,7 +971,7 @@ pub fn render_plan(folder: &Path, unix_secs: u64) -> Result<Option<RenderPlan>> 
     Ok(Some(RenderPlan { install, render, output }))
 }
 
-/// The render command to show the user: the `tayang.json` one, or `None` for the HyperFrames default.
+/// The render command to show the user: the `buma.json` one, or `None` for the HyperFrames default.
 pub fn render_command(folder: &Path, unix_secs: u64) -> Result<Option<RenderPlan>> {
     render_plan(folder, unix_secs)
 }
@@ -1327,7 +1327,7 @@ mod tests {
     fn study_dirs_are_removed_inside_the_working_folder_only() {
         let tmp = tempfile::tempdir().unwrap();
         let working = tmp.path().join("work");
-        let root = working.join(".tayang").join("style-study");
+        let root = working.join(".buma").join("style-study");
         let a = root.join("a1");
         let b = root.join("b2");
         for d in [&a, &b] {
@@ -1348,7 +1348,7 @@ mod tests {
     fn removing_a_study_dir_that_is_a_symlink_only_removes_the_link() {
         let tmp = tempfile::tempdir().unwrap();
         let working = tmp.path().join("work");
-        let root = working.join(".tayang").join("style-study");
+        let root = working.join(".buma").join("style-study");
         std::fs::create_dir_all(&root).unwrap();
         let outside = tmp.path().join("outside");
         std::fs::create_dir_all(&outside).unwrap();
@@ -1358,7 +1358,7 @@ mod tests {
         assert!(outside.join("keep.txt").exists());
     }
 
-    /// `<tmp>/work` with `.tayang`, and a victim folder with a file that must survive.
+    /// `<tmp>/work` with `.buma`, and a victim folder with a file that must survive.
     #[cfg(unix)]
     fn confinement_fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
         let tmp = tempfile::tempdir().unwrap();
@@ -1378,11 +1378,11 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn a_symlinked_tayang_folder_is_never_swept_or_followed() {
+    fn a_symlinked_buma_folder_is_never_swept_or_followed() {
         let (_t, work, victim) = confinement_fixture();
         std::fs::create_dir_all(victim.join("style-study").join("study1")).unwrap();
         std::fs::write(victim.join("style-study").join("study1").join("b.txt"), "x").unwrap();
-        std::os::unix::fs::symlink(&victim, work.join(".tayang")).unwrap();
+        std::os::unix::fs::symlink(&victim, work.join(".buma")).unwrap();
         sweep_study_dirs(&work);
         assert!(remove_study_dir(&work, "study1").is_err());
         assert_untouched(&victim);
@@ -1394,9 +1394,9 @@ mod tests {
     fn a_symlinked_study_root_is_never_swept_or_followed() {
         for target in ["victim", "work"] {
             let (_t, work, victim) = confinement_fixture();
-            std::fs::create_dir_all(work.join(".tayang")).unwrap();
+            std::fs::create_dir_all(work.join(".buma")).unwrap();
             let goal = if target == "victim" { victim.clone() } else { work.clone() };
-            std::os::unix::fs::symlink(&goal, work.join(".tayang").join("style-study")).unwrap();
+            std::os::unix::fs::symlink(&goal, work.join(".buma").join("style-study")).unwrap();
             if target == "work" {
                 std::fs::create_dir_all(work.join("study1")).unwrap();
                 std::fs::write(work.join("study1").join("project.txt"), "x").unwrap();
@@ -1414,7 +1414,7 @@ mod tests {
     #[test]
     fn a_symlinked_study_folder_is_unlinked_not_followed_by_the_sweep() {
         let (_t, work, victim) = confinement_fixture();
-        let root = work.join(".tayang").join("style-study");
+        let root = work.join(".buma").join("style-study");
         std::fs::create_dir_all(&root).unwrap();
         std::os::unix::fs::symlink(&victim, root.join("evil")).unwrap();
         std::fs::create_dir_all(root.join("real1")).unwrap();
@@ -1428,7 +1428,7 @@ mod tests {
     fn the_sweep_only_deletes_children_named_like_study_ids() {
         let tmp = tempfile::tempdir().unwrap();
         let work = tmp.path().join("work");
-        let root = work.join(".tayang").join("style-study");
+        let root = work.join(".buma").join("style-study");
         for n in ["abc123", "has space", ".hidden", "é"] {
             std::fs::create_dir_all(root.join(n)).unwrap();
         }
@@ -1442,7 +1442,7 @@ mod tests {
     #[test]
     fn a_relative_working_folder_is_refused() {
         let rel = PathBuf::from(format!("target/rel-sweep-{}", std::process::id()));
-        let kept = rel.join(".tayang").join("style-study").join("a1");
+        let kept = rel.join(".buma").join("style-study").join("a1");
         std::fs::create_dir_all(&kept).unwrap();
         sweep_study_dirs(&rel);
         assert!(remove_study_dir(&rel, "a1").is_err());
@@ -1455,7 +1455,7 @@ mod tests {
     fn the_startup_sweep_deletes_every_study_folder() {
         let tmp = tempfile::tempdir().unwrap();
         let working = tmp.path().join("work");
-        let root = working.join(".tayang").join("style-study");
+        let root = working.join(".buma").join("style-study");
         for id in ["a", "b"] {
             std::fs::create_dir_all(root.join(id)).unwrap();
             std::fs::write(root.join(id).join("source.mp4"), "x").unwrap();
@@ -1512,7 +1512,7 @@ mod tests {
         w("art/empty.png", b"");
         w("node_modules/pkg/f.png", b"x");
         w(".git/g.png", b"x");
-        w(".tayang/frames/h.png", b"x");
+        w(".buma/frames/h.png", b"x");
         w(".cache/i.png", b"x");
         w("1/2/3/4/5/deep.png", b"x");
         w("1/2/3/4/5/6/too-deep.png", b"x");
@@ -1964,13 +1964,13 @@ mod tests {
     }
 
     #[test]
-    fn render_plan_reads_tayang_json() {
+    fn render_plan_reads_buma_json() {
         let tmp = tempfile::tempdir().unwrap();
         let folder = tmp.path().join("my-video");
         std::fs::create_dir_all(&folder).unwrap();
-        assert!(render_plan(&folder, 1700).unwrap().is_none(), "no tayang.json means HyperFrames");
+        assert!(render_plan(&folder, 1700).unwrap().is_none(), "no buma.json means HyperFrames");
         std::fs::write(
-            folder.join("tayang.json"),
+            folder.join("buma.json"),
             r#"{"engine":"remotion","render":["npx","remotion","render","src/index.ts","Geo","{output}","--gl=angle"],"install":["npm","install"],"readme":"STYLE.md"}"#,
         )
         .unwrap();
@@ -1993,13 +1993,13 @@ mod tests {
         let folder = tmp.path().join("v");
         std::fs::create_dir_all(&folder).unwrap();
         assert_eq!(render_command(&folder, 5).unwrap(), None);
-        std::fs::write(folder.join("tayang.json"), r#"{"render":["npx","remotion","render","{output}"]}"#).unwrap();
+        std::fs::write(folder.join("buma.json"), r#"{"render":["npx","remotion","render","{output}"]}"#).unwrap();
         let out = Path::new("renders").join("v-5.mp4");
         let plan = render_command(&folder, 5).unwrap().unwrap();
         assert_eq!(plan.render, ["npx", "remotion", "render", out.to_str().unwrap()]);
         assert_eq!(plan.install, None);
         std::fs::write(
-            folder.join("tayang.json"),
+            folder.join("buma.json"),
             r#"{"render":["npx","remotion","render","{output}"],"install":["npm","install"]}"#,
         )
         .unwrap();
@@ -2012,14 +2012,14 @@ mod tests {
     #[test]
     fn render_plan_rejects_bad_manifest() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(tmp.path().join("tayang.json"), r#"{"render":[]}"#).unwrap();
+        std::fs::write(tmp.path().join("buma.json"), r#"{"render":[]}"#).unwrap();
         assert!(render_plan(tmp.path(), 1).is_err());
-        std::fs::write(tmp.path().join("tayang.json"), "nope").unwrap();
+        std::fs::write(tmp.path().join("buma.json"), "nope").unwrap();
         assert!(render_plan(tmp.path(), 1).is_err());
     }
 
     #[test]
-    fn render_runs_tayang_json_without_a_shell() {
+    fn render_runs_buma_json_without_a_shell() {
         if crate::system::Exec::which(&crate::system::RealExec, "node").is_none() {
             eprintln!("skipping: node not found");
             return;
@@ -2028,7 +2028,7 @@ mod tests {
         let folder = tmp.path().join("p q");
         std::fs::create_dir_all(&folder).unwrap();
         std::fs::write(
-            folder.join("tayang.json"),
+            folder.join("buma.json"),
             r#"{"render":["node","-e","require('fs').writeFileSync(process.argv[1],'x')","{output}"]}"#,
         )
         .unwrap();
@@ -2042,16 +2042,16 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         for bad in ["sh", "./x", "/bin/sh", "curl", "../npx", "node/../sh", ""] {
             let m = format!(r#"{{"render":["{bad}","{{output}}"]}}"#);
-            std::fs::write(tmp.path().join("tayang.json"), m).unwrap();
+            std::fs::write(tmp.path().join("buma.json"), m).unwrap();
             let e = render_plan(tmp.path(), 1).unwrap_err();
-            assert!(e.contains("which Tayang doesn't allow"), "{bad}: {e}");
+            assert!(e.contains("which Buma doesn't allow"), "{bad}: {e}");
         }
-        std::fs::write(tmp.path().join("tayang.json"), r#"{"render":["npx","x"],"install":["sh","-c","x"]}"#).unwrap();
+        std::fs::write(tmp.path().join("buma.json"), r#"{"render":["npx","x"],"install":["sh","-c","x"]}"#).unwrap();
         assert!(render_plan(tmp.path(), 1).unwrap_err().contains("asks to run sh"));
-        std::fs::write(tmp.path().join("tayang.json"), r#"{"render":["npx","x"],"install":[]}"#).unwrap();
+        std::fs::write(tmp.path().join("buma.json"), r#"{"render":["npx","x"],"install":[]}"#).unwrap();
         assert!(render_plan(tmp.path(), 1).is_err(), "empty install argv");
         for ok in ["npx", "npm", "node", "pnpm", "bun", "yarn"] {
-            std::fs::write(tmp.path().join("tayang.json"), format!(r#"{{"render":["{ok}"]}}"#)).unwrap();
+            std::fs::write(tmp.path().join("buma.json"), format!(r#"{{"render":["{ok}"]}}"#)).unwrap();
             assert!(render_plan(tmp.path(), 1).unwrap().is_some(), "{ok}");
         }
     }

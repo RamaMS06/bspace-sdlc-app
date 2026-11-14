@@ -1,21 +1,37 @@
 import * as React from 'react';
 import { Button as UiButton } from '@/components/ui/button';
+import { bumaButtonClass, type BumaButtonProps } from '@/components/buma/Button';
 import { cn } from '@/lib/utils';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'light';
 
-const MAP: Record<ButtonVariant, { variant: 'default' | 'secondary' | 'ghost'; className: string }> = {
-  primary: { variant: 'default', className: 'font-semibold hover:bg-accent-hover' },
-  secondary: { variant: 'secondary', className: 'border border-hairline hover:bg-hairline' },
-  ghost: { variant: 'ghost', className: 'text-text-2 hover:text-foreground' },
-  light: { variant: 'default', className: 'bg-foreground text-ink hover:bg-foreground/90' },
+/**
+ * The app's button: always the BUMA Design System button (components/buma/Button.tsx), exactly as the
+ * Vue source draws it. `primary` and `light` are BUMA primary (approve); `secondary` and `ghost` are
+ * BUMA secondary. The BUMA look wins over a caller's className (size, padding, radius, colors), so only
+ * layout classes (margins, flex, width) take effect. Built on the shadcn button so `asChild` keeps working.
+ */
+const MAP: Record<ButtonVariant, { variant: 'default' | 'secondary'; buma: BumaButtonProps['variant'] }> = {
+  primary: { variant: 'default', buma: 'primary' },
+  light: { variant: 'default', buma: 'primary' },
+  secondary: { variant: 'secondary', buma: 'secondary' },
+  ghost: { variant: 'secondary', buma: 'secondary' },
 };
 
 export interface ButtonProps extends Omit<React.ComponentProps<typeof UiButton>, 'variant'> {
   variant?: ButtonVariant;
+  /** BUMA modifiers. */
+  condition?: BumaButtonProps['condition'];
+  outline?: boolean;
+  small?: boolean;
+  block?: boolean;
+  pill?: boolean;
+  iconOnly?: boolean;
 }
 
-export function Button({ variant = 'primary', className, ...props }: ButtonProps) {
+export function Button({ variant = 'primary', condition, outline, small, block, pill, iconOnly, size, className, ...props }: ButtonProps) {
   const m = MAP[variant];
-  return <UiButton variant={m.variant} className={cn('h-9 rounded-md px-4 text-[14px]', m.className, className)} {...props} />;
+  const icon = iconOnly ?? (typeof size === 'string' && size.startsWith('icon'));
+  const buma = bumaButtonClass({ variant: m.buma, condition, outline, small, block, pill, iconOnly: icon });
+  return <UiButton variant={m.variant} className={cn(className, buma)} {...props} />;
 }

@@ -2,13 +2,24 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { Button } from '@/components/Button';
+import { bumaButtonClass } from '@/components/buma/Button';
+import { cn } from '@/lib/utils';
 import { useClaudeAccount } from '@/state/claudeAccount';
 
 /**
- * Tayang's own Claude sign-in: who is signed in, and a button to sign in (Claude Code opens the
+ * Buma's own Claude sign-in: who is signed in, and a button to sign in (Claude Code opens the
  * browser) or out. `onSignedIn` runs once a sign-in from here succeeds.
  */
-export function ClaudeAccountControl({ onSignedIn, showSignOut = false }: { onSignedIn?: () => void; showSignOut?: boolean }) {
+export function ClaudeAccountControl({
+  onSignedIn,
+  showSignOut = false,
+  hideSignedInLabel = false,
+}: {
+  onSignedIn?: () => void;
+  showSignOut?: boolean;
+  /** The row around it already says who is signed in. */
+  hideSignedInLabel?: boolean;
+}) {
   const { t } = useTranslation();
   const { account, signingIn, url, error, refresh, signIn, cancel, signOut } = useClaudeAccount();
 
@@ -35,9 +46,11 @@ export function ClaudeAccountControl({ onSignedIn, showSignOut = false }: { onSi
         </div>
       ) : account?.signedIn ? (
         <div className="flex items-center gap-2">
-          <span className="text-[13px] text-text-2">
-            {account.email ? t('claudeAccount.signedInAs', { email: account.email }) : t('claudeAccount.signedIn')}
-          </span>
+          {!hideSignedInLabel && (
+            <span className="text-[13px] text-text-2">
+              {account.email ? t('claudeAccount.signedInAs', { email: account.email }) : t('claudeAccount.signedIn')}
+            </span>
+          )}
           {showSignOut && (
             <Button variant="ghost" className="h-8 px-2 text-[13px]" onClick={() => void signOut()}>
               {t('claudeAccount.signOut')}
@@ -50,12 +63,12 @@ export function ClaudeAccountControl({ onSignedIn, showSignOut = false }: { onSi
         </Button>
       )}
       {signingIn && url && (
-        <button type="button" className="text-xs text-primary hover:text-accent-hover" onClick={() => void openUrl(url)}>
+        <button type="button" className={bumaButtonClass({ variant: 'secondary', small: true })} onClick={() => void openUrl(url)}>
           {t('claudeAccount.openPage')}
         </button>
       )}
       {error && !signingIn && (
-        <span role="alert" className="text-xs text-orange-light">
+        <span role="alert" className="text-xs text-error">
           {t('claudeAccount.failed', { reason: error })}
         </span>
       )}

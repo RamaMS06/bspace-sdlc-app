@@ -1,5 +1,5 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
-import type { UserSkill } from '@tayang/skills';
+import type { UserSkill } from '@bspace-sdlc-app/skills';
 import type {
   AgentId,
   ApiCheck,
@@ -32,11 +32,11 @@ import type {
   VoiceKeySource,
   VoiceStatus,
   QuestionResponse,
-} from '@tayang/shared';
+} from '@bspace-sdlc-app/shared';
 
 // ---- system and settings ----
 
-// Your API: the user's own provider key, run on the opencode engine Tayang downloads (api_engine.rs).
+// Your API: the user's own provider key, run on the opencode engine Buma downloads (api_engine.rs).
 export interface ApiStatus {
   provider: ApiProvider | null;
   hasKey: boolean;
@@ -53,7 +53,7 @@ export const voiceStatus = () => invoke<VoiceStatus>('voice_status');
 /** Checks the source's API key (null: the saved one); a good one is saved and that source becomes the voice source. */
 export const voiceKeySave = (source: VoiceKeySource, key: string | null) =>
   invoke<[VoiceCheck, Settings]>('voice_key_save', { source, key });
-/** Forgets the source's API key; the voice source goes back to Tayang when it was that source. */
+/** Forgets the source's API key; the voice source goes back to Buma when it was that source. */
 export const voiceKeyClear = (source: VoiceKeySource) => invoke<Settings>('voice_key_clear', { source });
 /** Whether VoiceStudio is open on this computer. */
 export const voiceStudioCheck = () => invoke<VoiceCheck>('voice_studio_check');
@@ -69,17 +69,25 @@ export interface EngineProgress {
 }
 export const getSystemInfo = () => invoke<SystemInfo>('get_system_info');
 export const detectAgents = () => invoke<AgentInfo[]>('detect_agents');
-export const checkTools = () => invoke<ToolStatus[]>('check_tools');
+/** The tools the SDLC skills need; Figma MCP is checked in `agent`'s MCP config. */
+export const checkTools = (agent?: AgentId) => invoke<ToolStatus[]>('check_tools', { agent: agent ?? null });
 export const getSettings = () => invoke<Settings>('get_settings');
-/** TAYANG_API_URL when the app was started with it: it wins over the API address in Settings. */
+/** BUMA_API_URL when the app was started with it: it wins over the API address in Settings. */
 export const apiUrlOverride = () => invoke<string | null>('api_url_override');
 export const updateSettings = (patch: Partial<Settings>) =>
   invoke<Settings>('update_settings', { patch });
 /** The operating system's preferred language (`id-ID`), or null when it can't be read. */
 export const systemLocale = () => invoke<string | null>('system_locale');
 export const pickFolder = () => invoke<string | null>('pick_folder');
+/** Attaches a folder to a chat (its agent works there from the next session), or detaches it with null. */
+export const setChatFolder = (chatId: string, folder: string | null) => invoke<Chat>('set_chat_folder', { chatId, folder });
 
 // ---- usage ----
+/** Settings › Agents › Usage: agent turns and failover lines of the last `days` days (all when omitted). */
+export const agentActivity = (days?: number) => invoke<Record<string, unknown>[]>('agent_activity', { days: days ?? null });
+/** Records that a chat moved to the next agent. */
+export const agentFailoverRecord = (chatId: string, from: string, to: string, reason: string) =>
+  invoke<void>('agent_failover_record', { chatId, from, to, reason });
 export const getAgentUsage = (force: boolean) => invoke<AgentUsage[]>('get_agent_usage', { force });
 export const getChatTrace = (chatId: string) => invoke<ChatTrace>('get_chat_trace', { chatId });
 
@@ -136,6 +144,7 @@ export const purgeArchive = () => invoke<{ chats: number; cards: number }>('purg
 export const getChat =(chatId: string) => invoke<Chat | null>('get_chat', { chatId });
 export const createChat = (projectId: string | null, agentId: AgentId, title: string) =>
   invoke<Chat>('create_chat', { projectId, agentId, title });
+export const setChatProject = (chatId: string, projectId: string) => invoke<Chat>('set_chat_project', { chatId, projectId });
 export const updateChatAgent = (chatId: string, agentId: AgentId) =>
   invoke<Chat>('update_chat_agent', { chatId, agentId });
 export const listMessages = (chatId: string) => invoke<ChatMessage[]>('list_messages', { chatId });
@@ -173,7 +182,7 @@ export const deleteJob = (id: string) => invoke<void>('delete_job', { id });
 export const setJobsArchived = (ids: string[], archived: boolean) => invoke<void>('set_jobs_archived', { ids, archived });
 
 // ---- agent ----
-/** Resolves true when Claude started without the Tayang plugin: send it the skills as text too. */
+/** Resolves true when Claude started without the Buma plugin: send it the skills as text too. */
 export const agentStart = (chatId: string, agentId: AgentId, auto?: boolean) =>
   invoke<boolean>('agent_start', auto === undefined ? { chatId, agentId } : { chatId, agentId, auto });
 /** Auto mode for the running session: the agent runs commands without asking. */
@@ -181,6 +190,11 @@ export const agentSetAuto = (chatId: string, on: boolean) => invoke<void>('agent
 export const agentPrompt = (chatId: string, parts: MessagePart[]) =>
   invoke<void>('agent_prompt', { chatId, parts });
 export const agentCancel = (chatId: string) => invoke<void>('agent_cancel', { chatId });
+/** How the agent asks before acting: every time, accepting edits, planning only, auto, or never. */
+export type PermissionMode = 'ask' | 'acceptEdits' | 'plan' | 'auto' | 'bypass';
+export const agentSetMode = (chatId: string, mode: PermissionMode) => invoke<void>('agent_set_mode', { chatId, mode });
+/** The modes the chat's running agent offers (ACP ids such as `default`, `plan`, `bypassPermissions`). */
+export const agentModes = (chatId: string) => invoke<{ available: string[]; current: string | null }>('agent_modes', { chatId });
 export const agentStop = (chatId: string) => invoke<void>('agent_stop', { chatId });
 export const agentRespondPermission = (requestId: string, optionId: string | null) =>
   invoke<void>('agent_respond_permission', { requestId, optionId });
@@ -260,6 +274,28 @@ export interface AgentModels {
   options: ModelChoice[];
 }
 /** The models an agent offers, read from a short session in a scratch folder; null when it reports none. */
+/** Every model and version an agent can run (Claude: Anthropic's list; opencode: `opencode models`; others: none). */
+export const agentModelCatalog = (agentId: AgentId) => invoke<ModelChoice[]>('agent_model_catalog', { agentId });
+/** Signs in to an agent through its own browser sign-in (OAuth); resolves once the user is done. */
+export const agentSignIn = (agentId: AgentId, method?: string) => invoke<void>('agent_sign_in', { agentId, method: method ?? null });
+/** One account of an agent (Claude, Codex and opencode can have several). */
+export interface AccountView {
+  id: string;
+  agent: AgentId;
+  account?: string | null;
+  signedIn: boolean;
+  active: boolean;
+}
+export const accountsList = () => invoke<AccountView[]>('accounts_list');
+export const accountAdd = (agentId: AgentId) => invoke<string>('account_add', { agentId });
+export const accountRemove = (agentId: AgentId, id: string) => invoke<void>('account_remove', { agentId, id });
+/** Signs one account out (for an agent's default account: its CLI's own sign-in on this computer). */
+export const accountSignOut = (agentId: AgentId, id: string) => invoke<void>('account_sign_out', { agentId, id });
+export const accountUse = (agentId: AgentId, id: string) => invoke<void>('account_use', { agentId, id });
+/** Signs one account in, in the browser; resolves once it is done. */
+export const accountSignIn = (agentId: AgentId, id: string) => invoke<void>('account_sign_in', { agentId, id });
+/** Installs an agent's CLI with npm. */
+export const agentInstall = (agentId: AgentId) => invoke<void>('agent_install', { agentId });
 export const agentModels = (agentId: AgentId) => invoke<AgentModels | null>('agent_models', { agentId });
 /** Picks the agent's model (null: its own default); a running session of `chatId` switches now. */
 export const setAgentModel = (agentId: AgentId, model: string | null, chatId: string | null) =>
