@@ -50,7 +50,7 @@ Colors come only from the BUMA Design System:
 2. `scripts/tokens.mjs` turns them into `apps/desktop/src/styles/buma-tokens.css`: `--buma-*` variables, Light on `:root`, Dark on `.dark`. Generated; do not edit by hand.
 3. `apps/desktop/src/styles/tokens.css` maps them onto the app's semantic names (`background`, `card`, `primary`, `primary-soft`, `text-2`, `error`, `success`, `warning`, `info`, …), which Tailwind exposes as classes (`bg-primary`, `text-text-2`, `border-hairline`). Components use only these names, never hex values.
 
-The theme follows the system (light or dark) and can be forced with `setTheme()` in `apps/desktop/src/lib/theme.ts`.
+The theme follows the system (light or dark) and can be forced with `setTheme()` in `apps/desktop/src/shared/lib/theme.ts`.
 
 To update colors: replace the two JSON files with a new Figma export and run `pnpm tokens`.
 
@@ -59,7 +59,7 @@ To update colors: replace the two JSON files with a new Figma export and run `pn
 The desktop app is React, and the BUMA Design System web components are Vue, so they are ported:
 
 1. `pnpm buma:pull button badge` runs buma-cli (`buma add`) against buma-registry and writes the Vue originals to `design-system/vue-source/`. They are the spec, never imported. `design-system/buma-components.json` records what was pulled.
-2. The React port lives in `apps/desktop/src/components/buma/` with the same props and variants (`BumaButton`, `BumaButtonLink`, `BumaButtonGroup`, `BumaBadge`, `BumaChips`), colored with the BUMA tokens so it follows light and dark.
+2. The React port lives in `apps/desktop/src/shared/ui/buma/` with the same props and variants (`BumaButton`, `BumaButtonLink`, `BumaButtonGroup`, `BumaBadge`, `BumaChips`), colored with the BUMA tokens so it follows light and dark.
 3. The app's `Button` (`primary` / `secondary`) renders the BUMA button.
 
 `BUMA_CLI` and `BUMA_REGISTRY` point the script at another buma-cli or registry; by default it uses the sibling `../buma-cli` and `../buma-registry/dist` checkouts.

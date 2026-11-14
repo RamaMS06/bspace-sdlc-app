@@ -289,7 +289,7 @@
   user-select: none;
 }
 
-/* BUMA Loading (components/buma/Loading.tsx): tint the Lottie SVG with the loader's colors, like the
+/* BUMA Loading (shared/ui/buma/Loading.tsx): tint the Lottie SVG with the loader's colors, like the
    Vue BLoading, and the label's moving dots. */
 .b-loader__animation svg [fill]:not([fill='none']),
 .b-loader__animation svg *[style*='fill:'] {

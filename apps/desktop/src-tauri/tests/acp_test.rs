@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use bspace_sdlc_app_lib::acp::{AcpManager, AcpSink, AutoMethod, PromptPart, SessionOptions, UsageLog};
+use bspace_sdlc_app_lib::domain::acp::{AcpManager, AcpSink, AutoMethod, PromptPart, SessionOptions, UsageLog};
 use bspace_sdlc_app_lib::types::{AgentQuestion, AgentUpdate, PermissionOptionKind, PermissionRequest, ToolCallStatus};
 
 #[derive(Default)]

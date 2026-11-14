@@ -1,213 +1,139 @@
-pub mod accounts;
-pub mod acp;
-pub mod activity;
-pub mod model_catalog;
-pub mod ai_proxy;
-pub mod api_engine;
-pub mod auth;
-pub mod claude_account;
-pub mod cloud;
-pub mod commands;
-pub mod db;
-pub mod plugins;
-pub mod devops;
-pub mod files;
-pub mod projects;
-pub mod scheduler;
-pub mod skills;
-pub mod skills_github;
-pub mod styles_sync;
-pub mod system;
-pub mod telemetry;
-pub mod types;
-pub mod trace;
-pub mod usage;
+//! BSpace SDLC's Rust side. Layers, outside in:
+//! - `commands`: the Tauri commands the webview calls (the IPC contract), thin;
+//! - `app`: the running app (managed state, start-up, events, tray);
+//! - `domain`: what the app does, one module per area;
+//! - `infra`: the database, keychain, HTTP, the Buma API, running programs;
+//! - `types`: the serde types shared with the TypeScript side.
 
-use commands::AppState;
+mod app;
+mod commands;
+pub mod domain;
+mod infra;
+#[cfg(test)]
+mod test_support;
+pub mod types;
+
+use app::{setup, tray};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         // First, so a second launch is caught before anything else starts: it shows the running window and exits.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| scheduler::show_main(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::show_main(app)))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         // Launch at login is switched on and off from Settings (the JS plugin API), only while background mode is on.
-        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![scheduler::HIDDEN_ARG])))
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![tray::HIDDEN_ARG])))
         // Updates come from the signed latest.json on GitHub Releases (endpoints and public key in tauri.conf.json);
         // the webview checks, downloads and installs, then relaunches through the process plugin.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .on_window_event(|window, event| {
             let app = window.app_handle();
-            scheduler::on_window_event(window, event, || {
-                app.try_state::<AppState>().is_some_and(|s| s.db.get_settings(&s.home).background_mode)
+            tray::on_window_event(window, event, || {
+                app.try_state::<app::state::AppState>().is_some_and(|s| s.db.get_settings(&s.home).background_mode)
             });
         })
-        .setup(|app| {
-            let home = app.path().home_dir()?;
-            let data = app.path().app_data_dir()?;
-            std::fs::create_dir_all(&data)?;
-            let db = db::Db::open(&data.join("buma.db"))?;
-            // No agent survives a restart, so nothing can still be working.
-            let _ = db.fail_stale_jobs("Buma was closed while this was running");
-            // Also records the real home so later settings updates resolve defaults against it.
-            let settings = db.get_settings(&home);
-            let working = settings.working_folder.clone();
-            commands::allow_asset_folders(app.handle(), &db, &working);
-            app.manage(usage::UsageCache::default());
-            app.manage(commands::ClaudeSignIn::default());
-            app.manage(commands::ApiKeys::new(&data));
-            app.manage(commands::EngineInstall::default());
-            let api_url = styles_sync::effective_api_url(&settings);
-            app.manage(AppState {
-                db,
-                acp: acp::AcpManager::new(),
-                home,
-            });
-            // Signed in? Checked against the API in the background; the UI listens for the answer.
-            let auth = commands::auth_manager(app.handle(), &data)?;
-            app.manage(auth.clone());
-            tauri::async_runtime::spawn(async move { auth.refresh(&api_url).await });
-            // A tray that can't be made never crashes the start: background mode goes off, the window stays.
-            if scheduler::sync_tray(app.handle(), &settings).is_err() {
-                if let Some(state) = app.try_state::<AppState>() {
-                    let _ = scheduler::background_off(&state.db);
-                }
-            }
-            // A login launch starts in the tray, when there is one.
-            let args: Vec<String> = std::env::args().collect();
-            if scheduler::launched_hidden(&args) && scheduler::has_tray(app.handle()) {
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.hide();
-                }
-            }
-            // The agents' AI images, paid with the user's credits (see ai_proxy).
-            tauri::async_runtime::spawn(commands::start_ai_proxy(app.handle().clone()));
-            // Anonymous install ping, in the background; never blocks the UI, failures are ignored.
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let info = tauri::async_runtime::spawn_blocking(|| system::system_info(&system::RealExec)).await;
-                if let (Ok(info), Some(state)) = (info, handle.try_state::<AppState>()) {
-                    telemetry::ping_if_due(&state.db, &state.home, &info, chrono::Utc::now()).await;
-                }
-            });
-            Ok(())
-        })
+        .setup(setup::setup)
         .invoke_handler(tauri::generate_handler![
-            commands::get_system_info,
-            commands::system_locale,
-            commands::detect_agents,
-            commands::skills_list,
-            commands::plugins_list,
-            commands::plugin_stage_folder,
-            commands::plugin_stage_zip,
-            commands::plugin_stage_github,
-            commands::plugin_install,
-            commands::plugin_discard,
-            commands::plugin_remove,
-            commands::plugin_set_enabled,
-            commands::skill_read,
-            commands::skill_save,
-            commands::skill_set_enabled,
-            commands::skill_delete,
-            commands::skill_import,
-            commands::skill_github_fetch,
-            commands::skill_github_install,
-            commands::skill_github_discard,
-            commands::api_status,
-            commands::api_check,
-            commands::api_try,
-            commands::api_reachable,
-            commands::api_save,
-            commands::api_clear,
-            commands::engine_install,
-            commands::check_tools,
-            commands::claude_account,
-            commands::claude_sign_in,
-            commands::claude_sign_in_cancel,
-            commands::claude_sign_out,
-            commands::devops_status,
-            commands::devops_sign_in,
-            commands::devops_microsoft_sign_in,
-            commands::devops_sign_out,
-            commands::get_settings,
-            commands::update_settings,
-            commands::pick_folder,
-            commands::list_projects,
-            commands::create_project,
-            commands::update_project,
-            commands::set_project_status,
-            commands::list_chats,
-            commands::project_files,
-            commands::find_project_files,
-            commands::read_project_file,
-            commands::open_project_folder,
-            commands::set_agent_model,
-            commands::agent_models,
-            commands::api_url_override,
-            commands::cloud_usage,
-            commands::list_recent_chats,
-            commands::list_archived_chats,
-            commands::set_thread_archived,
-            commands::purge_archive,
-            commands::get_chat,
-            commands::create_chat,
-            commands::update_chat_agent,
-            commands::list_messages,
-            commands::add_message,
-            commands::list_jobs,
-            commands::upsert_job,
-            commands::delete_job,
-            commands::set_jobs_archived,
-            commands::attach_file,
-            commands::agent_start,
-            commands::agent_prompt,
-            commands::agent_set_auto,
-            commands::agent_cancel,
-            commands::set_chat_folder,
-            commands::set_chat_project,
-            commands::agent_set_mode,
-            commands::agent_modes,
-            commands::agent_stop,
-            commands::agent_respond_permission,
-            commands::agent_respond_question,
-            commands::get_agent_usage,
-            commands::agent_activity,
-            commands::agent_model_catalog,
-            commands::agent_sign_in,
-            commands::agent_install,
-            commands::accounts_list,
-            commands::account_add,
-            commands::account_remove,
-            commands::account_use,
-            commands::account_sign_out,
-            commands::account_sign_in,
-            commands::agent_failover_record,
-            commands::get_chat_trace,
-            commands::auth_start,
-            commands::auth_cancel,
-            commands::auth_status,
-            commands::auth_logout,
+            commands::system::get_system_info,
+            commands::system::system_locale,
+            commands::system::detect_agents,
+            commands::skills::skills_list,
+            commands::plugins::plugins_list,
+            commands::plugins::plugin_stage_folder,
+            commands::plugins::plugin_stage_zip,
+            commands::plugins::plugin_stage_github,
+            commands::plugins::plugin_install,
+            commands::plugins::plugin_discard,
+            commands::plugins::plugin_remove,
+            commands::plugins::plugin_set_enabled,
+            commands::skills::skill_read,
+            commands::skills::skill_save,
+            commands::skills::skill_set_enabled,
+            commands::skills::skill_delete,
+            commands::skills::skill_import,
+            commands::skills::skill_github_fetch,
+            commands::skills::skill_github_install,
+            commands::skills::skill_github_discard,
+            commands::api_engine::api_status,
+            commands::api_engine::api_check,
+            commands::api_engine::api_try,
+            commands::api_engine::api_reachable,
+            commands::api_engine::api_save,
+            commands::api_engine::api_clear,
+            commands::api_engine::engine_install,
+            commands::system::check_tools,
+            commands::claude_account::claude_account,
+            commands::claude_account::claude_sign_in,
+            commands::claude_account::claude_sign_in_cancel,
+            commands::claude_account::claude_sign_out,
+            commands::devops::devops_status,
+            commands::devops::devops_sign_in,
+            commands::devops::devops_microsoft_sign_in,
+            commands::devops::devops_sign_out,
+            commands::settings::get_settings,
+            commands::settings::update_settings,
+            commands::system::pick_folder,
+            commands::projects::list_projects,
+            commands::projects::create_project,
+            commands::projects::update_project,
+            commands::projects::set_project_status,
+            commands::chats::list_chats,
+            commands::files::project_files,
+            commands::files::find_project_files,
+            commands::files::read_project_file,
+            commands::files::open_project_folder,
+            commands::agents::set_agent_model,
+            commands::agents::agent_models,
+            commands::settings::api_url_override,
+            commands::usage::cloud_usage,
+            commands::chats::list_recent_chats,
+            commands::chats::list_archived_chats,
+            commands::chats::set_thread_archived,
+            commands::chats::purge_archive,
+            commands::chats::get_chat,
+            commands::chats::create_chat,
+            commands::chats::update_chat_agent,
+            commands::chats::list_messages,
+            commands::chats::add_message,
+            commands::jobs::list_jobs,
+            commands::jobs::upsert_job,
+            commands::jobs::delete_job,
+            commands::jobs::set_jobs_archived,
+            commands::chats::attach_file,
+            commands::agents::agent_start,
+            commands::agents::agent_prompt,
+            commands::agents::agent_set_auto,
+            commands::agents::agent_cancel,
+            commands::chats::set_chat_folder,
+            commands::chats::set_chat_project,
+            commands::agents::agent_set_mode,
+            commands::agents::agent_modes,
+            commands::agents::agent_stop,
+            commands::agents::agent_respond_permission,
+            commands::agents::agent_respond_question,
+            commands::usage::get_agent_usage,
+            commands::usage::agent_activity,
+            commands::agents::agent_model_catalog,
+            commands::agents::agent_sign_in,
+            commands::agents::agent_install,
+            commands::accounts::accounts_list,
+            commands::accounts::account_add,
+            commands::accounts::account_remove,
+            commands::accounts::account_use,
+            commands::accounts::account_sign_out,
+            commands::accounts::account_sign_in,
+            commands::usage::agent_failover_record,
+            commands::chats::get_chat_trace,
+            commands::auth::auth_start,
+            commands::auth::auth_cancel,
+            commands::auth::auth_status,
+            commands::auth::auth_logout,
         ])
         .build(tauri::generate_context!())
         .expect("error while building BSpace SDLC");
-    app.run(|handle, event| {
-        // Clicking the dock icon brings back a window hidden by background mode.
-        #[cfg(target_os = "macos")]
-        if matches!(event, tauri::RunEvent::Reopen { .. }) {
-            scheduler::show_main(handle);
-        }
-        if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
-            if let Some(auth) = handle.try_state::<std::sync::Arc<auth::Auth>>() {
-                auth.shutdown();
-            }
-            // Don't leave agent processes behind.
-            if let Some(state) = handle.try_state::<AppState>() {
-                tauri::async_runtime::block_on(state.acp.stop_all());
-            }
-        }
-    });
+    app.run(setup::on_run_event);
 }

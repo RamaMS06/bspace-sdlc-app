@@ -1,5 +1,5 @@
 // Pulls BUMA Design System Vue components with buma-cli into design-system/vue-source/ as the reference
-// for their React ports in apps/desktop/src/components/buma/. The desktop app is React, so the Vue files
+// for their React ports in apps/desktop/src/shared/ui/buma/. The desktop app is React, so the Vue files
 // are never imported: they are the spec (props, variants, styles) a port must match.
 //
 //   pnpm buma:pull button badge chips
@@ -49,4 +49,4 @@ for (const name of components) {
   lock.components[name] = { ...(lock.components[name] ?? {}), pulled: today, registry: registry ? 'local' : 'azure' };
 }
 writeFileSync(LOCK, JSON.stringify(lock, null, 2) + '\n');
-console.log(`\nPulled ${components.join(', ')} into design-system/vue-source/. Port them in apps/desktop/src/components/buma/.`);
+console.log(`\nPulled ${components.join(', ')} into design-system/vue-source/. Port them in apps/desktop/src/shared/ui/buma/.`);

@@ -5,5 +5,5 @@
   "tsx": true,
   "tailwind": { "config": "", "css": "src/styles/tokens.css", "baseColor": "neutral", "cssVariables": true, "prefix": "" },
   "iconLibrary": "lucide",
-  "aliases": { "components": "@/components", "utils": "@/lib/utils", "ui": "@/components/ui", "lib": "@/lib", "hooks": "@/hooks" }
+  "aliases": { "components": "@/shared/ui", "utils": "@/shared/lib/utils", "ui": "@/shared/ui/primitives", "lib": "@/shared/lib", "hooks": "@/shared/hooks" }
 }
