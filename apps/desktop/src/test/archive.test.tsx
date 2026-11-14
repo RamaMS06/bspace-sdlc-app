@@ -16,8 +16,7 @@ vi.mock('@/lib/ipc', () => ({
   getChat: vi.fn().mockResolvedValue(null),
 }));
 vi.mock('@/lib/events', () => ({
-  onQuestion: vi.fn(async () => () => {}),
-  onAgentAction: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}) }));
+  onQuestion: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}) }));
 
 import * as ipc from '@/lib/ipc';
 import { ArchiveSection } from '@/components/ArchiveSection';
@@ -46,7 +45,6 @@ const job = (id: string, status: Job['status'], extra: Partial<Job> = {}): Job =
   status,
   progress: null,
   note: null,
-  sourceUrl: null,
   updatedAt: '2026-11-01T00:00:00Z',
   ...extra,
 });

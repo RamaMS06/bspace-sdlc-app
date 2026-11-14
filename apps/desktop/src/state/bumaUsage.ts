@@ -6,18 +6,18 @@ import { cloudErrorCode, cloudUsage, type CloudErrorCode } from '@/lib/cloud';
 export const BUMA_USAGE_EVERY_MS = 5 * 60 * 1000;
 
 interface BumaUsageState {
-  /** The signed-in account's credits, auto-posts and gifts; null signed out or not loaded yet. */
+  /** The signed-in account's AI credits; null signed out or not loaded yet. */
   usage: UsageResponse | null;
   error: CloudErrorCode | null;
   loading: boolean;
-  /** Fetches it again (after a redeem, a post, or the user's refresh). */
+  /** Fetches it again (the user's refresh). */
   load(): Promise<void>;
   /** Signed out: forget it. */
   clear(): void;
 }
 
 /**
- * The Buma account's usage, shared by the sidebar, Settings › Usage and the gift code card, so one
+ * The Buma account's usage, shared by the status bar and Settings › Usage, so one
  * fetch updates all of them.
  */
 export const useBumaUsage = create<BumaUsageState>((set) => ({

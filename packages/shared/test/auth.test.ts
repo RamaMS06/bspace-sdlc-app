@@ -8,7 +8,7 @@ describe('isAuthTokenError', () => {
   });
   it('rejects anything else', () => {
     expect(isAuthTokenError({ error: 'unauthorized' })).toBe(false);
-    expect(isAuthTokenError({ token: 'tyg_x' })).toBe(false);
+    expect(isAuthTokenError({ token: 'tok_x' })).toBe(false);
     expect(isAuthTokenError(null)).toBe(false);
     expect(isAuthTokenError('slow_down')).toBe(false);
   });

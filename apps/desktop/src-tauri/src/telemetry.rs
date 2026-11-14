@@ -1,5 +1,5 @@
 //! Anonymous install ping: a random install id, the OS and its version, the CPU architecture
-//! and the app version, at most once a day. Nothing about the user, their videos or their paths.
+//! and the app version, at most once a day. Nothing about the user, their work or their paths.
 
 use crate::db::Db;
 use crate::types::*;

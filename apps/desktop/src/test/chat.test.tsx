@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import type { AgentUpdate, Chat, PermissionRequest, Project, Settings, Style } from '@bspace-sdlc-app/shared';
+import type { AgentUpdate, Chat, PermissionRequest, Project, Settings } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/lib/ipc', () => ({
   listProjects: vi.fn(),
@@ -12,10 +12,6 @@ vi.mock('@/lib/ipc', () => ({
   findProjectFiles: vi.fn(async () => []),
   readProjectFile: vi.fn(),
   createProject: vi.fn(),
-  makeStyleSheets: vi.fn(async () => []),
-  keepStyleRefs: vi.fn(async () => []),
-  copyStyleRefs: vi.fn(async () => 0),
-  updateProject: vi.fn(),
   setProjectStatus: vi.fn(),
   listChats: vi.fn(),
   getChat: vi.fn(),
@@ -31,22 +27,11 @@ vi.mock('@/lib/ipc', () => ({
   agentStop: vi.fn().mockResolvedValue(undefined),
   agentRespondPermission: vi.fn(),
   getSettings: vi.fn(),
-  listStyles: vi.fn(),
-  syncStyles: vi.fn().mockResolvedValue({ styles: [], offline: false }),
-  mediaLatestRender: vi.fn().mockResolvedValue(null),
-  latestRenderInfo: vi.fn().mockResolvedValue(null),
-  mediaProbe: vi.fn().mockResolvedValue(null),
-  mediaThumbnails: vi.fn().mockResolvedValue([]),
-  mediaExtractFrame: vi.fn(),
-  mediaRender: vi.fn(),
   upsertJob: vi.fn().mockResolvedValue(undefined),
   listJobs: vi.fn().mockResolvedValue([]),
   attachFile: vi.fn(),
   detectAgents: vi.fn(),
   updateChatAgent: vi.fn(),
-  installStyleTemplate: vi.fn(),
-  renderCommand: vi.fn().mockResolvedValue(null),
-  writeBrief: vi.fn().mockResolvedValue(undefined),
   assetUrl: (p: string) => p,
 }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
@@ -56,7 +41,6 @@ type PermCb = (r: PermissionRequest) => void;
 const handlers: { update: UpdateCb[]; perm: PermCb[] } = { update: [], perm: [] };
 vi.mock('@/lib/events', () => ({
   onQuestion: vi.fn(async () => () => {}),
-  onAgentAction: vi.fn(async () => () => {}),
   onAgentUpdate: vi.fn(async (cb: UpdateCb) => {
     handlers.update.push(cb);
     return () => {};
@@ -77,7 +61,6 @@ import { buildRecap, useChat } from '@/state/chat';
 import { useFailover } from '@/state/failover';
 import { useUsage } from '@/state/usage';
 import { StatusBar } from '@/components/StatusBar';
-import { renderTiming } from '@/lib/renderCheck';
 
 /** Attaching files through the composer's + menu. */
 async function attachFiles(user: ReturnType<typeof userEvent.setup>) {
@@ -93,7 +76,6 @@ async function toggleAuto(user: ReturnType<typeof userEvent.setup>) {
   await user.click(trigger);
   await user.click(await screen.findByRole('menuitemradio', { name: new RegExp(`^${wasAuto ? 'Ask' : 'Auto'}`) }));
 }
-import { useRender } from '@/state/render';
 
 /** What the agent got, without the session facts line a new session starts with. */
 const noFacts = <T,>(parts: T[]): T[] =>
@@ -103,10 +85,6 @@ const noFacts = <T,>(parts: T[]): T[] =>
 const settings: Settings = {
   workingFolder: '/tmp/Buma',
   defaultAgent: 'claude',
-  frameCheck: true,
-  language: 'id',
-  format: '9:16',
-  fps: 30,
   onboarded: true,
   apiUrl: 'https://bspace.buma.internal/api',
   installId: '',
@@ -116,8 +94,6 @@ const settings: Settings = {
   uiLanguage: null,
   backgroundMode: false,
   openAtLogin: false,
-  buildJobsChecked: true,
-  projectStatusChecked: true,
   agentModels: {},
 };
 
@@ -126,13 +102,7 @@ const mk = (id: string, title: string): Project => ({
   title,
   slug: id,
   folder: `/tmp/Buma/${id}`,
-  kind: 'explainer',
-  format: '9:16',
-  language: 'id',
   status: 'building',
-  styleId: null,
-  scheduledAt: null, reviewState: 'none', postedAt: null, remindedAt: null, reviewRemindedAt: null,
-  durationSec: null,
   createdAt: '2026-11-01T00:00:00Z',
   updatedAt: '2026-11-01T00:00:00Z',
 });
@@ -152,15 +122,12 @@ const emit = (chatId: string, update: AgentUpdate) =>
   });
 
 beforeEach(() => {
-  renderTiming.stableMs = 0;
   vi.clearAllMocks();
   handlers.update.length = 0;
   handlers.perm.length = 0;
   useChat.getState().reset();
   useApp.setState({ settings, route: { name: 'chat-new' } });
-  vi.mocked(ipc.renderCommand).mockResolvedValue(null);
   vi.mocked(ipc.listProjects).mockResolvedValue(projects);
-  vi.mocked(ipc.listStyles).mockResolvedValue([]);
   // Same filter as Rust: a project id lists that project's chats, none lists chats without one.
   const allChats = [chat('c1', 'p1'), chat('c0', null)];
   vi.mocked(ipc.listChats).mockImplementation(async (projectId) =>
@@ -215,7 +182,7 @@ describe('ChatNew', () => {
     expect(JSON.stringify(parts)).not.toContain('/tmp/Buma');
   });
 
-  it('sends the project folder and brief when a video is mentioned', async () => {
+  it('sends the project folder and brief when a feature is mentioned', async () => {
     const user = userEvent.setup();
     render(<ChatRoute />);
     await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'remix @');
@@ -225,7 +192,7 @@ describe('ChatNew', () => {
     const parts = vi.mocked(ipc.agentPrompt).mock.calls[0]![1];
     expect(parts.some((p) => p.type === 'mention')).toBe(true);
     expect(JSON.stringify(parts)).toContain('/tmp/Buma/p1');
-    // The agent can schedule a mentioned video by its id.
+    // The agent knows a mentioned feature by its id.
     expect(JSON.stringify(parts)).toMatch(/Its Buma id is p1\./);
   });
 });
@@ -668,21 +635,6 @@ describe('ChatProject', () => {
     expect(useChat.getState().permissions['c1']).toEqual([]);
   });
 
-  it.each([true, false])('frame check setting %s: skip line only when off', async (frameCheck) => {
-    useApp.setState({ settings: { ...settings, frameCheck } });
-    const user = userEvent.setup();
-    render(<ChatProject chatId="c1" />);
-    await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'faster');
-    await user.click(screen.getByRole('button', { name: 'Send' }));
-    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
-    const parts = noFacts(vi.mocked(ipc.agentPrompt).mock.calls[0]![1]);
-    expect(parts[0]).toEqual(
-      frameCheck ? { type: 'text', text: 'faster' } : { type: 'text', text: 'Skip the frame check this time.' },
-    );
-    // The visible message never shows the instruction.
-    expect(screen.queryByText('Skip the frame check this time.')).not.toBeInTheDocument();
-  });
-
   it('shows Stop while the agent works and cancels the turn', async () => {
     const user = userEvent.setup();
     vi.mocked(ipc.agentCancel).mockResolvedValue();
@@ -701,37 +653,26 @@ describe('ChatProject', () => {
     render(<ChatProject chatId="c1" />);
     await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'fix this');
     act(() => {
-      useChat.getState().attach('c1', { type: 'frame', projectId: 'p1', frame: 330, timeSec: 11, imagePath: '/x.png', marks: [] });
+      useChat.getState().attach('c1', { type: 'file', path: '/tmp/Buma/p1/attachments/spec.pdf', name: 'spec.pdf', mime: 'application/pdf', size: 3 });
     });
-    expect(await screen.findByText('Frame 0:11.00')).toBeInTheDocument();
+    expect(await screen.findByText('spec.pdf')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
     const parts = vi.mocked(ipc.agentPrompt).mock.calls[0]![1];
-    expect(parts.some((p) => p.type === 'frame')).toBe(true);
+    expect(parts.some((p) => p.type === 'file')).toBe(true);
     expect(useChat.getState().attachments['c1'] ?? []).toHaveLength(0);
   });
 });
 
 describe('chat persistence scope', () => {
-  it.each(['setup', 'study-abc', 'autopilot-a1', 'ideas-2026-11-02'])('never stores %s updates', async (id) => {
+  it.each(['setup'])('never stores %s updates', async (id) => {
     useChat.getState().listen();
-    await emit(id, { kind: 'tool', toolCallId: 't1', title: 'claude mcp add -s user elevenlabs -e ELEVENLABS_API_KEY=sk_real', status: 'done' });
+    await emit(id, { kind: 'tool', toolCallId: 't1', title: 'claude mcp add -s user figma -e FIGMA_TOKEN=secret', status: 'done' });
     await emit(id, { kind: 'text', text: 'done' });
     await emit(id, { kind: 'done', stopReason: 'end_turn' });
     await emit(id, { kind: 'error', message: 'x' });
     expect(ipc.addMessage).not.toHaveBeenCalled();
     expect(useChat.getState().messages[id]).toBeUndefined();
-  });
-
-  it('keeps an ideas chat in memory but never stores it', async () => {
-    useChat.getState().listen();
-    await act(async () => {
-      await useChat.getState().send('ideas-2026-11-02', [{ type: 'text', text: 'ideas' }]);
-    });
-    await emit('ideas-2026-11-02', { kind: 'text', text: 'here' });
-    await emit('ideas-2026-11-02', { kind: 'done', stopReason: 'end_turn' });
-    expect(useChat.getState().messages['ideas-2026-11-02']).toHaveLength(2);
-    expect(ipc.addMessage).not.toHaveBeenCalled();
   });
 
   it('ignores updates for chats it never loaded or started', async () => {
@@ -741,7 +682,7 @@ describe('chat persistence scope', () => {
   });
 });
 
-describe('ChatProject render and jobs', () => {
+describe('ChatProject status and jobs', () => {
 
   it('the step bar moves on when the project does', async () => {
     const user = userEvent.setup();
@@ -756,7 +697,7 @@ describe('ChatProject render and jobs', () => {
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
     // The first edit finishes: the project is building, and the header follows.
     vi.mocked(ipc.listProjects).mockResolvedValue(projects);
-    await emit('c1', { kind: 'tool', toolCallId: 't1', title: 'Edit scenes.ts', status: 'done', toolKind: 'edit' });
+    await emit('c1', { kind: 'tool', toolCallId: 't1', title: 'Edit intake.md', status: 'done', toolKind: 'edit' });
     expect(ipc.setProjectStatus).toHaveBeenCalledWith('p1', 'building');
     await waitFor(() => expect(step('Build')).toHaveAttribute('aria-current', 'step'));
   });
@@ -784,13 +725,9 @@ describe('ChatProject render and jobs', () => {
     expect(statuses().at(-1)).toBe('needs-you');
     await user.click(screen.getByRole('button', { name: 'Allow' }));
     expect(statuses().at(-1)).toBe('working');
-    // Done only with a finished video made during the turn.
-    const made = { path: '/w/p1/renders/v-1.mp4', name: 'v-1.mp4', size: 9, modifiedAt: new Date().toISOString() };
-    vi.mocked(ipc.latestRenderInfo).mockResolvedValueOnce(made).mockResolvedValueOnce(made);
-    vi.mocked(ipc.mediaProbe).mockResolvedValueOnce({ durationSec: 12.5, fps: 30, frames: 375, width: 1080, height: 1920 });
+    // A turn that ends without asking anything is done.
     await emit('c1', { kind: 'done', stopReason: 'end_turn' });
     await waitFor(() => expect(statuses().at(-1)).toBe('done'));
-    expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0].note).toBe('v-1.mp4');
 
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'again');
     await user.click(screen.getByRole('button', { name: 'Send' }));
@@ -1061,12 +998,6 @@ describe('buildRecap', () => {
     expect(recap).not.toContain('line 1');
     expect(recap).not.toContain('Switched');
     expect(recap.indexOf('You: line 2')).toBeLessThan(recap.indexOf('Agent: line 7'));
-  });
-
-  it('strips the frames-checked token', () => {
-    const recap = buildRecap([msg('agent', 'Done `[buma:frames-checked]`\nTwo fixes.', 1)]);
-    expect(recap).not.toContain('buma:frames');
-    expect(recap).toBe('Agent: Done\nTwo fixes.');
   });
 
   it('leaves out A2UI blocks and keeps the prose around them', () => {

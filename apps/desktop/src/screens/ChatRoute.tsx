@@ -40,7 +40,7 @@ export function ChatRoute() {
   if (route.name !== 'chat') return null;
   if (!row && missing !== route.chatId) return null;
   if (row && !row.projectId) {
-    return <ChatThread key={route.chatId} chatId={route.chatId} draft={route.draft} styleId={route.styleId} />;
+    return <ChatThread key={route.chatId} chatId={route.chatId} draft={route.draft} />;
   }
   return <ChatProject key={route.chatId} chatId={route.chatId} draft={route.draft} />;
 }

@@ -14,15 +14,12 @@ vi.mock('@/lib/ipc', () => ({
   agentStop: vi.fn().mockResolvedValue(undefined),
   agentRespondPermission: vi.fn(),
   upsertJob: vi.fn().mockResolvedValue(undefined),
-  latestRenderInfo: vi.fn().mockResolvedValue(null),
-  mediaProbe: vi.fn().mockResolvedValue({ durationSec: 12, fps: 30, frames: 360, width: 1080, height: 1920 }),
   listJobs: vi.fn().mockResolvedValue([]),
   assetUrl: (p: string) => p,
 }));
 const updates: ((e: { chatId: string; update: AgentUpdate }) => void)[] = [];
 vi.mock('@/lib/events', () => ({
   onQuestion: vi.fn(async () => () => {}),
-  onAgentAction: vi.fn(async () => () => {}),
   onAgentUpdate: vi.fn(async (cb: (e: { chatId: string; update: AgentUpdate }) => void) => {
     updates.push(cb);
     return () => {};
@@ -30,13 +27,11 @@ vi.mock('@/lib/events', () => ({
   onPermission: vi.fn(async () => () => {}),
 }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
-import { addMessage, agentPrompt, agentRespondPermission, agentStart, agentStop, getChat, latestRenderInfo, listSkills, upsertJob } from '@/lib/ipc';
+import { addMessage, agentPrompt, agentRespondPermission, agentStart, agentStop, getChat, listSkills, upsertJob } from '@/lib/ipc';
 import { MessageList } from '@/components/MessageList';
-import { BUSY_NOTE, failChatJob, useChat } from '@/state/chat';
+import { BUSY_NOTE, useChat } from '@/state/chat';
 import { needsYou } from '@/state/jobs';
-import { setUiLanguage } from '@/i18n';
-import { renderTiming } from '@/lib/renderCheck';
-import { FOREGROUND_RULE, RENDERS_RULE } from '@bspace-sdlc-app/skills';
+import { FOREGROUND_RULE } from '@bspace-sdlc-app/skills';
 
 /** What the agent got, without the session facts line a new session starts with. */
 const noFacts = <T,>(parts: T[]): T[] =>
@@ -73,7 +68,6 @@ const msg = (id: string, role: ChatMessage['role'], parts: ChatMessage['parts'])
 });
 
 beforeEach(() => {
-  renderTiming.stableMs = 0;
   useChat.getState().reset();
   updates.length = 0;
   vi.mocked(agentPrompt).mockClear();
@@ -228,7 +222,7 @@ describe('one gate while the agent replies', () => {
     vi.mocked(agentStart).mockClear();
     await useChat.getState().send('c1', [{ type: 'text', text: 'first' }], {
       agentId: 'claude',
-      job: { projectId: 'p1', title: 'Video' },
+      job: { projectId: 'p1', title: 'Attendance' },
     });
     const perm = { chatId: 'c1', requestId: 'r1', title: 'Run', commands: [], options: [] };
     useChat.setState((s) => ({ permissions: { ...s.permissions, c1: [perm] } }));
@@ -245,24 +239,6 @@ describe('one gate while the agent replies', () => {
     expect(agentRespondPermission).not.toHaveBeenCalled();
     expect(vi.mocked(upsertJob).mock.calls.map((c) => c[0].status)).not.toContain('failed');
     expect(agentStart).toHaveBeenCalledTimes(1);
-  });
-
-  it('a background send (the autopilot) gets the busy refusal back as an error', async () => {
-    await useChat.getState().send('c2', [{ type: 'text', text: 'first' }], { agentId: 'claude' });
-    vi.mocked(agentPrompt).mockRejectedValueOnce(new Error('The agent is still working on the last message'));
-    expect(await useChat.getState().send('c2', [{ type: 'text', text: 'second' }], { background: true })).toBe(
-      'The agent is still working on the last message',
-    );
-    expect(useChat.getState().started.c2).toBe(true);
-  });
-
-  it('a background send gets other errors back in English, whatever the interface language', async () => {
-    await setUiLanguage('id');
-    vi.mocked(agentStart).mockRejectedValueOnce(new Error(''));
-    expect(await useChat.getState().send('c3', [{ type: 'text', text: 'go' }], { agentId: 'claude', background: true })).toBe(
-      'The agent stopped unexpectedly',
-    );
-    await setUiLanguage('en');
   });
 });
 
@@ -284,7 +260,7 @@ describe('answering a surface after a restart', () => {
         streaming={false}
         sendOptions={(prompt) => ({
           agentId: 'gemini',
-          job: { projectId: 'p1', title: 'Video' },
+          job: { projectId: 'p1', title: 'Attendance' },
           promptParts: [{ type: 'text', text: 'SKIP' }, ...prompt],
         })}
         messages={[msg('1', 'agent', [{ type: 'text', text: block('s1', 'Pick me') }])]}
@@ -329,12 +305,12 @@ describe('a surface while its message is stored', () => {
 });
 
 describe('skills preamble', () => {
-  it('goes to user-facing sessions only, not setup or style studies', async () => {
-    for (const id of ['setup', 'study-s1', 'autopilot-a1', 'ideas-2026-11-04']) {
+  it('goes to user-facing sessions only, not the setup installs', async () => {
+    for (const id of ['setup', 'c-user']) {
       vi.mocked(agentPrompt).mockClear();
       await useChat.getState().send(id, [{ type: 'text', text: 'go' }], { agentId: 'codex' });
       const sent = JSON.stringify(vi.mocked(agentPrompt).mock.calls[0]![1]);
-      expect(sent.includes('AskUserQuestion'), id).toBe(id.startsWith('ideas-'));
+      expect(sent.includes('AskUserQuestion'), id).toBe(id !== 'setup');
     }
   });
 
@@ -352,12 +328,10 @@ describe('skills preamble', () => {
     expect(text).not.toContain('Buma id is');
   });
 
-  it('tells Claude with the plugin to run long work in the foreground, and nothing about renders', async () => {
+  it('tells Claude with the plugin to run long work in the foreground', async () => {
     await useChat.getState().send('c9', [{ type: 'text', text: 'go' }], { agentId: 'claude', job: { projectId: 'p7', title: 'Jalur Rempah' } });
     const lead = vi.mocked(agentPrompt).mock.calls[0]![1][0]!;
     expect(lead.type === 'text' && lead.text).toContain(FOREGROUND_RULE);
-    // And to leave the final mp4 in renders/, where Buma reads it.
-    expect(lead.type === 'text' && lead.text).not.toContain(RENDERS_RULE);
   });
 });
 
@@ -407,34 +381,16 @@ describe('build jobs when a turn does not finish well', () => {
 
   it("a user's Stop ends the job done with the stored Cancelled note, so it never needs them", async () => {
     useChat.getState().listen();
-    await useChat.getState().send('j1', [{ type: 'text', text: 'go' }], { agentId: 'claude', job: { projectId: 'p1', title: 'Video' } });
+    await useChat.getState().send('j1', [{ type: 'text', text: 'go' }], { agentId: 'claude', job: { projectId: 'p1', title: 'Attendance' } });
     await emitTo('j1', { kind: 'done', stopReason: 'cancelled' });
     await waitFor(() => expect(lastJob()).toMatchObject({ id: 'build-j1', status: 'done', note: 'Cancelled' }));
     expect(needsYou([lastJob()])).toBe(0);
-    // A later end with a fresh video is plainly done.
-    const made = { path: '/w/v.mp4', name: 'v.mp4', size: 3, modifiedAt: new Date().toISOString() };
-    vi.mocked(latestRenderInfo).mockResolvedValueOnce(made).mockResolvedValueOnce(made);
-    await emitTo('j1', { kind: 'done', stopReason: 'end_turn' });
-    await waitFor(() => expect(lastJob()).toMatchObject({ status: 'done', note: 'v.mp4' }));
-  });
-
-  it('failChatJob marks the job failed and a late done no longer touches it', async () => {
-    useChat.getState().listen();
-    await useChat.getState().send('j2', [{ type: 'text', text: 'go' }], { agentId: 'claude', job: { projectId: 'p1', title: 'Video' } });
-    await failChatJob('j2', 'No video file was rendered');
-    expect(lastJob()).toMatchObject({ id: 'build-j2', status: 'failed', note: 'No video file was rendered', projectId: 'p1', title: 'Video' });
-    const writes = vi.mocked(upsertJob).mock.calls.length;
-    await emitTo('j2', { kind: 'done', stopReason: 'cancelled' });
-    expect(vi.mocked(upsertJob).mock.calls.length).toBe(writes);
-    // A chat with no job: nothing to write.
-    await failChatJob('none', 'x');
-    expect(vi.mocked(upsertJob).mock.calls.length).toBe(writes);
   });
 
   it('retire stops the session; the next message starts a new one with a recap of the chat', async () => {
     useChat.getState().listen();
-    await useChat.getState().send('r1', [{ type: 'text', text: 'Make the video' }], { agentId: 'claude' });
-    await emitTo('r1', { kind: 'text', text: 'Rendered renders/a.mp4' });
+    await useChat.getState().send('r1', [{ type: 'text', text: 'Write the Blueprint' }], { agentId: 'claude' });
+    await emitTo('r1', { kind: 'text', text: 'Wrote sdlc/blueprint.docx' });
     await emitTo('r1', { kind: 'done', stopReason: 'end_turn' });
     vi.mocked(agentStart).mockClear();
     await useChat.getState().retire('r1');
@@ -446,7 +402,7 @@ describe('build jobs when a turn does not finish well', () => {
     const sent = JSON.stringify(vi.mocked(agentPrompt).mock.calls[0]![1]);
     expect(sent).toContain('Earlier in this chat:');
     expect(sent).not.toContain('another agent');
-    expect(sent).toContain('You: Make the video');
-    expect(sent).toContain('Agent: Rendered renders/a.mp4');
+    expect(sent).toContain('You: Write the Blueprint');
+    expect(sent).toContain('Agent: Wrote sdlc/blueprint.docx');
   });
 });

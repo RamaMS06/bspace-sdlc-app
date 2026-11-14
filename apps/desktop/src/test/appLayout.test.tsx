@@ -14,15 +14,11 @@ vi.mock('@/lib/ipc', () => ({
   purgeArchive: vi.fn().mockResolvedValue({ chats: 0, cards: 0 }),
   setJobsArchived: vi.fn().mockResolvedValue(undefined),
   getAgentUsage: vi.fn().mockResolvedValue([]),
-  syncStyles: vi.fn().mockResolvedValue({ styles: [], offline: false }),
   getChat: vi.fn().mockResolvedValue(null),
   listMessages: vi.fn().mockResolvedValue([]),
-  renderCommand: vi.fn().mockResolvedValue(null),
 }));
 vi.mock('@/lib/events', () => ({
-  onQuestion: vi.fn(async () => () => {}),
-  onAgentAction: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(), onPermission: vi.fn() }));
-vi.mock('@/state/autopilot', () => ({ startAutopilot: vi.fn(() => () => {}) }));
+  onQuestion: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(), onPermission: vi.fn() }));
 vi.mock('@/lib/buildJobs', () => ({ settleLateRenders: vi.fn(), recheckDoneBuildJobs: vi.fn().mockResolvedValue(undefined) }));
 
 import { getSettings } from '@/lib/ipc';
@@ -34,10 +30,6 @@ import { useUsage } from '@/state/usage';
 const settings: Settings = {
   workingFolder: '/tmp/Buma',
   defaultAgent: 'claude',
-  frameCheck: true,
-  language: 'id',
-  format: '9:16',
-  fps: 30,
   onboarded: true,
   apiUrl: 'https://bspace.buma.internal/api',
   installId: '',
@@ -47,8 +39,6 @@ const settings: Settings = {
   uiLanguage: 'en',
   backgroundMode: false,
   openAtLogin: false,
-  buildJobsChecked: true,
-  projectStatusChecked: true,
   agentModels: {},
 };
 

@@ -7,16 +7,9 @@ import type {
   AgentInfo,
   AgentUsage,
   ChatTrace,
-  Autopilot,
-  NichesResponse,
-  VoicesResponse,
-  AutopilotInput,
-  AutopilotSlot,
   Chat,
   ChatMessage,
-  FileInfo,
   Job,
-  MediaInfo,
   MessagePart,
   ModelChoice,
   NewProject,
@@ -24,13 +17,8 @@ import type {
   ProjectStatus,
   RecentChat,
   Settings,
-  SlotPatch,
-  Style,
   SystemInfo,
   ToolStatus,
-  VoiceCheck,
-  VoiceKeySource,
-  VoiceStatus,
   QuestionResponse,
 } from '@bspace-sdlc-app/shared';
 
@@ -49,15 +37,6 @@ export const apiCheck = (baseUrl: string, key: string | null) => invoke<ApiCheck
 export const apiTry = (baseUrl: string, key: string | null, model: string) => invoke<ApiCheck>('api_try', { baseUrl, key, model });
 export const apiReachable = (baseUrl: string) => invoke<boolean>('api_reachable', { baseUrl });
 /** Which voice sources have a key saved (the keys themselves never leave Rust). */
-export const voiceStatus = () => invoke<VoiceStatus>('voice_status');
-/** Checks the source's API key (null: the saved one); a good one is saved and that source becomes the voice source. */
-export const voiceKeySave = (source: VoiceKeySource, key: string | null) =>
-  invoke<[VoiceCheck, Settings]>('voice_key_save', { source, key });
-/** Forgets the source's API key; the voice source goes back to Buma when it was that source. */
-export const voiceKeyClear = (source: VoiceKeySource) => invoke<Settings>('voice_key_clear', { source });
-/** Whether VoiceStudio is open on this computer. */
-export const voiceStudioCheck = () => invoke<VoiceCheck>('voice_studio_check');
-/** Saves the provider (and the key, when given) and makes Your API the default agent. */
 export const apiSave = (provider: ApiProvider, key: string | null) => invoke<Settings>('api_save', { provider, key });
 export const apiClear = () => invoke<Settings>('api_clear');
 /** Downloads the engine unless it's there; progress comes as `ENGINE_PROGRESS_EVENT`. */
@@ -97,40 +76,9 @@ export const createProject = (input: NewProject, brief: string) =>
   invoke<Project>('create_project', { input, brief });
 export const updateProject = (id: string, patch: Partial<Project>) =>
   invoke<Project>('update_project', { id, patch });
-/** Moves a project to `status` (draft → building → rendered); it never goes back unless `reset`. */
+/** Moves a project to `status` (draft → building); it never goes back unless `reset`. */
 export const setProjectStatus = (projectId: string, status: ProjectStatus, reset = false) =>
   invoke<Project>('set_project_status', { projectId, status, reset });
-export const setSchedule = (projectId: string, at: string | null) =>
-  invoke<Project>('set_schedule', { projectId, at });
-/** One video of a confirmed schedule card: an existing one by id, or a new draft with its brief. */
-export type BatchItem = { projectId: string; at: string } | { at: string; draft: { input: NewProject; brief: string } };
-/**
- * Schedules a whole card or nothing: Rust checks every item, then writes, and undoes it all when a write
- * fails. Errors are `schedule:<code>[:n]`.
- */
-export const scheduleVideos = (items: BatchItem[]) => invoke<Project[]>('schedule_videos', { items });
-export const setPosted = (projectId: string, posted: boolean) =>
-  invoke<Project>('set_posted', { projectId, posted });
-export const approveProject = (projectId: string) => invoke<Project>('approve_project', { projectId });
-
-// ---- autopilots ----
-/** What the wizard offers; both come from the API, so they fail while offline. */
-export const listNiches = () => invoke<NichesResponse>('list_niches').then((r) => r.niches ?? []);
-export const listVoices = () => invoke<VoicesResponse>('list_voices').then((r) => r.voices ?? []);
-export const listAutopilots = () => invoke<Autopilot[]>('list_autopilots');
-/** Creates (no id) or edits (with id) an autopilot; a new one starts active, an edit keeps its status. */
-export const saveAutopilot = (input: AutopilotInput) => invoke<Autopilot>('save_autopilot', { input });
-/** Removes the autopilot and its slots that made no video; the videos stay. */
-export const deleteAutopilot = (id: string) => invoke<void>('delete_autopilot', { id });
-export const setAutopilotStatus = (id: string, status: Autopilot['status']) =>
-  invoke<Autopilot>('set_autopilot_status', { id, status });
-/** Slots due between two RFC 3339 instants, both included. */
-export const listSlots = (from: string, to: string) => invoke<AutopilotSlot[]>('list_slots', { from, to });
-/** Makes sure a planned slot exists for (autopilot, dueAt); an existing slot comes back unchanged. */
-export const upsertSlot = (autopilotId: string, dueAt: string) =>
-  invoke<AutopilotSlot>('upsert_slot', { autopilotId, dueAt });
-export const updateSlot = (id: string, patch: SlotPatch) => invoke<AutopilotSlot>('update_slot', { id, patch });
-
 // ---- chats ----
 export const listChats = (projectId?: string) =>
   invoke<Chat[]>('list_chats', { projectId: projectId ?? null });
@@ -150,30 +98,6 @@ export const updateChatAgent = (chatId: string, agentId: AgentId) =>
 export const listMessages = (chatId: string) => invoke<ChatMessage[]>('list_messages', { chatId });
 export const addMessage = (chatId: string, role: ChatMessage['role'], parts: MessagePart[]) =>
   invoke<ChatMessage>('add_message', { chatId, role, parts });
-
-// ---- styles ----
-export const listStyles = () => invoke<Style[]>('list_styles');
-/** What `sync_styles` returns: the built-in styles now in the library, and whether the API was out of reach. */
-export interface StylesSync {
-  styles: Style[];
-  offline: boolean;
-}
-export const syncStyles = () => invoke<StylesSync>('sync_styles');
-export const installStyleTemplate = (projectId: string) =>
-  invoke<{ installed: boolean }>('install_style_template', { projectId });
-export const saveStyle = (style: Style) => invoke<void>('save_style', { style });
-export const deleteStyle = (id: string) => invoke<void>('delete_style', { id });
-export const readStyleResult = (studyId: string) =>
-  invoke<string | null>('read_style_result', { studyId });
-export const studyDir = (studyId: string) => invoke<string>('study_dir', { studyId });
-/** Deletes a study's folder (the download, frames and result) once the study is over. */
-export const removeStudyDir = (studyId: string) => invoke<void>('remove_study_dir', { studyId });
-/** Cuts a short silent clip and a poster from the study's downloaded video, then deletes that video. */
-export const makeStylePreview = (studyId: string, styleId: string) =>
-  invoke<{ previewPath: string | null; posterPath: string } | null>('make_style_preview', { studyId, styleId });
-export const makeStyleSheets = (studyId: string, styleId: string) => invoke<string[]>('make_style_sheets', { studyId, styleId });
-export const keepStyleRefs = (studyId: string, styleId: string) => invoke<string[]>('keep_style_refs', { studyId, styleId });
-export const copyStyleRefs = (styleId: string, projectId: string) => invoke<number>('copy_style_refs', { styleId, projectId });
 
 // ---- jobs ----
 export const listJobs = () => invoke<Job[]>('list_jobs');
@@ -201,40 +125,6 @@ export const agentRespondPermission = (requestId: string, optionId: string | nul
 /** Answers an agent's question (ACP elicitation). */
 export const agentRespondQuestion = (requestId: string, response: QuestionResponse) =>
   invoke<void>('agent_respond_question', { requestId, response });
-
-// ---- media ----
-export const mediaLatestRender = (projectId: string) =>
-  invoke<string | null>('media_latest_render', { projectId });
-/** Images the agent made in a project chat's folder since `since` (RFC 3339), newest first; none without a project. */
-export const recentImages = (chatId: string, since: string, limit: number) =>
-  invoke<FileInfo[]>('recent_images', { chatId, since, limit });
-/** The newest render with its size and time; null when the project has none. */
-/** Shows a video in the file manager: its newest render selected, or its project folder without one. */
-export const showVideoInFolder = (projectId: string) => invoke<void>('show_video_in_folder', { projectId });
-export const latestRenderInfo = (projectId: string) => invoke<FileInfo | null>('latest_render_info', { projectId });
-/** The newest mp4 where renders land (renders/, the root, out/, runs/<run>/out/), still-empty ones too (a render being written); null when there is none. */
-export const newestVideoInfo = (projectId: string) => invoke<FileInfo | null>('newest_video_info', { projectId });
-/** One frame of a project's newest render, cached by the render's time; `modifiedAt` busts the image cache. */
-export interface VideoThumb {
-  path: string;
-  modifiedAt: string;
-  durationSec: number | null;
-}
-/** The Videos card's frame of the newest render; null without a render or ffmpeg. */
-export const videoThumbnail = (projectId: string) => invoke<VideoThumb | null>('video_thumbnail', { projectId });
-export const mediaProbe = (projectId: string) =>
-  invoke<MediaInfo | null>('media_probe', { projectId });
-export const mediaExtractFrame = (projectId: string, timeSec: number) =>
-  invoke<string>('media_extract_frame', { projectId, timeSec });
-export const mediaThumbnails = (projectId: string, count: number) =>
-  invoke<string[]>('media_thumbnails', { projectId, count });
-export interface RenderCommand {
-  install: string[] | null;
-  render: string[];
-}
-export const renderCommand = (projectId: string) => invoke<RenderCommand | null>('render_command', { projectId });
-export const writeBrief = (projectId: string, brief: string) => invoke<void>('write_brief', { projectId, brief });
-export const mediaRender = (projectId: string) => invoke<string>('media_render', { projectId });
 
 /** URL the webview can load for a file on disk. */
 export const assetUrl = (path: string): string => convertFileSrc(path);
@@ -266,6 +156,8 @@ export const projectFiles = (projectId: string, dir = '') => invoke<ProjectFile[
 /** Files whose name contains `query`; dependency and dot folders are not searched. */
 export const findProjectFiles = (projectId: string, query: string) => invoke<ProjectFile[]>('find_project_files', { projectId, query });
 export const readProjectFile = (projectId: string, path: string) => invoke<ProjectFileContent>('read_project_file', { projectId, path });
+/** Opens a project's folder in the file manager. */
+export const openProjectFolder = (projectId: string) => invoke<void>('open_project_folder', { projectId });
 
 // ---- agent models ----
 

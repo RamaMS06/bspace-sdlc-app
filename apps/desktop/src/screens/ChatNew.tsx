@@ -5,9 +5,8 @@ import type { MessagePart, Project } from '@bspace-sdlc-app/shared';
 import { routeStart } from '@/lib/route';
 import { useFailover } from '@/state/failover';
 import { Composer, type MentionRef } from '@/components/Composer';
-import { stylesFor, TemplateChip, templateOf, useChipTemplate, useStyles } from '@/components/TemplateChip';
 import { createChat, listProjects } from '@/lib/ipc';
-import { mentionContext, styleContext } from '@/lib/mentions';
+import { mentionContext } from '@/lib/mentions';
 import { useApp } from '@/state/app';
 import { EMPTY_DRAFT, NEW_CHAT_DRAFT, useChat, type Draft } from '@/state/chat';
 import { createFeature, sdlcStart } from '@/lib/featureFlow';
@@ -16,23 +15,20 @@ import { useUsage } from '@/state/usage';
 
 
 /**
- * New chat: the start screen until the first send, topic ask or attachment makes the chat. Then the
+ * New chat: the start screen until the first send or attachment makes the chat. Then the
  * route becomes that chat (ChatThread), so it is never lost when the user goes elsewhere.
  */
 export function ChatNew() {
   const { t } = useTranslation();
   const settings = useApp((s) => s.settings);
   const navigate = useApp((s) => s.navigate);
-  const routeStyleId = useApp((s) => (s.route.name === 'chat-new' ? (s.route.styleId ?? null) : null));
-  // The template the user picked on the Style screen; it goes with the chat until a topic starts a project.
-  const [styleId, setStyleId] = useState<string | null>(routeStyleId);
   const [projects, setProjects] = useState<Project[]>([]);
   const [mention, setMention] = useState<MentionRef | null>(null);
   const [signal, setSignal] = useState(0);
   const [newFeature, setNewFeature] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const creating = useRef<Promise<string> | null>(null);
-  /** A send or topic ask is starting the chat: a second click waits for it instead of asking again. */
+  /** A send is starting the chat: a second click waits for it instead of asking again. */
   const starting = useRef(false);
   /** Still on screen: a chat made after the user left must not pull them back (Recent has it). */
   const here = useRef(true);
@@ -40,12 +36,6 @@ export function ChatNew() {
   const pick = useFailover((s) => s.pickOf(null));
   useFailover((s) => s.combos);
   const agent = routeStart(pick)?.agent ?? settings?.defaultAgent ?? 'claude';
-  const styles = useStyles();
-  // A mentioned style with a starter template is the chat's template: it wins over the Style screen's.
-  const chipTemplate = useChipTemplate(NEW_CHAT_DRAFT, styles);
-  /** The chat's template: the mentioned one (`ref`, else the chip waiting in the composer), else the Style screen's. */
-  const templateFor = (ref?: { styleId: string } | null, known = styles) =>
-    templateOf(ref === undefined ? useChat.getState().drafts[NEW_CHAT_DRAFT]?.style : ref, known) ?? styleId;
 
   // An unsent Auto choice belongs to this screen only.
   useEffect(() => {
@@ -72,7 +62,7 @@ export function ChatNew() {
     };
   }, []);
 
-  /** The chat is made on the first send (or topic ask, or attachment); once, however many ask at the same time. */
+  /** The chat is made on the first send (or attachment); once, however many ask at the same time. */
   const ensureChat = (title: string, projectId: string | null = null) => {
     creating.current ??= createChat(projectId, agent, title).then(
       (c) => {
@@ -92,14 +82,14 @@ export function ChatNew() {
   };
 
   /** The chat exists: the screen becomes that chat, so leaving and coming back finds it. */
-  const openChat = (chatId: string, template: string | null, draft?: Draft) => {
+  const openChat = (chatId: string, draft?: Draft) => {
     if (!here.current || useApp.getState().route.name !== 'chat-new') return;
     const store = useChat.getState();
-    // An unsent draft goes with the chat, its style chip too.
+    // An unsent draft goes with the chat.
     if (draft) store.setDraft(chatId, draft);
     store.setDraft(NEW_CHAT_DRAFT, EMPTY_DRAFT);
     useApp.setState({ focusChatId: chatId });
-    navigate({ name: 'chat', chatId, ...(draft?.text ? { draft: draft.text } : {}), ...(template ? { styleId: template } : {}) });
+    navigate({ name: 'chat', chatId, ...(draft?.text ? { draft: draft.text } : {}) });
   };
 
   const onSend = async (parts: MessagePart[]): Promise<boolean> => {
@@ -112,10 +102,9 @@ export function ChatNew() {
       // Starting with an SDLC skill starts a feature: it gets its folder and shows on Workflow.
       let feature: Project | null = null;
       const name = sdlcStart(typed);
-      if (settings && name !== null && !creating.current) feature = await createFeature(name || t('chat.newFeature'), settings);
+      if (settings && name !== null && !creating.current) feature = await createFeature(name || t('chat.newFeature'));
       const id = await ensureChat(feature ? feature.title : typed.slice(0, 48) || t('chat.newChat'), feature?.id ?? null);
-      const known = await stylesFor(parts, styles);
-      const ctx = [...(await mentionContext(parts, [], projects, settings)), ...styleContext(parts, known)];
+      const ctx = mentionContext(parts, [], projects);
       // The message is in the chat as soon as send starts; the chat screen shows the rest of the turn.
       void useChat
         .getState()
@@ -124,8 +113,7 @@ export function ChatNew() {
           ...(feature ? { job: { projectId: feature.id, title: feature.title } } : {}),
           ...(ctx.length ? { promptParts: [...ctx, ...parts] } : {}),
         });
-      const sentStyle = parts.find((p) => p.type === 'style-mention');
-      openChat(id, templateFor(sentStyle?.type === 'style-mention' ? sentStyle : null, known));
+      openChat(id);
       return true;
     } catch (e) {
       setError(t('chat.couldntStartChat', { message: e instanceof Error ? e.message : String(e) }));
@@ -138,7 +126,7 @@ export function ChatNew() {
   /** Attaching a file makes the chat: the typed text goes along, unsent. */
   const ensureForAttach = async () => {
     const id = await ensureChat(t('chat.newChat'));
-    openChat(id, templateFor(), useChat.getState().drafts[NEW_CHAT_DRAFT]);
+    openChat(id, useChat.getState().drafts[NEW_CHAT_DRAFT]);
     return id;
   };
 
@@ -170,11 +158,9 @@ export function ChatNew() {
         </div>
 
         <div className="w-full max-w-[720px] pb-6 pt-4">
-          <TemplateChip styleId={chipTemplate ? null : styleId} onRemove={() => setStyleId(null)} styles={styles} />
           <Composer
             chatId={null}
             draftKey={NEW_CHAT_DRAFT}
-            styles={styles}
             ensureChat={ensureForAttach}
             onSend={onSend}
             projects={projects}

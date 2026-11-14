@@ -2,8 +2,8 @@ import posthog, { type CaptureResult } from 'posthog-js';
 
 /**
  * Product analytics through PostHog, only while the user shares anonymous stats (Settings › Account).
- * What it sends: which features are used (a video rendered, a post made), the app version and
- * system. Never chat text, prompts, file names or videos; no autocapture, no session replay, no
+ * What it sends: which features are used (a feature created, an agent connected), the app version and
+ * system. Never chat text, prompts, file names or project files; no autocapture, no session replay, no
  * remote scripts. Without VITE_POSTHOG_KEY (forks, tests) it is a no-op.
  */
 
@@ -118,7 +118,7 @@ export function forgetAccount(installId: string): void {
   }
 }
 
-/** An error in a flow that matters (rendering, posting, a style study), with where it happened. */
+/** An error in a flow that matters (signing in, an update), with where it happened. */
 export function trackError(error: unknown, where: string): void {
   if (!started || !enabled) return;
   posthog.captureException(error instanceof Error ? error : new Error(String(error)), { where });

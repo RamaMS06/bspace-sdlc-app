@@ -8,18 +8,11 @@ export function turnText(m: ChatMessage): string {
   const clean = (t: string) => t.replace(/\s+/g, ' ').trim();
   const said = clean(
     m.parts
-      .map((p) => (p.type === 'text' ? p.text : p.type === 'mention' ? `@${p.title}` : p.type === 'style-mention' ? `@${p.name}` : p.type === 'file' ? p.name : ''))
+      .map((p) => (p.type === 'text' ? p.text : p.type === 'mention' ? `@${p.title}` : p.type === 'file' ? p.name : ''))
       .filter(Boolean)
       .join(' '),
   );
-  if (said) return said;
-  // A turn that is only a frame still needs a name.
-  const frame = m.parts.find((p) => p.type === 'frame');
-  if (frame) {
-    const sec = Math.max(0, Math.floor(frame.timeSec));
-    return i18n.t('chat.turnFrame', { time: `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` });
-  }
-  return i18n.t('chat.turnMessage');
+  return said || i18n.t('chat.turnMessage');
 }
 
 const reduced = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;

@@ -4,7 +4,7 @@ Desktop app (macOS & Windows) that brings the whole BUMA SDLC workflow into one 
 
 **Author:** p-rama.msugiyanto
 
-> Status: early. The shell (agent over ACP, sign-in to an AI platform, usage meter, chat, workspace) is in place and themed with the BUMA Design System. The SDLC pipeline view (reading gate state from the `bspace-sdlc-skills` files on disk) is the next piece of work; some screens still come from the base app and will be replaced.
+> Status: early. The shell (agent over ACP, sign-in to an AI platform, usage meter, chat, workspace) is in place and themed with the BUMA Design System, with the Workflow screen following each feature through the SDLC. The short-video features of the base app (rendering, voice-over, styles, autopilot, scheduling and posting, paid plans) have been removed.
 
 ## Run it from source
 

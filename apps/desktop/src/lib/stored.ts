@@ -4,20 +4,15 @@ import { i18n } from '@/i18n';
  * Text Buma writes into saved data (job notes and titles, system lines in a chat) so it can be
  * shown in whichever language the user reads later. The saved copy is always the English text of one
  * of these keys; `localized` matches it back to its key and says it again in the active language.
- * Text that matches no key (agent output, style names, links) passes through unchanged, and so do
+ * Text that matches no key (agent output, file names, links) passes through unchanged, and so do
  * rows saved before this existed: they are English, which is how the keys read.
  */
 export const STORED_KEYS = [
   'agents.closedNote',
-  'agents.studyTitle',
-  'agents.cancelledStudy',
   'agents.cancelled',
   'chat.modeFailed',
   'chat.terminated',
-  'agents.studyUnreadable',
-  'agents.rendering',
   'agents.waitingAnswer',
-  'agents.noVideo',
   'errors.agentStopped',
   'errors.signIn',
   'errors.signInClaude',
@@ -33,36 +28,6 @@ export const STORED_KEYS = [
   'chat.failoverModel',
   'chat.failoverNone',
   'chat.autoOffFailed',
-  'chat.templateProblem',
-  'chat.templateGone',
-  'chat.styleUnknown',
-  'chat.templateFilesMissing',
-  'chat.settingTemplate',
-  'chat.templateFailed',
-  'chat.topicStarted',
-  'autopilot.slot.stopped',
-  'autopilot.slot.noTopic',
-  'autopilot.slot.noRender',
-  'autopilot.slot.timedOut',
-  'autopilot.slot.busy',
-  'autopilot.slot.styleMissing',
-  'autopilot.slot.postFailed',
-  'schedule.agent.done',
-  'schedule.agent.failed',
-  'schedule.agent.count',
-  'schedule.agent.badTime',
-  'schedule.agent.past',
-  'schedule.agent.tooFar',
-  'schedule.agent.unknown',
-  'schedule.agent.twice',
-  'schedule.agent.title',
-  'schedule.agent.badItem',
-  'schedule.agent.foreign',
-  'schedule.agent.posted',
-  'schedule.agent.exists',
-  'schedule.agent.write',
-  'schedule.agent.couldntCheck',
-  'schedule.agent.failedAnswered',
 ] as const;
 export type StoredKey = (typeof STORED_KEYS)[number];
 

@@ -12,7 +12,6 @@ vi.mock('@/lib/ipc', () => ({
   createChat: vi.fn(),
   listChats: vi.fn(),
   listJobs: vi.fn().mockResolvedValue([]),
-  showVideoInFolder: vi.fn(),
 }));
 vi.mock('@/state/chat', () => ({ useChat: { getState: () => ({ send: vi.fn() }) } }));
 

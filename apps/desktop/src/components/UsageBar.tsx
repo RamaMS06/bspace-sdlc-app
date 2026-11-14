@@ -64,7 +64,7 @@ export function UsageMeter({ percent, label, className }: { percent: number; lab
 }
 
 /**
- * The Buma account's AI credits and auto-posts left (gifts included), in the status bar;
+ * The Buma account's AI credits left, in the status bar;
  * opens Settings › Usage. Nothing signed out, or before the first answer.
  */
 export function BumaCreditsCompact() {
@@ -94,7 +94,7 @@ export function BumaCreditsCompact() {
       </span>
     );
   }
-  const line = t('usage.creditsLine', { count: usage.credits.remaining, posts: usage.posts.remaining });
+  const line = t('usage.creditsLine', { count: usage.credits.remaining });
   return (
     <button
       type="button"

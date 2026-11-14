@@ -1,20 +1,14 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CalendarDays, File as FileIcon, Palette } from 'lucide-react';
-import { formatTimecode, type ChatMessage, type MessagePart } from '@bspace-sdlc-app/shared';
+import { File as FileIcon } from 'lucide-react';
+import type { ChatMessage, MessagePart } from '@bspace-sdlc-app/shared';
 import { Markdown } from '@/components/Markdown';
 import { StatusIcon } from '@/components/StatusIcon';
 import { STICK_EVENT } from '@/components/ScrollToBottom';
 import { ImageStrip, isImagePart, type ImagePart } from '@/components/AgentImages';
 import { ActivityGroup, isHiddenTool, WorkingLine, type ActivityItem, type LiveTurn } from '@/components/Activity';
 import { localized } from '@/lib/stored';
-import { ScheduleConfirm } from '@/components/ScheduleConfirm';
-import { asAction } from '@/lib/agentActions';
-import { confirmSchedule, isScheduleRecord, prepareSchedule, SCHEDULE_ACTION, type PlannedItem } from '@/lib/scheduleVideos';
-import { useApp } from '@/state/app';
-import { useRender } from '@/state/render';
 import { messageKey, useChat, type SendOpts } from '@/state/chat';
-import { splitTopicJson, stripFramesToken } from '@bspace-sdlc-app/skills';
 import { extractA2ui } from '@/a2ui/parse';
 import { A2uiSurface, type A2uiAction } from '@/a2ui/render';
 import { bumaButtonClass } from '@/components/buma/Button';
@@ -25,29 +19,6 @@ function Chip({ children }: { children: React.ReactNode }) {
   return (
     <span className="inline-flex h-6 items-center gap-1 rounded-sm border border-primary-border bg-primary-soft px-2 text-[13px] font-medium text-primary-text">
       {children}
-    </span>
-  );
-}
-
-/** A style the user mentioned: a palette and its name, set apart from the green video chip. */
-function StyleChip({ name }: { name: string }) {
-  return (
-    <span
-      data-chip="style"
-      className="inline-flex h-6 items-center gap-1 rounded-sm border border-hairline bg-card px-2 text-[13px] font-medium text-foreground"
-    >
-      <Palette size={12} strokeWidth={1.5} aria-hidden="true" className="text-text-2" />
-      <span>@{name}</span>
-    </span>
-  );
-}
-
-export function FrameChip({ part }: { part: Extract<MessagePart, { type: 'frame' }> }) {
-  const { t } = useTranslation();
-  return (
-    <span className="inline-flex items-center gap-2 rounded-sm border border-hairline bg-transparent px-2 py-1 text-xs text-text-2">
-      <span className="font-medium text-foreground">{t('chat.frame', { time: formatTimecode(part.timeSec, 30) })}</span>
-      {part.marks.length > 0 && <span className="text-text-3">{t('chat.marked', { count: part.marks.length })}</span>}
     </span>
   );
 }
@@ -67,8 +38,6 @@ interface Actions {
   /** Surfaces take no input while the agent replies: one gate with the composer and agent picker. */
   locked: boolean;
   sendOptions?: SendOptions;
-  /** A pressed schedule card: Buma checks it and asks the user in its own dialog. */
-  schedule?: (a: A2uiAction) => void;
 }
 
 /** The screen's own send options for what the agent receives (its agent, build job, prompt prefix). */
@@ -163,7 +132,7 @@ function deriveA2ui(messages: ChatMessage[]): A2uiState {
         st.keys[`${m.id}:${i}`] = keys;
       });
     } else {
-      // A user's answer, or the system line that records a schedule card Buma took.
+      // A user's answer.
       for (const p of m.parts) {
         if (p.type !== 'a2ui-action') continue;
         const sid = (p.action as { action?: { surfaceId?: unknown } }).action?.surfaceId;
@@ -191,21 +160,9 @@ function sendAction(chatId: string, a: A2uiAction, sendOptions?: SendOptions) {
 
 /** An agent text part: prose, the surfaces it owns, and a placeholder for a block still streaming. */
 function AgentText({ text, messageId, part, a2ui }: { text: string; messageId: string; part: number; a2ui: A2uiState }) {
-  const { text: rawProse, blocks, pending: a2uiPending, invalid } = useMemo(() => extractA2ui(stripFramesToken(text)), [text]);
+  const { text: prose, blocks, pending, invalid } = useMemo(() => extractA2ui(text), [text]);
   const { t } = useTranslation();
-  const { handle, locked, sendOptions, schedule } = useContext(ActionsContext);
-  // Older agents answer topics with a ```json block. Where a screen shows topic cards (it provides the
-  // handler), hide that block, also while it is still streaming; other chats keep it as written.
-  const { prose, pending: jsonPending } = useMemo(() => {
-    if (!handle) return { prose: rawProse, pending: false };
-    const done = splitTopicJson(rawProse).text;
-    const open = done.lastIndexOf('```json');
-    if (open >= 0 && !done.includes('```', open + 7) && /^\s*\n\s*\[\s*(\{|$)/.test(done.slice(open + 7))) {
-      return { prose: done.slice(0, open).trim(), pending: true };
-    }
-    return { prose: done, pending: false };
-  }, [rawProse, handle]);
-  const pending = a2uiPending || jsonPending;
+  const { handle, locked, sendOptions } = useContext(ActionsContext);
   const ids: string[] = [];
   for (const key of a2ui.keys[`${messageId}:${part}`] ?? []) {
     if (key && a2ui.owner[key] === messageId && !ids.includes(key) && a2ui.set.surfaces[key]) ids.push(key);
@@ -222,11 +179,6 @@ function AgentText({ text, messageId, part, a2ui }: { text: string; messageId: s
           onAction={(pressed) => {
             // The agent and the stored answer know the surface by the agent's own id.
             const a = { ...pressed, surfaceId: agentSurfaceId(pressed.surfaceId) };
-            // A schedule card is Buma's to confirm, in every chat; the agent gets no turn for it.
-            if (a.name === SCHEDULE_ACTION) {
-              schedule?.(a);
-              return;
-            }
             if (!handle?.(a)) sendAction(a2ui.chatId, a, sendOptions);
           }}
         />
@@ -291,8 +243,6 @@ function Parts({
     flushStrip();
     if (p.type === 'text') out.push(<AgentText key={i} text={p.text} messageId={messageId} part={i} a2ui={a2ui} />);
     else if (p.type === 'mention') out.push(<Chip key={i}>@{p.title}</Chip>);
-    else if (p.type === 'style-mention') out.push(<StyleChip key={i} name={p.name} />);
-    else if (p.type === 'frame') out.push(<FrameChip key={i} part={p} />);
     else if (p.type === 'file') out.push(<SentFile key={i} part={p} />);
   });
   flush(true);
@@ -314,13 +264,13 @@ export function MessageList({
   scrollRef?: React.RefObject<HTMLElement | null>;
   messages: ChatMessage[];
   streaming: boolean;
-  /** The screen is busy with an earlier action (setting up a topic): surfaces wait, like while streaming. */
+  /** The screen is busy with an earlier action: surfaces wait, like while streaming. */
   busy?: boolean;
   /** Return true when the screen handled the action itself. */
   onA2uiAction?: (a: A2uiAction) => boolean;
   /** How an answered surface is sent: the same options as the screen's composer. */
   sendOptions?: SendOptions;
-  /** Extra blocks under the conversation (permission card, idea cards). */
+  /** Extra blocks under the conversation (permission and question cards). */
   children?: React.ReactNode;
 }) {
   const { t, i18n: inst } = useTranslation();
@@ -376,46 +326,10 @@ export function MessageList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [messages, inst.language]);
   const chatId = messages[0]?.chatId ?? '';
-  // A pressed schedule card: checked first (`checking`), then shown in Buma's dialog, then written (`saving`).
-  const [confirm, setConfirm] = useState<{ action: A2uiAction; items: PlannedItem[] } | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const schedule = useCallback(
-    (a: A2uiAction) => {
-      if (checking || saving) return;
-      setChecking(true);
-      void prepareSchedule(chatId, a)
-        .then((items) => items && setConfirm({ action: a, items }))
-        .finally(() => setChecking(false));
-    },
-    [chatId, checking, saving],
-  );
-  // The agent asked Buma to schedule videos (POST /schedule): once its turn is over, check and confirm here.
-  const pendingSchedule = useChat((s) => (chatId ? (s.actions[chatId] ?? []) : []).some((a) => a.name === 'schedule_videos'));
-  useEffect(() => {
-    if (!pendingSchedule || streaming || checking || saving || confirm) return;
-    const a = useChat.getState().takeAction(chatId, 'schedule_videos');
-    if (a) schedule(asAction(a));
-  }, [pendingSchedule, streaming, checking, saving, confirm, chatId, schedule]);
-
-  const confirmNow = async () => {
-    if (!confirm || saving) return;
-    setSaving(true);
-    try {
-      await confirmSchedule(chatId, confirm.action, confirm.items);
-    } finally {
-      setSaving(false);
-      setConfirm(null);
-    }
-  };
-  const actions = useMemo(
-    () => ({ handle: onA2uiAction, locked: streaming || busy || checking || saving || confirm !== null, sendOptions, schedule }),
-    [onA2uiAction, streaming, busy, checking, saving, confirm, sendOptions, schedule],
-  );
+  const actions = useMemo(() => ({ handle: onA2uiAction, locked: streaming || busy, sendOptions }), [onA2uiAction, streaming, busy, sendOptions]);
   const last = messages[messages.length - 1];
   const startedAt = useChat((s) => (chatId ? s.turnStartedAt[chatId] : undefined));
-  const render = useRender((s) => (chatId ? Object.values(s.runs).find((r) => r.chatId === chatId) : undefined));
-  const turn = useMemo<LiveTurn>(() => ({ startedAt, render }), [startedAt, render]);
+  const turn = useMemo<LiveTurn>(() => ({ startedAt }), [startedAt]);
   return (
     <ActionsContext.Provider value={actions}>
     <div ref={log} className="flex flex-col gap-6" role="log" aria-label={t('chat.conversation')}>
@@ -431,10 +345,6 @@ export function MessageList({
                     </span>
                   ) : p.type === 'mention' ? (
                     <Chip key={j}>@{p.title}</Chip>
-                  ) : p.type === 'style-mention' ? (
-                    <StyleChip key={j} name={p.name} />
-                  ) : p.type === 'frame' ? (
-                    <FrameChip key={j} part={p} />
                   ) : p.type === 'file' ? (
                     <SentFile key={j} part={p} />
                   ) : null,
@@ -481,12 +391,6 @@ export function MessageList({
         </div>
       )}
       {children}
-      <ScheduleConfirm
-        items={confirm?.items ?? null}
-        busy={saving}
-        onConfirm={() => void confirmNow()}
-        onCancel={() => setConfirm(null)}
-      />
       <div ref={end} />
     </div>
     </ActionsContext.Provider>
@@ -498,8 +402,8 @@ export function MessageList({
 const NOTE_LINES = 5;
 
 /**
- * A note from Buma: its first line, and any further lines (one scheduled video each) as a list,
- * the first few until the user asks for all of them.
+ * A note from Buma: its first line, and any further lines as a list, the first few until the user asks
+ * for all of them.
  */
 function SystemNote({ text }: { text: string }) {
   const { t } = useTranslation();

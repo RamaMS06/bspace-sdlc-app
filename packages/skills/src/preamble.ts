@@ -3,6 +3,10 @@ import { PLUGIN_SKILLS } from './sdlcSkills.generated';
 
 const usingBspaceSdlc = PLUGIN_SKILLS['using-bspace-sdlc'] ?? '';
 
+/** Agents can't speak after their turn ends: long work must run inside the turn, where Buma shows it. */
+export const FOREGROUND_RULE =
+  "Never end your turn by saying what you will do next (\"I'll run the tests next\"): do it in the same turn. End your turn only when the work is done, or when you need the user to answer or allow something. Run installs, builds, tests and pipelines in the foreground and wait for them to finish before you reply. Never start a long job in the background and end your turn: you can't message the user after your turn ends, and Buma shows the user that you're still working while your turn runs. If a command needs more than a few minutes, say so first, then run it and wait. Keep command output short: use the command's quiet flag, or end a long install or build with `2>&1 | tail -n 30` and read those last lines for errors; progress bars and install logs only fill your context.";
+
 /** A SKILL.md may start with a UTF-8 byte order mark; frontmatter parsing ignores it. */
 const noBom = (text: string) => text.replace(/^\uFEFF/, '');
 const stripFrontmatter = (text: string): string => noBom(text).replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n+/, '').trim();

@@ -13,8 +13,6 @@ import { Workspace } from '@/components/workspace/Workspace';
 import { ScrollToBottom } from '@/components/ScrollToBottom';
 import { TurnRail } from '@/components/TurnRail';
 import { StepBar } from '@/components/StepBar';
-import { stylesFor, useStyles } from '@/components/TemplateChip';
-import { styleContext } from '@/lib/mentions';
 import { getChat, listProjects } from '@/lib/ipc';
 import { FeaturePipeline } from '@/components/FeaturePipeline';
 import { projectSendOptions } from '@/lib/openProject';
@@ -43,7 +41,6 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
   const fitted = useFittedLayout(true);
   const projectsVersion = useApp((s) => s.projectsVersion);
   const seenVersion = useRef(projectsVersion);
-  const styles = useStyles();
   const filesOpen = useLayout((s) => s.filesOpen);
   const tabs = useProjectTabs(project?.id ?? '');
 
@@ -63,7 +60,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
     };
   }, [chatId]);
 
-  // The project moved on (its status, a schedule): the header follows.
+  // The project moved on (its status): the header follows.
   useEffect(() => {
     if (!project || projectsVersion === seenVersion.current) return;
     seenVersion.current = projectsVersion;
@@ -94,7 +91,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
     }
   };
 
-  // When a turn ends well the agent may have rendered a new version: reload the preview.
+  // When a turn ends well the agent may have written new files: reload the workspace.
   const wasStreaming = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -111,14 +108,10 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
   }, [streaming, filesOpen]);
 
   /** What every send from this screen carries: the composer's and an answered A2UI surface's alike. */
-  const sendOptions = (prompt: MessagePart[]): SendOpts => projectSendOptions(project, agent, prompt);
+  const sendOptions = (): SendOpts => projectSendOptions(project, agent);
 
-  const send = async (parts: MessagePart[]) => {
-    const opts = sendOptions(parts);
-    // A mentioned style is context for this message; the project keeps its own style and template.
-    const ctx = styleContext(parts, await stylesFor(parts, styles));
-    if (ctx.length) opts.promptParts = [...ctx, ...(opts.promptParts ?? parts)];
-    void useChat.getState().send(chatId, parts, opts);
+  const send = (parts: MessagePart[]) => {
+    void useChat.getState().send(chatId, parts, sendOptions());
   };
 
   return (
@@ -189,8 +182,6 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
               onAgentChange={(a) => void switchAgent(a)}
               quickChips
               sees={project?.title}
-              styles={styles}
-              styleHint={project && !project.styleId ? t('composer.styleForMessage') : undefined}
             />
           </div>
         </section>

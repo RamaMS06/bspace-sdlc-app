@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  formatTimecode,
-  frameAt,
   parseVersion,
   requiredMissing,
-  secAt,
   slugify,
   uniqueSlug,
   versionAtLeast,
@@ -17,9 +14,9 @@ describe('slugify', () => {
     expect(slugify('Kopi "Senja" ÉLAN')).toBe('kopi-senja-elan');
     expect(slugify('Café Résumé')).toBe('cafe-resume');
   });
-  it('falls back to video', () => {
-    expect(slugify('???')).toBe('video');
-    expect(slugify('')).toBe('video');
+  it('falls back to feature', () => {
+    expect(slugify('???')).toBe('feature');
+    expect(slugify('')).toBe('feature');
   });
   it('caps at 48 chars without trailing dash', () => {
     const s = slugify('a'.repeat(47) + ' bbbb');
@@ -40,8 +37,8 @@ describe('uniqueSlug', () => {
 describe('parseVersion', () => {
   it('parses real-world strings', () => {
     expect(parseVersion('v22.12.0')).toBe('22.12.0');
-    expect(parseVersion('ffmpeg version n7.1-tessus')).toBe('7.1');
-    expect(parseVersion('ffmpeg version 7.1.1-full_build-www.gyan.dev')).toBe('7.1.1');
+    expect(parseVersion('git version 2.39.5 (Apple Git-154)')).toBe('2.39.5');
+    expect(parseVersion('Python 3.12.1')).toBe('3.12.1');
     expect(parseVersion('2026.10.22')).toBe('2026.10.22');
     expect(parseVersion('nope')).toBeNull();
   });
@@ -60,19 +57,7 @@ describe('requiredMissing', () => {
     const t = (id: ToolStatus['id'], required: boolean, ok: boolean): ToolStatus => ({
       id, name: id, required, found: ok, version: null, ok, detail: '',
     });
-    const r = requiredMissing([t('node', true, false), t('ffmpeg', true, true), t('chrome', false, false)]);
+    const r = requiredMissing([t('node', true, false), t('git', true, true), t('figma', false, false)]);
     expect(r.map((x) => x.id)).toEqual(['node']);
-  });
-});
-
-describe('timecode', () => {
-  it('formats', () => {
-    expect(formatTimecode(11, 30)).toBe('0:11.00');
-    expect(formatTimecode(11.5, 30)).toBe('0:11.50');
-    expect(formatTimecode(75.5, 30)).toBe('1:15.50');
-  });
-  it('frames and seconds', () => {
-    expect(frameAt(11, 30)).toBe(330);
-    expect(secAt(330, 30)).toBe(11);
   });
 });

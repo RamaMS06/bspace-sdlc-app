@@ -1,10 +1,10 @@
-//! AI images and voice for agents, paid with the user's Buma credits. Buma listens on
-//! 127.0.0.1 (a random port) and gives each agent session `BUMA_AI_URL` and its own
+//! AI images for agents, paid with the user's Buma credits, and the Agent Office state. Buma
+//! listens on 127.0.0.1 (a random port) and gives each agent session `BUMA_AI_URL` and its own
 //! `BUMA_AI_TOKEN`. The token is tied to that session's chat, so an agent can only save into its
 //! own folder, and the user's sign-in token never leaves Buma.
 //!
 //!   POST $BUMA_AI_URL/image  { "prompt", "aspect"?, "count"?, "out"? }
-//!   POST $BUMA_AI_URL/voice  { "text", "language"?, "voice"?, "out"? }
+//!   POST $BUMA_AI_URL/office { "phases", ... }  (the bspace-sdlc-skills Agent Office hook)
 //!
 //! The answer is `{ "files": [...], "creditsCharged", "creditsLeft" }` with paths relative to the
 //! agent's folder, or `{ "error": "<code>", "message" }`.
@@ -20,14 +20,12 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 const MAX_HEAD: usize = 16 * 1024;
 const MAX_BODY: usize = 64 * 1024;
 const IMAGE_MAX_BYTES: u64 = 25 * 1024 * 1024;
-const VOICE_MAX_BYTES: u64 = 60 * 1024 * 1024;
 
 /// What a request asks for, once read and checked.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AiJob {
     Image { prompt: String, aspect: Option<String>, count: u32, out: PathBuf },
-    Voice { text: String, language: Option<String>, voice: Option<String>, out: PathBuf },
-    /// `GET /usage`: the credits and auto-posts left, so the agent knows before it plans.
+    /// `GET /usage`: the credits left, so the agent knows before it plans.
     Usage,
 }
 
@@ -63,51 +61,12 @@ impl AiProxy {
     }
 }
 
-/// Hands an agent's request to the app: `(chat, name, context)` with name `pick_topic` (start a video)
-/// or `schedule_videos` (put videos on the calendar). The app asks the user; the agent only asks.
+/// Hands an agent's request to the app: `(chat, name, context)`, today only `office_state`.
 pub type Actor = Arc<dyn Fn(&str, &str, Value) + Send + Sync>;
 
-/// `POST /video` and `POST /schedule`: what the agent sends, checked, as the app's action context.
+/// `POST /office`: what the agent sends, checked, as the app's action context.
 pub fn parse_action(path: &str, b: &Value) -> Option<Result<(&'static str, Value), String>> {
-    let text = |k: &str| b.get(k).and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty());
     match path.split('?').next().unwrap_or("").trim_end_matches('/') {
-        "/video" => Some((|| {
-            let title = text("title").ok_or("title is required")?;
-            if title.chars().count() > 120 {
-                return Err("title must be 120 characters or fewer".into());
-            }
-            let mut ctx = json!({ "title": title });
-            for k in ["kind", "styleId", "notes"] {
-                if let Some(v) = text(k) {
-                    ctx[k] = json!(v.chars().take(600).collect::<String>());
-                }
-            }
-            if let Some(n) = b.get("lengthSec").and_then(Value::as_f64) {
-                ctx["lengthSec"] = json!(n);
-            }
-            Ok(("pick_topic", ctx))
-        })()),
-        "/schedule" => Some((|| {
-            let items = b.get("items").and_then(Value::as_array).ok_or("items must be a list")?;
-            if items.is_empty() || items.len() > 20 {
-                return Err("items must hold 1 to 20 videos".into());
-            }
-            Ok(("schedule_videos", json!({ "items": items })))
-        })()),
-        // The wizard checks every field again and the user confirms there: this only keeps it small.
-        "/autopilot" => Some((|| {
-            text("name").ok_or("name is required")?;
-            if !b.is_object() || b.to_string().len() > 8 * 1024 {
-                return Err("the autopilot must be a JSON object under 8 KB".into());
-            }
-            Ok(("create_autopilot", b.clone()))
-        })()),
-        // From any chat: Buma opens its autopilot setup chat, which knows the niches, styles,
-        // voices and accounts to pick from. `notes` is what the user already said.
-        "/autopilot-chat" => Some(Ok((
-            "start_autopilot_chat",
-            json!({ "notes": text("notes").map(|n| n.chars().take(600).collect::<String>()).unwrap_or_default() }),
-        ))),
         // The bspace-sdlc-skills Agent Office hook: the feature's live state, shown in Workflow.
         "/office" => Some((|| {
             if !b.is_object() || b.get("phases").is_none() {
@@ -120,7 +79,7 @@ pub fn parse_action(path: &str, b: &Value) -> Option<Result<(&'static str, Value
 }
 
 /// Starts listening; `folder_for` maps a chat to the folder its agent works in, `act` takes the
-/// agent's /video and /schedule requests.
+/// agent's /office state.
 pub async fn start(
     folder_for: FolderFor,
     run: Runner,
@@ -213,25 +172,13 @@ async fn serve(mut s: tokio::net::TcpStream, proxy: &AiProxy, folder_for: &(dyn 
     let Some(chat) = req.token.as_deref().and_then(|t| proxy.chat_for(t)) else {
         return respond(&mut s, 401, &fail("unauthorized", "Use the BUMA_AI_TOKEN this session was given")).await;
     };
-    // /video and /schedule: Buma asks the user; the agent's turn should end there.
+    // /office: the app shows it; the agent just goes on.
     if req.method == "POST" {
         if let Ok(body @ Value::Object(_)) = serde_json::from_slice::<Value>(&req.body) {
             match parse_action(&req.path, &body) {
                 Some(Ok((name, context))) => {
                     act(&chat, name, context);
-                    if name == "office_state" {
-                        return respond(&mut s, 200, &json!({ "ok": true })).await;
-                    }
-                    let message = if name == "pick_topic" {
-                        "Buma is starting this video in its own chat. End your turn now: the video is made there."
-                    } else if name == "start_autopilot_chat" {
-                        "Buma is opening its autopilot setup chat with what the user said. End your turn now; the autopilot is set up there."
-                    } else if name == "create_autopilot" {
-                        "Buma is showing the user this autopilot to check and start. End your turn now; never say it is running until the user starts it."
-                    } else {
-                        "Buma is showing the user these times to confirm. End your turn now; never say they are scheduled until the user confirms."
-                    };
-                    return respond(&mut s, 200, &json!({ "ok": true, "message": message })).await;
+                    return respond(&mut s, 200, &json!({ "ok": true })).await;
                 }
                 Some(Err(m)) => return respond(&mut s, 400, &fail("invalid", &m)).await,
                 None => {}
@@ -293,11 +240,7 @@ pub fn parse_job(path: &str, b: &Value) -> Result<AiJob, String> {
             };
             Ok(AiJob::Image { prompt, aspect: text("aspect"), count, out: out_path(b.get("out"), "image", &["jpg", "jpeg"])? })
         }
-        "/voice" => {
-            let t = text("text").filter(|t| !t.trim().is_empty()).ok_or("text is required")?;
-            Ok(AiJob::Voice { text: t, language: text("language"), voice: text("voice"), out: out_path(b.get("out"), "voice", &["mp3"])? })
-        }
-        _ => Err("Use /image or /voice".into()),
+        _ => Err("Use /image".into()),
     }
 }
 
@@ -311,21 +254,17 @@ pub fn nth_path(out: &Path, i: usize) -> PathBuf {
     out.with_file_name(format!("{stem}-{}.{ext}", i + 1))
 }
 
-/// What the agent needs from `/v1/usage`: credits and auto-posts left (gifts included), and what
-/// they buy, in one small object.
+/// What the agent needs from `/v1/usage`: credits left and what they buy, in one small object.
 pub fn usage_summary(u: &Value) -> Value {
-    let left = |m: &str| u.pointer(&format!("/{m}/remaining")).and_then(Value::as_i64).unwrap_or(0);
-    let credits = left("credits");
+    let credits = u.pointer("/credits/remaining").and_then(Value::as_i64).unwrap_or(0);
     json!({
         "signedIn": true,
         "credits": credits,
-        "posts": left("posts"),
         "imagesAffordable": credits,
-        "voiceMinutesAffordable": credits / 7,
         "message": if credits > 0 {
-            "Use Buma's /image and /voice for AI pictures and every voice-over"
+            "Use Buma's /image for AI pictures"
         } else {
-            "No AI credits left: make videos without AI images or voice"
+            "No AI credits left: work without AI images"
         },
     })
 }
@@ -343,9 +282,9 @@ pub async fn run_job(client: &reqwest::Client, base: &str, token: &str, job: AiJ
             _ => 502,
         };
         let message = match e {
-            CloudError::SignedOut => "The user isn't signed in to Buma: make this without AI images or voice",
-            CloudError::PlanRequired => "The user's Buma plan has no AI credits: make this without AI images or voice",
-            CloudError::QuotaExceeded => "The user's AI credits for this month are used up: make this without AI images or voice",
+            CloudError::SignedOut => "The user isn't signed in to Buma: work without AI images",
+            CloudError::PlanRequired => "The user's Buma plan has no AI credits: work without AI images",
+            CloudError::QuotaExceeded => "The user's AI credits for this month are used up: work without AI images",
             CloudError::Unavailable => "Buma AI isn't available right now: try once more later, else make this without it",
             _ => "The AI provider failed: try once more, else make this without it",
         };
@@ -357,8 +296,7 @@ pub async fn run_job(client: &reqwest::Client, base: &str, token: &str, job: AiJ
             Err(CloudError::SignedOut) => Ok(json!({
                 "signedIn": false,
                 "credits": 0,
-                "posts": 0,
-                "message": "The user isn't signed in to Buma: there are no AI credits, so make videos without AI images or voice",
+                "message": "The user isn't signed in to Buma: there are no AI credits, so work without AI images",
             })),
             Err(e) => Err(refused(e)),
         };
@@ -372,16 +310,6 @@ pub async fn run_job(client: &reqwest::Client, base: &str, token: &str, job: AiJ
             }
             ("/v1/ai/image", b, (0..*count as usize).map(|i| nth_path(out, i)).collect(), IMAGE_MAX_BYTES)
         }
-        AiJob::Voice { text, language, voice, out } => {
-            let mut b = json!({ "text": text, "clientRequestId": request_id });
-            if let Some(l) = language {
-                b["language"] = json!(l);
-            }
-            if let Some(v) = voice {
-                b["voice"] = json!(v);
-            }
-            ("/v1/ai/voice", b, vec![out.clone()], VOICE_MAX_BYTES)
-        }
         AiJob::Usage => unreachable!("answered above"),
     };
     let answer = send(client, reqwest::Method::POST, base, token, path, Some(&body)).await.map_err(refused)?;
@@ -391,7 +319,6 @@ pub async fn run_job(client: &reqwest::Client, base: &str, token: &str, job: AiJ
             .and_then(Value::as_array)
             .map(|a| a.iter().filter_map(|i| i.get("url").and_then(Value::as_str).map(str::to_string)).collect())
             .unwrap_or_default(),
-        AiJob::Voice { .. } => answer.get("audioUrl").and_then(Value::as_str).map(|u| vec![u.to_string()]).unwrap_or_default(),
         AiJob::Usage => Vec::new(),
     };
     if urls.is_empty() {
@@ -422,18 +349,14 @@ mod tests {
         for bad in ["../x.jpg", "/etc/x.jpg", "assets/x.png", "a/../../x.jpg"] {
             assert!(parse_job("/image", &json!({ "prompt": "x", "out": bad })).is_err(), "{bad}");
         }
-        let v = parse_job("/voice", &json!({ "text": "halo", "language": "id" })).unwrap();
-        match v {
-            AiJob::Voice { out, .. } => assert!(out.starts_with("assets/ai") && out.extension().unwrap() == "mp3"),
+        match parse_job("/image", &json!({ "prompt": "x" })).unwrap() {
+            AiJob::Image { out, .. } => assert!(out.starts_with("assets/ai") && out.extension().unwrap() == "jpg"),
             _ => panic!(),
         }
-        assert!(parse_job("/voice", &json!({ "text": "x", "out": "a.wav" })).is_err());
-        assert_eq!(parse_action("/autopilot", &json!({ "name": "Kopi" })).unwrap().unwrap().0, "create_autopilot");
-        assert!(parse_action("/autopilot", &json!({})).unwrap().is_err());
-        let (name, ctx) = parse_action("/autopilot-chat", &json!({ "notes": " sejarah dunia, Instagram " })).unwrap().unwrap();
-        assert_eq!((name, ctx), ("start_autopilot_chat", json!({ "notes": "sejarah dunia, Instagram" })));
-        assert_eq!(parse_action("/autopilot-chat", &json!({})).unwrap().unwrap().1, json!({ "notes": "" }));
-        assert!(parse_action("/autopilot", &json!({ "name": "Kopi", "niche": "x".repeat(9000) })).unwrap().is_err());
+        assert!(parse_job("/voice", &json!({ "text": "halo" })).is_err());
+        for gone in ["/video", "/schedule", "/autopilot", "/autopilot-chat"] {
+            assert!(parse_action(gone, &json!({ "title": "x", "name": "x" })).is_none(), "{gone}");
+        }
         let (name, ctx) = parse_action("/office", &json!({ "phases": { "brainstorm": "done" }, "agents": [] })).unwrap().unwrap();
         assert_eq!(name, "office_state");
         assert_eq!(ctx["phases"]["brainstorm"], "done");
@@ -486,7 +409,8 @@ mod tests {
         // A new session of the chat replaces its token.
         let again = proxy.session_env("c1")[1].1.clone();
         assert_eq!(post(proxy.port, "/image", Some(&token), r#"{"prompt":"x"}"#).await.0, 401);
-        assert_eq!(post(proxy.port, "/voice", Some(&again), r#"{"text":"halo"}"#).await.0, 200);
+        assert_eq!(post(proxy.port, "/image", Some(&again), r#"{"prompt":"x"}"#).await.0, 200);
+        assert_eq!(post(proxy.port, "/voice", Some(&again), r#"{"text":"halo"}"#).await.0, 400);
 
         // Usage is a GET with no body; the jobs stay POST.
         assert_eq!(request(proxy.port, "GET", "/usage", Some(&again), "").await.0, 200);
@@ -495,29 +419,21 @@ mod tests {
         assert_eq!(request(proxy.port, "GET", "/image", Some(&again), "").await.0, 405);
         assert_eq!(request(proxy.port, "GET", "/usage", None, "").await.0, 401);
 
-        // The agent asks Buma to start a video or to schedule: the app gets it, the agent a note to stop.
-        let (status, body) = post(proxy.port, "/video", Some(&again), r#"{"title":" What if the Moon vanished ","kind":"explainer","lengthSec":60,"styleId":"cartoon-3d-world"}"#).await;
-        assert_eq!(status, 200);
-        assert!(body["message"].as_str().unwrap().contains("End your turn"));
-        let (status, _) = post(proxy.port, "/schedule", Some(&again), r#"{"items":[{"title":"A","at":"2099-01-01T12:00:00+07:00"}]}"#).await;
-        assert_eq!(status, 200);
-        assert_eq!(post(proxy.port, "/video", Some(&again), r#"{"kind":"explainer"}"#).await.0, 400);
-        assert_eq!(post(proxy.port, "/schedule", Some(&again), r#"{"items":[]}"#).await.0, 400);
-        assert_eq!(post(proxy.port, "/video", None, r#"{"title":"x"}"#).await.0, 401);
+        // The Agent Office hook: the app gets the state, the agent a plain ok.
+        let (status, body) = post(proxy.port, "/office", Some(&again), r#"{"phases":{"brainstorm":"done"}}"#).await;
+        assert_eq!((status, body["ok"].as_bool()), (200, Some(true)));
+        assert_eq!(post(proxy.port, "/office", None, r#"{"phases":{}}"#).await.0, 401);
         let acted = acted.lock().unwrap();
-        assert_eq!(acted.len(), 2);
-        assert_eq!((acted[0].0.as_str(), acted[0].1.as_str()), ("c1", "pick_topic"));
-        assert_eq!(acted[0].2, json!({ "title": "What if the Moon vanished", "kind": "explainer", "lengthSec": 60.0, "styleId": "cartoon-3d-world" }));
-        assert_eq!(acted[1].1, "schedule_videos");
+        assert_eq!(acted.len(), 1);
+        assert_eq!((acted[0].0.as_str(), acted[0].1.as_str()), ("c1", "office_state"));
     }
 
     #[test]
     fn usage_says_what_the_credits_buy() {
-        let u = json!({ "credits": { "allowance": 30, "used": 2, "remaining": 28 }, "posts": { "allowance": 5, "used": 0, "remaining": 5 } });
+        let u = json!({ "credits": { "allowance": 30, "used": 2, "remaining": 28 } });
         let s = usage_summary(&u);
-        assert_eq!((s["signedIn"].as_bool(), s["credits"].as_i64(), s["posts"].as_i64()), (Some(true), Some(28), Some(5)));
-        assert_eq!((s["imagesAffordable"].as_i64(), s["voiceMinutesAffordable"].as_i64()), (Some(28), Some(4)));
-        let none = usage_summary(&json!({ "credits": { "remaining": 0 }, "posts": { "remaining": 0 } }));
+        assert_eq!((s["signedIn"].as_bool(), s["credits"].as_i64(), s["imagesAffordable"].as_i64()), (Some(true), Some(28), Some(28)));
+        let none = usage_summary(&json!({ "credits": { "remaining": 0 } }));
         assert!(none["message"].as_str().unwrap().contains("without AI"));
     }
 }

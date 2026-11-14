@@ -19,7 +19,7 @@ export function onQuestion(cb: (q: AgentQuestion) => void): Promise<UnlistenFn> 
 /** What an agent (or its plugin's hooks) sent Buma through its local endpoint, such as the Agent Office state. */
 export interface AgentAction {
   chatId: string;
-  name: 'pick_topic' | 'schedule_videos' | 'create_autopilot' | 'start_autopilot_chat' | 'office_state';
+  name: 'office_state';
   context: Record<string, unknown>;
 }
 

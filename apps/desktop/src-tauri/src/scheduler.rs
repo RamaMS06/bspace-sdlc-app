@@ -1,19 +1,10 @@
-//! Background scheduling: the 30 second tick, what closing the window does, and the tray menu.
-//!
-//! The UI decides what is due (reminders now, autopilot work in A4); Rust only keeps time, because
-//! JS timers can be throttled while the window is hidden, and owns the window and tray.
+//! Background mode: what closing the window does, the tray menu and the single main window.
 
 use crate::types::{Settings, UiLanguage};
-use std::time::Duration;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
-use tauri::{AppHandle, Emitter, Manager, Runtime, WindowEvent};
+use tauri::{AppHandle, Manager, Runtime, WindowEvent};
 
-/// Event the main window receives on every tick; the payload is the time as RFC 3339 (UTC).
-pub const TICK_EVENT: &str = "scheduler://tick";
-/// Event the tray's "Pause all autopilots" item emits to the main window; the autopilot engine pauses them all.
-pub const PAUSE_ALL_EVENT: &str = "autopilot://pause-all";
-pub const TICK_SECS: u64 = 30;
 const TRAY_ID: &str = "buma";
 /// Black template silhouette: macOS tints it for light and dark menu bars.
 #[cfg(target_os = "macos")]
@@ -44,36 +35,14 @@ pub fn close_action(background_mode: bool, has_tray: bool) -> CloseAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrayLabels {
     pub open: &'static str,
-    pub pause_all: &'static str,
     pub quit: &'static str,
 }
 
 pub fn tray_labels(lang: Option<UiLanguage>) -> TrayLabels {
     match lang {
-        Some(UiLanguage::Id) => TrayLabels { open: "Buka Buma", pause_all: "Jeda semua autopilot", quit: "Keluar" },
-        _ => TrayLabels { open: "Open Buma", pause_all: "Pause all autopilots", quit: "Quit" },
+        Some(UiLanguage::Id) => TrayLabels { open: "Buka Buma", quit: "Keluar" },
+        _ => TrayLabels { open: "Open Buma", quit: "Quit" },
     }
-}
-
-/// Calls `emit` once per `period`, forever (the first call comes one period after the start).
-pub async fn run_ticker<F: FnMut()>(period: Duration, mut emit: F) {
-    let mut interval = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    loop {
-        interval.tick().await;
-        emit();
-    }
-}
-
-/// Starts the ticker: every 30 s the main window gets `scheduler://tick`, hidden or not.
-pub fn start_ticker<R: Runtime>(app: &AppHandle<R>) {
-    let app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        run_ticker(Duration::from_secs(TICK_SECS), || {
-            let _ = app.emit_to("main", TICK_EVENT, chrono::Utc::now().to_rfc3339());
-        })
-        .await;
-    });
 }
 
 pub fn launched_hidden(args: &[String]) -> bool {
@@ -95,10 +64,8 @@ pub fn show_main<R: Runtime>(app: &AppHandle<R>) {
 fn tray_menu<R: Runtime>(app: &AppHandle<R>, lang: Option<UiLanguage>) -> tauri::Result<Menu<R>> {
     let l = tray_labels(lang);
     let open = MenuItem::with_id(app, "open", l.open, true, None::<&str>)?;
-    // The autopilot engine (state/autopilot.ts) pauses every autopilot on `PAUSE_ALL_EVENT`.
-    let pause = MenuItem::with_id(app, "pause-all", l.pause_all, true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", l.quit, true, None::<&str>)?;
-    Menu::with_items(app, &[&open, &pause, &PredefinedMenuItem::separator(app)?, &quit])
+    Menu::with_items(app, &[&open, &PredefinedMenuItem::separator(app)?, &quit])
 }
 
 /// Makes the tray icon (a template image on macOS) with its menu.
@@ -110,9 +77,6 @@ pub fn build_tray<R: Runtime>(app: &AppHandle<R>, settings: &Settings) -> tauri:
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => show_main(app),
-            "pause-all" => {
-                let _ = app.emit_to("main", PAUSE_ALL_EVENT, ());
-            }
             // Really quits, even with background mode on.
             "quit" => app.exit(0),
             _ => {}
@@ -182,24 +146,6 @@ pub fn on_window_event<R: Runtime>(window: &tauri::Window<R>, event: &WindowEven
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
-
-    #[tokio::test(start_paused = true)]
-    async fn the_ticker_fires_once_per_period() {
-        let count = Arc::new(AtomicUsize::new(0));
-        let c = count.clone();
-        let task = tokio::spawn(run_ticker(Duration::from_secs(30), move || {
-            c.fetch_add(1, Ordering::SeqCst);
-        }));
-        tokio::time::sleep(Duration::from_secs(29)).await;
-        assert_eq!(count.load(Ordering::SeqCst), 0, "not before the first period");
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        assert_eq!(count.load(Ordering::SeqCst), 1);
-        tokio::time::sleep(Duration::from_secs(90)).await;
-        assert_eq!(count.load(Ordering::SeqCst), 4);
-        task.abort();
-    }
 
     #[test]
     fn a_crash_while_making_the_tray_is_an_error_not_a_crash() {

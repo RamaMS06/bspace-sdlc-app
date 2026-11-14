@@ -2,12 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { ArrowUp, AtSign, Check, ChevronDown, Star, File as FileIcon, Folder, FolderPlus, Palette, Paperclip, Plus, Slash, Square, X } from 'lucide-react';
-import type { AgentId, MessagePart, Project, Style } from '@bspace-sdlc-app/shared';
+import { ArrowUp, AtSign, Check, ChevronDown, Star, File as FileIcon, Folder, FolderPlus, Paperclip, Plus, Slash, Square, X } from 'lucide-react';
+import type { AgentId, MessagePart, Project } from '@bspace-sdlc-app/shared';
 import { Button } from '@/components/Button';
 import { AgentLogo } from '@/components/AgentLogo';
-import { FrameChip } from '@/components/MessageList';
-import { filterProjects, filterStyles, MentionMenu, styleKey, videoKey } from '@/components/MentionMenu';
+import { filterProjects, MentionMenu, projectKey } from '@/components/MentionMenu';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,7 +25,7 @@ import { AGENT_NAMES } from '@/lib/agents';
 import { assetUrl, attachFile, setAgentModel } from '@/lib/ipc';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
-import { autoOn, modeOf, useChat, type StyleRef } from '@/state/chat';
+import { autoOn, modeOf, useChat } from '@/state/chat';
 import { EXACT_LIST, modelOptions, useModels } from '@/state/models';
 import { BumaLoading } from '@/components/buma/Loading';
 import { ModePicker } from '@/components/ModePicker';
@@ -338,15 +337,13 @@ export function Composer({
   ensureChat,
   initialText,
   draftKey,
-  styles,
-  styleHint,
   autoFocus,
 }: {
   chatId: string | null;
   /** Resolve to false when sending failed: the draft is then kept. */
   onSend(parts: MessagePart[]): void | boolean | Promise<void | boolean>;
   disabled?: boolean;
-  /** Videos the @ menu can list. Omit to turn the menu off. */
+  /** Features the @ menu can list. Omit to turn the menu off. */
   projects?: Project[];
   mention?: MentionRef | null;
   onMention?(m: MentionRef | null): void;
@@ -366,12 +363,8 @@ export function Composer({
   ensureChat?(): Promise<string>;
   /** Starts the box with this text (not sent). */
   initialText?: string;
-  /** Keeps the unsent text and style chip in the chat store under this key, so they are there when the screen comes back. */
+  /** Keeps the unsent text in the chat store under this key, so it is there when the screen comes back. */
   draftKey?: string;
-  /** Styles the @ menu can list. Omit to leave them out. */
-  styles?: Style[];
-  /** A line under the style chip, saying what the style does here. */
-  styleHint?: string;
   /** Takes the focus, and takes it back each time the box is enabled again (after a turn). */
   autoFocus?: boolean;
 }) {
@@ -384,10 +377,9 @@ export function Composer({
   const autoBusy = useChat((s) => !!chatId && !!s.autoBusy[chatId]);
   const attachments = useChat((s) => (chatId ? s.attachments[chatId] : undefined)) ?? NONE;
   const [text, setText] = useState(() => initialText ?? (draftKey ? useChat.getState().drafts[draftKey]?.text : undefined) ?? '');
-  const [styleRef, setStyleRef] = useState<StyleRef | null>(() => (draftKey ? useChat.getState().drafts[draftKey]?.style : null) ?? null);
   useEffect(() => {
-    if (draftKey) useChat.getState().setDraft(draftKey, { text, style: styleRef });
-  }, [draftKey, text, styleRef]);
+    if (draftKey) useChat.getState().setDraft(draftKey, { text });
+  }, [draftKey, text]);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [active, setActive] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -510,13 +502,10 @@ export function Composer({
     ref.current?.focus();
   };
 
-  const mentions = !!projects || !!styles;
-  const token = mentions ? TOKEN.exec(text) : null;
+  const token = projects ? TOKEN.exec(text) : null;
   const query = token?.[2] ?? '';
-  const videoMatches = token && projects ? filterProjects(projects, query) : undefined;
-  const styleMatches = token && styles ? filterStyles(styles, query) : undefined;
-  // One list across both groups, in the order the menu shows them.
-  const items = [...(videoMatches ?? []).map(videoKey), ...(styleMatches ?? []).map(styleKey)];
+  const projectMatches = token && projects ? filterProjects(projects, query) : undefined;
+  const items = (projectMatches ?? []).map(projectKey);
   const open = !!token && dismissed !== text;
   const current = items.includes(active) ? active : items[0];
 
@@ -526,40 +515,26 @@ export function Composer({
     ref.current?.focus();
   };
 
-  const pickStyle = (s: Style) => {
-    setStyleRef({ styleId: s.id, name: s.name });
-    setText((t) => t.replace(TOKEN, '$1'));
-    ref.current?.focus();
-  };
-
   const pickKey = (key: string) => {
-    const p = videoMatches?.find((x) => videoKey(x) === key);
-    if (p) return pick(p);
-    const s = styleMatches?.find((x) => styleKey(x) === key);
-    if (s) pickStyle(s);
+    const p = projectMatches?.find((x) => projectKey(x) === key);
+    if (p) pick(p);
   };
 
   // While the agent works (`disabled` with a Stop), the box stays open: what is sent waits in the queue.
   const working = !!disabled && !!onStop;
   const locked = !!disabled && !working;
   const queued = useChat((s) => (chatId ? s.queued[chatId] : undefined)) ?? NO_QUEUE;
-  const canSend = !locked && (text.trim().length > 0 || !!mention || !!styleRef || attachments.length > 0);
+  const canSend = !locked && (text.trim().length > 0 || !!mention || attachments.length > 0);
   const sending = useRef(false);
   const send = async () => {
     if (!canSend || sending.current) return;
     const parts: MessagePart[] = [];
     if (text.trim()) parts.push({ type: 'text', text: text.trim() });
     if (mention) parts.push({ type: 'mention', ...mention });
-    if (styleRef) parts.push({ type: 'style-mention', ...styleRef });
     sending.current = true;
     const draft = text;
-    const draftStyle = styleRef;
     setText('');
-    setStyleRef(null);
-    const giveBack = () => {
-      setText((t) => t || draft);
-      setStyleRef((s) => s ?? draftStyle);
-    };
+    const giveBack = () => setText((t) => t || draft);
     try {
       // The prompt may run for the whole turn, so clear now and give the draft back on failure.
       if ((await onSend(parts)) === false) giveBack();
@@ -645,7 +620,7 @@ export function Composer({
                 {attachError}
               </p>
             )}
-            {(mention || styleRef || attachments.length > 0) && (
+            {(mention || attachments.length > 0) && (
               <div className="flex flex-wrap gap-2">
                 {mention && (
                   <span className="inline-flex h-6 items-center gap-1 rounded-sm border border-primary-border bg-primary-soft pl-2 pr-1 text-[13px] font-medium text-primary-text">
@@ -660,40 +635,13 @@ export function Composer({
                     </button>
                   </span>
                 )}
-                {styleRef && (
-                  <span className="inline-flex h-6 items-center gap-1 rounded-sm border border-hairline bg-raised pl-2 pr-1 text-[13px] font-medium text-foreground">
-                    <Palette size={12} strokeWidth={1.5} aria-hidden="true" className="text-text-2" />
-                    <span>@{styleRef.name}</span>
-                    <button
-                      type="button"
-                      aria-label={t('composer.removeStyle', { name: styleRef.name })}
-                      onClick={() => setStyleRef(null)}
-                      className="inline-flex size-4 cursor-pointer items-center justify-center border-none bg-transparent p-0 text-text-2"
-                    >
-                      <X size={12} strokeWidth={1.5} aria-hidden="true" />
-                    </button>
-                  </span>
-                )}
                 {attachments.map((a, i) =>
-                  a.type === 'frame' ? (
-                    <span key={i} className="inline-flex items-center gap-1">
-                      <FrameChip part={a} />
-                      <button
-                        type="button"
-                        aria-label={t('composer.removeFrame')}
-                        onClick={() => chatId && useChat.getState().detach(chatId, i)}
-                        className="inline-flex size-5 cursor-pointer items-center justify-center border-none bg-transparent p-0 text-text-3"
-                      >
-                        <X size={14} strokeWidth={1.5} aria-hidden="true" />
-                      </button>
-                    </span>
-                  ) : a.type === 'file' ? (
+                  a.type === 'file' ? (
                     <FileChip key={i} part={a} onRemove={() => chatId && useChat.getState().detach(chatId, i)} />
                   ) : null,
                 )}
               </div>
             )}
-            {styleRef && styleHint && <p className="m-0 -mt-1 text-xs text-text-3">{styleHint}</p>}
             {folder && chatId && (
               <div className="flex flex-wrap gap-1.5">
                 <span data-testid="folder-chip" title={folder} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-hairline bg-raised pr-1 pl-2 text-[12px]">
@@ -816,15 +764,7 @@ export function Composer({
           onOpenAutoFocus={(e) => e.preventDefault()}
           onCloseAutoFocus={(e) => e.preventDefault()}
         >
-          <MentionMenu
-            projects={videoMatches}
-            styles={styleMatches}
-            query={query}
-            value={current ?? ''}
-            onValueChange={setActive}
-            onPick={pick}
-            onPickStyle={pickStyle}
-          />
+          <MentionMenu projects={projectMatches ?? []} query={query} value={current ?? ''} onValueChange={setActive} onPick={pick} />
         </PopoverContent>
       </Popover>
         <div data-no-drag className="-mt-1 flex flex-wrap items-center gap-x-4 gap-y-1.5 px-2">
@@ -838,7 +778,7 @@ export function Composer({
                   onChange={(m) => void useChat.getState().setMode(chatId, m)}
                 />
               )}
-              {mentions && (
+              {projects && (
                 <Tip label={t('composer.mention')}>
                   <button
                     type="button"

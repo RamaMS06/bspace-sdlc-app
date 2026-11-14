@@ -28,7 +28,7 @@ pub fn slugify(title: &str) -> String {
     out.truncate(48);
     let out = out.trim_end_matches('-');
     if out.is_empty() {
-        "video".to_string()
+        "feature".to_string()
     } else {
         out.to_string()
     }
@@ -136,8 +136,8 @@ mod tests {
     fn slugify_cases() {
         assert_eq!(slugify("Kopi \"Senja\""), "kopi-senja");
         assert_eq!(slugify("Café Déjà Vu"), "cafe-deja-vu");
-        assert_eq!(slugify("???"), "video");
-        assert_eq!(slugify(""), "video");
+        assert_eq!(slugify("???"), "feature");
+        assert_eq!(slugify(""), "feature");
         assert_eq!(slugify("  --Hello   World--  "), "hello-world");
         let long = slugify(&"ab ".repeat(40));
         assert!(long.len() <= 48 && !long.ends_with('-'));
@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn create_folder_and_brief() {
         let tmp = tempfile::tempdir().unwrap();
-        let working = tmp.path().join("Video Saya");
+        let working = tmp.path().join("Kerja Saya");
         let (slug, dir) = create_project_folder(&working, "Kopi \"Senja\"", &[]).unwrap();
         assert_eq!(slug, "kopi-senja");
         assert!(dir.is_dir() && dir.ends_with("kopi-senja"));
@@ -164,7 +164,7 @@ mod tests {
         assert_eq!(std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap(), "# Brief");
 
         let (s, _) = create_project_folder(&working, "???", &[]).unwrap();
-        assert_eq!(s, "video");
+        assert_eq!(s, "feature");
         let (s, _) = create_project_folder(&working, "Promo", &[]).unwrap();
         assert_eq!(s, "promo");
         let (s, d) = create_project_folder(&working, "Promo", &["promo".to_string()]).unwrap();

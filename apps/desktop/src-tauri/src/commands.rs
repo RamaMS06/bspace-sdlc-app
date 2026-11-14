@@ -1,10 +1,8 @@
 //! Tauri commands: the thin layer between the UI and the Rust modules.
 
 use crate::db::Db;
-use crate::media::MediaTools;
 use crate::system::{self, RealExec};
 use crate::types::*;
-use crate::media;
 use crate::acp::{AcpManager, AcpSink, PromptPart};
 use crate::projects;
 use crate::auth::{AccountCache, Auth, AuthSink, FileStore, KeyringStore, SecureStore};
@@ -19,19 +17,10 @@ pub type CmdResult<T> = Result<T, String>;
 pub struct AppState {
     pub db: Db,
     pub acp: AcpManager,
-    pub media: MediaTools,
     pub home: PathBuf,
-    /// The working folder each study started in, so changing the working folder mid-study can't strand its files.
-    pub study_working: std::sync::Mutex<std::collections::HashMap<String, PathBuf>>,
 }
 
 impl AppState {
-    /// The working folder `study_dir` created this study in, else the current one.
-    pub fn working_for_study(&self, study_id: &str) -> PathBuf {
-        let known = self.study_working.lock().unwrap_or_else(|e| e.into_inner()).get(study_id).cloned();
-        known.unwrap_or_else(|| self.working())
-    }
-
     pub fn working(&self) -> PathBuf {
         PathBuf::from(self.db.get_settings(&self.home).working_folder)
     }
@@ -122,7 +111,7 @@ pub fn update_settings(
     Ok(settings)
 }
 
-/// Folders the webview may load files (frames, thumbnails, renders) from: the working
+/// Folders the webview may load files (attachments, images, workspace files) from: the working
 /// folder plus every known project's own folder, which stays put when the working
 /// folder changes. Nothing else is in the asset scope.
 pub fn asset_folders(db: &Db, working: &str) -> Vec<PathBuf> {
@@ -202,18 +191,7 @@ fn new_project_with(
         title: input.title,
         slug,
         folder: dir.to_string_lossy().into_owned(),
-        kind: input.kind,
-        format: input.format,
-        language: input.language,
         status: ProjectStatus::Draft,
-        style_id: input.style_id,
-        scheduled_at: None,
-        review_state: ReviewState::None,
-        posted_at: None,
-        reminded_at: None,
-        review_reminded_at: None,
-        social_post_id: None,
-        duration_sec: None,
         created_at: now.clone(),
         updated_at: now,
     };
@@ -233,7 +211,7 @@ pub fn update_project(
     state.db.update_project(&id, patch).map_err(err)
 }
 
-/// Moves a project to `status` (draft → building → rendered); never back unless `reset`. See `Db::set_project_status`.
+/// Moves a project to `status` (draft → building); never back unless `reset`. See `Db::set_project_status`.
 #[tauri::command]
 pub fn set_project_status(
     state: State<'_, AppState>,
@@ -242,217 +220,6 @@ pub fn set_project_status(
     reset: Option<bool>,
 ) -> CmdResult<Project> {
     state.db.set_project_status(&project_id, status, reset.unwrap_or(false)).map_err(err)
-}
-
-/// Sets or clears when a video is due to be posted. `at` must be RFC 3339; a new time is
-/// reminded afresh, so `remindedAt` is cleared with it.
-pub fn schedule_project(db: &Db, project_id: &str, at: Option<String>) -> CmdResult<Project> {
-    // Stored as UTC so every schedule compares as plain text.
-    let at = at
-        .map(|at| {
-            chrono::DateTime::parse_from_rfc3339(&at)
-                .map(|dt| dt.with_timezone(&chrono::Utc).to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
-                .map_err(|_| format!("That date and time isn't valid: {at}"))
-        })
-        .transpose()?;
-    db.update_project(project_id, serde_json::json!({ "scheduledAt": at, "remindedAt": null, "reviewRemindedAt": null }))
-        .map_err(err)
-}
-
-pub fn mark_posted(db: &Db, project_id: &str, posted: bool) -> CmdResult<Project> {
-    let at = posted.then(crate::db::now);
-    db.update_project(project_id, serde_json::json!({ "postedAt": at })).map_err(err)
-}
-
-pub fn approve(db: &Db, project_id: &str) -> CmdResult<Project> {
-    db.update_project(project_id, serde_json::json!({ "reviewState": "approved" })).map_err(err)
-}
-
-/// One video of a confirmed schedule card: an existing project, or a new draft (its input and brief).
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BatchItem {
-    pub project_id: Option<String>,
-    pub at: String,
-    pub draft: Option<BatchDraft>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct BatchDraft {
-    pub input: NewProject,
-    pub brief: String,
-}
-
-const BATCH_MAX: usize = 20;
-
-/// Checks every item first, exactly as `set_schedule` will, then writes: drafts first, then the
-/// schedules. Any failure undoes the batch: its drafts are removed (row and folder) and videos already
-/// moved get their old schedule and reminders back. Errors are codes the UI says in the user's
-/// language: `schedule:count`, `schedule:<badTime|past|tooFar|unknown|twice|badItem>:<n>` (1-based) and
-/// `schedule:write`.
-pub fn schedule_batch(
-    db: &Db,
-    working: &Path,
-    items: Vec<BatchItem>,
-    now: chrono::DateTime<chrono::Utc>,
-) -> CmdResult<Vec<Project>> {
-    schedule_batch_with(db, working, items, now, |db, id, at| schedule_project(db, id, Some(at)))
-}
-
-/// `schedule_batch` with the per-video write passed in, so a test can make it fail part-way.
-fn schedule_batch_with(
-    db: &Db,
-    working: &Path,
-    items: Vec<BatchItem>,
-    now: chrono::DateTime<chrono::Utc>,
-    schedule: impl Fn(&Db, &str, String) -> CmdResult<Project>,
-) -> CmdResult<Vec<Project>> {
-    if items.is_empty() || items.len() > BATCH_MAX {
-        return Err("schedule:count".into());
-    }
-    let mut checked = Vec::with_capacity(items.len());
-    for (i, item) in items.iter().enumerate() {
-        let n = i + 1;
-        let at = chrono::DateTime::parse_from_rfc3339(&item.at)
-            .map_err(|_| format!("schedule:badTime:{n}"))?
-            .with_timezone(&chrono::Utc);
-        if at <= now {
-            return Err(format!("schedule:past:{n}"));
-        }
-        if at - now > chrono::Duration::days(365) {
-            return Err(format!("schedule:tooFar:{n}"));
-        }
-        match (&item.project_id, &item.draft) {
-            (Some(id), None) => {
-                if db.get_project(id).map_err(err)?.is_none() {
-                    return Err(format!("schedule:unknown:{n}"));
-                }
-                // A video once per batch: two times for one video can't both be undone right.
-                if items[..i].iter().any(|x| x.project_id.as_deref() == Some(id.as_str())) {
-                    return Err(format!("schedule:twice:{n}"));
-                }
-            }
-            (None, Some(d)) if !d.input.title.trim().is_empty() => {}
-            _ => return Err(format!("schedule:badItem:{n}")),
-        }
-        checked.push(at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
-    }
-
-    let mut created: Vec<Project> = Vec::new();
-    let mut moved: Vec<Project> = Vec::new();
-    let undo = |created: &[Project], moved: &[Project]| {
-        for p in created {
-            let _ = db.delete_project(&p.id);
-            let dir = Path::new(&p.folder);
-            // Only a folder this batch made, inside the working folder.
-            if dir.starts_with(working) && dir != working {
-                let _ = std::fs::remove_dir_all(dir);
-            }
-        }
-        // Newest first, so each video ends with the schedule it had before the batch.
-        for old in moved.iter().rev() {
-            let _ = db.update_project(
-                &old.id,
-                serde_json::json!({
-                    "scheduledAt": old.scheduled_at,
-                    "remindedAt": old.reminded_at,
-                    "reviewRemindedAt": old.review_reminded_at,
-                    "updatedAt": old.updated_at,
-                }),
-            );
-        }
-    };
-    let mut ids = Vec::with_capacity(items.len());
-    for item in items {
-        match (item.project_id, item.draft) {
-            (Some(id), _) => ids.push(id),
-            (None, Some(d)) => match new_project(db, working, d.input, &d.brief) {
-                Ok(p) => {
-                    ids.push(p.id.clone());
-                    created.push(p);
-                }
-                Err(_) => {
-                    undo(&created, &moved);
-                    return Err("schedule:write".into());
-                }
-            },
-            (None, None) => unreachable!("checked above"),
-        }
-    }
-    let mut out = Vec::with_capacity(ids.len());
-    for (id, at) in ids.iter().zip(checked) {
-        let before = db.get_project(id).ok().flatten();
-        match schedule(db, id, at) {
-            Ok(p) => {
-                if let Some(b) = before.filter(|b| !created.iter().any(|c| c.id == b.id)) {
-                    moved.push(b);
-                }
-                out.push(p);
-            }
-            Err(_) => {
-                undo(&created, &moved);
-                return Err("schedule:write".into());
-            }
-        }
-    }
-    Ok(out)
-}
-
-#[tauri::command]
-pub fn schedule_videos(state: State<'_, AppState>, items: Vec<BatchItem>) -> CmdResult<Vec<Project>> {
-    schedule_batch(&state.db, &state.working(), items, chrono::Utc::now())
-}
-
-#[tauri::command]
-pub fn set_schedule(state: State<'_, AppState>, project_id: String, at: Option<String>) -> CmdResult<Project> {
-    schedule_project(&state.db, &project_id, at)
-}
-
-#[tauri::command]
-pub fn set_posted(state: State<'_, AppState>, project_id: String, posted: bool) -> CmdResult<Project> {
-    mark_posted(&state.db, &project_id, posted)
-}
-
-#[tauri::command]
-pub fn approve_project(state: State<'_, AppState>, project_id: String) -> CmdResult<Project> {
-    approve(&state.db, &project_id)
-}
-
-// ---- autopilots ----
-
-#[tauri::command]
-pub fn list_autopilots(state: State<'_, AppState>) -> CmdResult<Vec<Autopilot>> {
-    state.db.list_autopilots().map_err(err)
-}
-
-#[tauri::command]
-pub fn save_autopilot(state: State<'_, AppState>, input: AutopilotInput) -> CmdResult<Autopilot> {
-    state.db.save_autopilot(&input).map_err(err)
-}
-
-#[tauri::command]
-pub fn delete_autopilot(state: State<'_, AppState>, id: String) -> CmdResult<()> {
-    state.db.delete_autopilot(&id).map_err(err)
-}
-
-#[tauri::command]
-pub fn set_autopilot_status(state: State<'_, AppState>, id: String, status: AutopilotStatus) -> CmdResult<Autopilot> {
-    state.db.set_autopilot_status(&id, status).map_err(err)
-}
-
-#[tauri::command]
-pub fn list_slots(state: State<'_, AppState>, from: String, to: String) -> CmdResult<Vec<AutopilotSlot>> {
-    state.db.list_slots(&from, &to).map_err(err)
-}
-
-#[tauri::command]
-pub fn upsert_slot(state: State<'_, AppState>, autopilot_id: String, due_at: String) -> CmdResult<AutopilotSlot> {
-    state.db.upsert_slot(&autopilot_id, &due_at).map_err(err)
-}
-
-#[tauri::command]
-pub fn update_slot(state: State<'_, AppState>, id: String, patch: serde_json::Value) -> CmdResult<AutopilotSlot> {
-    state.db.update_slot(&id, patch).map_err(err)
 }
 
 // ---- chats ----
@@ -488,7 +255,7 @@ pub struct PurgedArchive {
     cards: usize,
 }
 
-/// Deletes archived chats and cards for good. Projects and their videos stay.
+/// Deletes archived chats and cards for good. Projects and their files stay.
 #[tauri::command]
 pub fn purge_archive(state: State<'_, AppState>) -> CmdResult<PurgedArchive> {
     let (chats, cards) = state.db.purge_archive().map_err(err)?;
@@ -541,132 +308,6 @@ pub fn add_message(
     parts: Vec<MessagePart>,
 ) -> CmdResult<ChatMessage> {
     state.db.add_message(&chat_id, role, &parts).map_err(err)
-}
-
-// ---- styles ----
-
-#[tauri::command]
-pub fn list_styles(state: State<'_, AppState>) -> CmdResult<Vec<Style>> {
-    state.db.list_styles().map_err(err)
-}
-
-#[tauri::command]
-pub fn save_style(state: State<'_, AppState>, style: Style) -> CmdResult<()> {
-    state.db.save_style(&style).map_err(err)
-}
-
-#[tauri::command]
-pub fn delete_style(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<()> {
-    state.db.delete_style(&id).map_err(err)?;
-    if let Ok(data) = app.path().app_data_dir() {
-        media::remove_style_media(&data, &id);
-    }
-    Ok(())
-}
-
-/// Where copied styles keep their preview clip, poster and reference frames, and where the video cards'
-/// thumbnails are cached; the webview may read them.
-pub fn allow_style_media(app: &AppHandle) {
-    if let Ok(data) = app.path().app_data_dir() {
-        for dir in [data.join("style-media"), data.join("style-refs"), data.join("thumbs")] {
-            let _ = std::fs::create_dir_all(&dir);
-            let _ = app.asset_protocol_scope().allow_directory(&dir, true);
-        }
-    }
-}
-
-/// Makes the preview clip and poster of a finished study (from its downloaded source), then deletes the
-/// source. `None` when there was no source or nothing could be made.
-#[tauri::command]
-pub async fn make_style_preview(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    study_id: String,
-    style_id: String,
-) -> CmdResult<Option<media::StylePreview>> {
-    let study = study_path(&state.working_for_study(&study_id), &study_id)?;
-    let data = app.path().app_data_dir().map_err(err)?;
-    let out = media::style_media_dir(&data, &style_id).ok_or("That style id isn't valid")?;
-    let tools = state.media.clone();
-    tauri::async_runtime::spawn_blocking(move || media::make_style_preview(&tools, &study, &out))
-        .await
-        .map_err(err)?
-}
-
-/// Contact sheets of a finished study's source (48 frames across the whole video, 4x3 per sheet) as the
-/// style's references (`<app data>/style-refs/<style>`). Run before the preview, which deletes the source.
-#[tauri::command]
-pub async fn make_style_sheets(app: AppHandle, state: State<'_, AppState>, study_id: String, style_id: String) -> CmdResult<Vec<String>> {
-    let study = study_path(&state.working_for_study(&study_id), &study_id)?;
-    let data = app.path().app_data_dir().map_err(err)?;
-    let out = media::style_refs_dir(&data, &style_id).ok_or("That style id isn't valid")?;
-    let tools = state.media.clone();
-    let made = tauri::async_runtime::spawn_blocking(move || media::make_style_sheets(&tools, &study, &out))
-        .await
-        .map_err(err)??;
-    Ok(made.into_iter().map(|p| p.to_string_lossy().into_owned()).collect())
-}
-
-/// Keeps a finished study's reference frames as the style's own (`<app data>/style-refs/<style>`).
-/// Returns their paths; none when the study left no refs.
-#[tauri::command]
-pub fn keep_style_refs(app: AppHandle, state: State<'_, AppState>, study_id: String, style_id: String) -> CmdResult<Vec<String>> {
-    let study = study_path(&state.working_for_study(&study_id), &study_id)?;
-    let data = app.path().app_data_dir().map_err(err)?;
-    let out = media::style_refs_dir(&data, &style_id).ok_or("That style id isn't valid")?;
-    Ok(media::keep_style_refs(&study, &out)?.into_iter().map(|p| p.to_string_lossy().into_owned()).collect())
-}
-
-/// Copies a style's reference frames into the project's `style-refs/` folder, where the brief points the
-/// agent. Returns how many were copied.
-#[tauri::command]
-pub fn copy_style_refs(app: AppHandle, state: State<'_, AppState>, style_id: String, project_id: String) -> CmdResult<u32> {
-    let data = app.path().app_data_dir().map_err(err)?;
-    let refs = media::style_refs_dir(&data, &style_id).ok_or("That style id isn't valid")?;
-    let folder = project_folder(&state, &project_id)?;
-    Ok(media::copy_style_refs(&refs, &folder)? as u32)
-}
-
-/// `<working>/.buma/style-study/<id>`, rejected if it would leave the working folder.
-pub(crate) fn study_path(working: &Path, study_id: &str) -> CmdResult<PathBuf> {
-    let bad = study_id.is_empty()
-        || study_id == "."
-        || study_id == ".."
-        || study_id.contains(['/', '\\']);
-    let dir = working.join(".buma").join("style-study").join(study_id);
-    let _ = std::fs::create_dir_all(working);
-    if bad || !projects::ensure_inside(working, &dir) {
-        return Err("That style study id isn't valid".into());
-    }
-    Ok(dir)
-}
-
-#[tauri::command]
-pub fn read_style_result(state: State<'_, AppState>, study_id: String) -> CmdResult<Option<String>> {
-    let path = study_path(&state.working_for_study(&study_id), &study_id)?.join("style.json");
-    match std::fs::read_to_string(&path) {
-        Ok(s) => Ok(Some(s)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("Can't read the style result: {e}")),
-    }
-}
-
-/// Deletes a study's folder (its download, frames and result) once the study is over, however it ended.
-#[tauri::command]
-pub fn remove_study_dir(state: State<'_, AppState>, study_id: String) -> CmdResult<()> {
-    let working = state.working_for_study(&study_id);
-    let out = media::remove_study_dir(&working, &study_id);
-    state.study_working.lock().unwrap_or_else(|e| e.into_inner()).remove(&study_id);
-    out
-}
-
-#[tauri::command]
-pub fn study_dir(state: State<'_, AppState>, study_id: String) -> CmdResult<String> {
-    let working = state.working();
-    let dir = study_path(&working, &study_id)?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Can't create the study folder: {e}"))?;
-    state.study_working.lock().unwrap_or_else(|e| e.into_inner()).insert(study_id, working);
-    Ok(dir.to_string_lossy().into_owned())
 }
 
 // ---- jobs ----
@@ -786,80 +427,7 @@ pub async fn auth_logout(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>)
     auth.logout(&base).await.map_err(auth_err)
 }
 
-// ---- paid plans ----
-
-/// `billing:<code>`, the code being the kebab-case `BillingError` the UI knows.
-fn billing_err(e: BillingError) -> String {
-    let code = serde_json::to_value(e).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
-    format!("billing:{code}")
-}
-
-/// The stored token for the current API, or `billing:signed-out`.
-async fn billing_token(state: &AppState, auth: &Arc<Auth>) -> Result<(String, String), String> {
-    let base = api_base(state);
-    let token = auth.token(&base).await.ok_or_else(|| {
-        // The keychain error (if that was it) is logged by Auth; this says which call it broke.
-        eprintln!("[billing] no sign-in token for {base}");
-        billing_err(BillingError::SignedOut)
-    })?;
-    Ok((base, token))
-}
-
-/// A 401 means the token is gone at the API: let the sign-in state find out (it clears it).
-fn after_billing<T>(auth: &Arc<Auth>, base: &str, r: Result<T, BillingError>) -> CmdResult<T> {
-    if let Err(e) = &r {
-        eprintln!("[billing] {}", billing_err(*e));
-    }
-    if r.as_ref().err() == Some(&BillingError::SignedOut) {
-        let (auth, base) = (auth.clone(), base.to_string());
-        tauri::async_runtime::spawn(async move { auth.refresh(&base).await });
-    }
-    r.map_err(billing_err)
-}
-
-/// Starts (or reuses) a payment for `plan` and opens its pay link (`<api>/pay/…`, which the API
-/// redirects to the provider, or to a WhatsApp chat while payments are off). The token stays here; the
-/// webview gets the link for "Open again". Errors are `billing:<code>`.
-#[tauri::command]
-pub async fn billing_checkout(app: AppHandle, state: State<'_, AppState>, auth: State<'_, Arc<Auth>>, plan: String) -> CmdResult<CheckoutStart> {
-    let auth = auth.inner().clone();
-    let (base, token) = billing_token(&state, &auth).await?;
-    let start = after_billing(&auth, &base, crate::billing::checkout(auth.client(), &base, &token, &plan).await)?;
-    let url = match &start {
-        CheckoutStart::Qris(c) => c.pay_url.clone(),
-        CheckoutStart::Whatsapp { url } => url.clone(),
-    };
-    use tauri_plugin_opener::OpenerExt;
-    // The dialog has "Open again" for when this doesn't work.
-    if let Err(e) = app.opener().open_url(&url, None::<&str>) {
-        eprintln!("[billing] couldn't open the browser: {e}");
-    }
-    Ok(start)
-}
-
-/// "Open again": opens a pay link the API handed out, if it is one on this API (`<api>/pay/…`);
-/// else `billing:bad_link`. The webview never opens payment pages itself.
-#[tauri::command]
-pub async fn billing_open(app: AppHandle, state: State<'_, AppState>, url: String) -> CmdResult<()> {
-    if !crate::billing::is_pay_link(&url, &api_base(&state)) {
-        return Err(billing_err(BillingError::BadLink));
-    }
-    use tauri_plugin_opener::OpenerExt;
-    app.opener().open_url(url.trim(), None::<&str>).map_err(|e| {
-        eprintln!("[billing] couldn't open the browser: {e}");
-        billing_err(BillingError::BadLink)
-    })
-}
-
-/// The signed-in account's plan and any payment in progress. Errors are `billing:<code>`.
-#[tauri::command]
-pub async fn billing_status(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>) -> CmdResult<BillingStatus> {
-    let auth = auth.inner().clone();
-    let (base, token) = billing_token(&state, &auth).await?;
-    after_billing(&auth, &base, crate::billing::status(auth.client(), &base, &token).await)
-}
-
-// ---- the Buma account's credits, social accounts and auto-post ----
+// ---- the Buma account's AI credits ----
 
 /// `cloud:<code>`, the code being the kebab-case `CloudError` the UI knows.
 fn cloud_err(e: crate::cloud::CloudError) -> String {
@@ -885,7 +453,7 @@ fn after_cloud<T>(auth: &Arc<Auth>, base: &str, what: &str, r: Result<T, crate::
     r.map_err(cloud_err)
 }
 
-/// Credits and auto-posts left in this cycle (`GET /v1/usage`).
+/// AI credits left in this cycle (`GET /v1/usage`).
 #[tauri::command]
 pub async fn cloud_usage(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>) -> CmdResult<serde_json::Value> {
     let auth = auth.inner().clone();
@@ -893,127 +461,7 @@ pub async fn cloud_usage(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>)
     after_cloud(&auth, &base, "usage", crate::cloud::get(auth.client(), &base, &token, "/v1/usage").await)
 }
 
-/// Redeems a gift code for this account. The API also gets this computer's hashed id (see
-/// `device`), since a promo gives one gift per computer. Answers `{ gift }`.
-#[tauri::command]
-pub async fn redeem_gift_code(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>, code: String) -> CmdResult<serde_json::Value> {
-    let auth = auth.inner().clone();
-    let (base, token) = cloud_token(&state, &auth).await?;
-    let install_id = state.db.ensure_install_id(&state.home).unwrap_or_default();
-    // ioreg / reg run as processes: off the async runtime.
-    let device_id = tokio::task::spawn_blocking(move || crate::device::device_id(&install_id)).await.map_err(err)?;
-    let body = serde_json::json!({ "code": code.trim(), "deviceId": device_id });
-    after_cloud(&auth, &base, "redeem", crate::cloud::send(auth.client(), reqwest::Method::POST, &base, &token, "/v1/promos/redeem", Some(&body)).await)
-}
-
-/// The social accounts connected to this Buma account.
-#[tauri::command]
-pub async fn social_accounts(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>) -> CmdResult<serde_json::Value> {
-    let auth = auth.inner().clone();
-    let (base, token) = cloud_token(&state, &auth).await?;
-    after_cloud(&auth, &base, "accounts", crate::cloud::get(auth.client(), &base, &token, "/v1/social/accounts").await)
-}
-
-/// Opens the platform's sign-in page in the browser to connect an account; it shows up in
-/// `social_accounts` once the user has finished there.
-#[tauri::command]
-pub async fn social_connect(app: AppHandle, state: State<'_, AppState>, auth: State<'_, Arc<Auth>>, platform: String) -> CmdResult<()> {
-    let auth = auth.inner().clone();
-    let (base, token) = cloud_token(&state, &auth).await?;
-    let body = serde_json::json!({ "platform": platform });
-    let out = after_cloud(&auth, &base, "connect", crate::cloud::send(auth.client(), reqwest::Method::POST, &base, &token, "/v1/social/accounts/connect", Some(&body)).await)?;
-    let url = out.get("url").and_then(serde_json::Value::as_str).filter(|u| crate::cloud::is_https(u)).ok_or_else(|| cloud_err(crate::cloud::CloudError::BadUrl))?;
-    use tauri_plugin_opener::OpenerExt;
-    app.opener().open_url(url, None::<&str>).map_err(err)
-}
-
-#[tauri::command]
-pub async fn social_disconnect(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>, id: String) -> CmdResult<()> {
-    let auth = auth.inner().clone();
-    let (base, token) = cloud_token(&state, &auth).await?;
-    let path = format!("/v1/social/accounts/{}", urlencode(&id));
-    after_cloud(&auth, &base, "disconnect", crate::cloud::send(auth.client(), reqwest::Method::DELETE, &base, &token, &path, None).await).map(|_| ())
-}
-
-fn urlencode(s: &str) -> String {
-    s.bytes()
-        .map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
-        .collect()
-}
-
-/// The video's title for the platforms that show one (YouTube, TikTok), as PostForMe's per-platform
-/// settings; the caption stays the description. None without a title. YouTube allows 100 characters.
-pub fn title_configurations(title: Option<&str>) -> Option<serde_json::Value> {
-    let t: String = title.map(str::trim).filter(|t| !t.is_empty())?.chars().take(100).collect();
-    Some(serde_json::json!({
-        "youtube": { "title": t },
-        "tiktok": { "title": t },
-        "tiktok_business": { "title": t },
-    }))
-}
-
-/// Posts the project's latest render to `account_ids`, now or at `scheduled_at`: the video goes to
-/// PostForMe's storage first, then the post is made and charged one auto-post per account. A retry
-/// passes the same `client_request_id`, so it never posts twice. The project keeps the post id.
-#[tauri::command]
-#[allow(clippy::too_many_arguments)] // a Tauri command takes its fields as arguments
-pub async fn social_post(
-    state: State<'_, AppState>,
-    auth: State<'_, Arc<Auth>>,
-    project_id: String,
-    title: Option<String>,
-    caption: String,
-    account_ids: Vec<String>,
-    scheduled_at: Option<String>,
-    client_request_id: String,
-) -> CmdResult<serde_json::Value> {
-    use crate::cloud::CloudError;
-    let auth = auth.inner().clone();
-    let (base, token) = cloud_token(&state, &auth).await?;
-    let folder = project_folder(&state, &project_id)?;
-    let video = media::latest_render(&folder).ok_or("This video has no render yet: render it first")?;
-    let client = auth.client();
-    let up = after_cloud(&auth, &base, "upload url", crate::cloud::send(client, reqwest::Method::POST, &base, &token, "/v1/social/media/upload-url", Some(&serde_json::json!({}))).await)?;
-    let (Some(upload_url), Some(media_url)) = (up.get("uploadUrl").and_then(serde_json::Value::as_str), up.get("mediaUrl").and_then(serde_json::Value::as_str)) else {
-        return Err(cloud_err(CloudError::Server));
-    };
-    after_cloud(&auth, &base, "upload", crate::cloud::upload(client, upload_url, &video, "video/mp4").await)?;
-    let mut body = serde_json::json!({
-        "caption": caption,
-        "socialAccountIds": account_ids,
-        "mediaUrl": media_url,
-        "clientRequestId": client_request_id,
-    });
-    if let Some(at) = scheduled_at {
-        body["scheduledAt"] = serde_json::Value::String(at);
-    }
-    if let Some(config) = title_configurations(title.as_deref()) {
-        body["platformConfigurations"] = config;
-    }
-    let out = after_cloud(&auth, &base, "post", crate::cloud::send(client, reqwest::Method::POST, &base, &token, "/v1/social/posts", Some(&body)).await)?;
-    if let Some(post_id) = out.get("postId").and_then(serde_json::Value::as_str) {
-        let posted = out.get("status").and_then(serde_json::Value::as_str) != Some("scheduled");
-        let mut patch = serde_json::json!({ "socialPostId": post_id });
-        if posted {
-            patch["postedAt"] = serde_json::Value::String(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
-        }
-        if let Err(e) = state.db.update_project(&project_id, patch) {
-            eprintln!("[cloud] posted, but couldn't save the post id on the project: {e}");
-        }
-    }
-    Ok(out)
-}
-
-/// One auto-post and how it went on each account.
-#[tauri::command]
-pub async fn social_post_status(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>, post_id: String) -> CmdResult<serde_json::Value> {
-    let auth = auth.inner().clone();
-    let (base, token) = cloud_token(&state, &auth).await?;
-    let path = format!("/v1/social/posts/{}", urlencode(&post_id));
-    after_cloud(&auth, &base, "post status", crate::cloud::get(auth.client(), &base, &token, &path).await)
-}
-
-// ---- AI images and voice for agents ----
+// ---- AI images for agents ----
 
 /// The folder a chat's agent works in (its project's, else its own under the working folder).
 fn agent_folder(state: &AppState, chat_id: &str) -> Option<PathBuf> {
@@ -1036,29 +484,8 @@ pub async fn start_ai_proxy(handle: AppHandle) {
             let auth = auth.inner().clone();
             let base = api_base(&state);
             let token = auth.token(&base).await;
-            // The user's own voice (Settings › Video) speaks instead of Buma's, signed in or not.
-            let settings = state.db.get_settings(&state.home);
-            let own_voice = settings.voice_source != crate::types::VoiceSource::Buma;
-            if own_voice {
-                if let crate::ai_proxy::AiJob::Voice { text, language, out, .. } = &job {
-                    let source = settings.voice_source;
-                    let key = match (source.key_account(), handle.try_state::<ApiKeys>()) {
-                        (Some(account), Some(keys)) => keys.get_account(account).await.ok().flatten(),
-                        _ => None,
-                    };
-                    let setup = crate::voice::VoiceSetup { source, key, base: source.base().into() };
-                    return crate::voice::speak(auth.client(), &setup, text, language.as_deref(), out, &folder).await;
-                }
-                if job == crate::ai_proxy::AiJob::Usage {
-                    let usage = match &token {
-                        Some(t) => crate::ai_proxy::run_job(auth.client(), &base, t, job, &folder).await.ok(),
-                        None => None,
-                    };
-                    return Ok(crate::voice::usage_with_own_voice(usage, settings.voice_source));
-                }
-            }
             let Some(token) = token else {
-                return Err((401, serde_json::json!({ "error": "signed-out", "message": "The user isn't signed in to Buma: make this without AI images or voice" })));
+                return Err((401, serde_json::json!({ "error": "signed-out", "message": "The user isn't signed in to Buma: work without AI images" })));
             };
             crate::ai_proxy::run_job(auth.client(), &base, &token, job, &folder).await
         })
@@ -1145,11 +572,6 @@ pub fn resolve_cwd(
     }
     let cwd = if chat_id == "setup" {
         working.join(".buma").join("setup")
-    } else if let Some(rest) = chat_id.strip_prefix("study-") {
-        if !safe_segment(rest) {
-            return Err("That chat isn't valid".into());
-        }
-        working.join(".buma").join("style-study").join(rest)
     } else {
         if !safe_segment(chat_id) {
             return Err("That chat isn't valid".into());
@@ -1220,21 +642,16 @@ fn plugin_dir(resource_dir: Option<&Path>) -> Option<PathBuf> {
     found
 }
 
-/// Internal sessions (the setup installs, style studies and the autopilots' topic chats) never
-/// talk to the user in a chat, so they get neither the plugin nor the system prompt. Topic ideas
-/// (`ideas-*`) do.
+/// The internal session (the setup installs) never talks to the user in a chat, so it gets neither
+/// the plugin nor the system prompt.
 pub fn wants_skills(chat_id: &str) -> bool {
-    !(chat_id == "setup" || chat_id.starts_with("study-") || chat_id.starts_with("autopilot-"))
+    chat_id != "setup"
 }
 
 /// What a chat is for, as the usage log names it.
 pub fn chat_kind(chat_id: &str, has_project: bool) -> &'static str {
     if chat_id == "setup" {
         "setup"
-    } else if chat_id.starts_with("study-") {
-        "study"
-    } else if chat_id.starts_with("autopilot-") {
-        "autopilot"
     } else if has_project {
         "project"
     } else {
@@ -1674,7 +1091,7 @@ pub async fn agent_start(
         agent: agent_key(agent_id),
         kind: chat_kind(&chat_id, folder.is_some()).to_string(),
     });
-    // AI images and voice with the user's credits: this session's own token for Buma's endpoint.
+    // AI images with the user's credits: this session's own token for Buma's endpoint.
     if let Some(proxy) = app.try_state::<Arc<crate::ai_proxy::AiProxy>>() {
         options.env.extend(proxy.session_env(&chat_id));
     }
@@ -1973,29 +1390,15 @@ pub async fn agent_models(app: AppHandle, state: State<'_, AppState>, agent_id: 
     Ok(models.map(|m| AgentModels { current: m.current, options: m.options }))
 }
 
-/// Style studies and the autopilots' topic chats always run in auto mode; the install chat
-/// never does (installs need the user's approval); other chats follow the chat's Auto toggle.
+/// The install chat never runs in auto mode (installs need the user's approval); other chats follow
+/// the chat's Auto toggle.
 fn wants_auto(chat_id: &str, requested: bool) -> bool {
-    if chat_id == "setup" {
-        return false;
-    }
-    chat_id.starts_with("study-") || chat_id.starts_with("autopilot-") || requested
+    chat_id != "setup" && requested
 }
 
 /// Claude without the plugin has no skills unless the first prompt carries them.
 fn needs_skills_text(agent: AgentId, plugin: Option<&Path>) -> bool {
     agent == AgentId::Claude && plugin.is_none()
-}
-
-/// m:ss.cc, same as `formatTimecode` in `@bspace-sdlc-app/shared`.
-pub fn format_timecode(sec: f64, fps: u32) -> String {
-    let fps = fps.max(1);
-    let total = sec.max(0.0);
-    let whole = total.floor();
-    let frame = (((total - whole) * fps as f64).round() as u32).min(fps - 1);
-    let cc = (frame as f64 / fps as f64 * 100.0).floor() as u32;
-    let whole = whole as u64;
-    format!("{}:{:02}.{:02}", whole / 60, whole % 60, cc)
 }
 
 /// How much of a mentioned project's AGENTS.md goes into the prompt.
@@ -2023,7 +1426,6 @@ fn truncate_brief(text: &str) -> String {
 /// outside that project's folder.
 pub fn build_prompt(
     parts: &[MessagePart],
-    fps: u32,
     project: impl Fn(&str) -> Option<Project>,
     brief: impl Fn(&Path) -> Option<String>,
 ) -> Vec<PromptPart> {
@@ -2035,7 +1437,7 @@ pub fn build_prompt(
                 out.push(PromptPart::Text(match project(project_id) {
                     Some(p) => {
                         let head = format!(
-                            "Context: video project \"{}\". Its Buma id is {}. Its files are in {}.",
+                            "Context: project \"{}\". Its Buma id is {}. Its files are in {}.",
                             p.title, p.id, p.folder
                         );
                         match brief(Path::new(&p.folder)) {
@@ -2046,26 +1448,9 @@ pub fn build_prompt(
                         }
                     }
                     None => format!(
-                        "Context: video project \"{title}\" (no longer on this computer)."
+                        "Context: project \"{title}\" (no longer on this computer)."
                     ),
                 }));
-            }
-            MessagePart::Frame { project_id, frame, time_sec, image_path, marks } => {
-                let title = project(project_id).map(|p| p.title).unwrap_or_default();
-                let marks = if marks.is_empty() {
-                    "none".to_string()
-                } else {
-                    marks
-                        .iter()
-                        .map(|m| format!("({:.2}, {:.2})", m.x, m.y))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                };
-                out.push(PromptPart::Image { path: PathBuf::from(image_path) });
-                out.push(PromptPart::Text(format!(
-                    "Frame {frame} at {} of {title}. Marks (x,y relative): {marks}",
-                    format_timecode(*time_sec, fps)
-                )));
             }
             MessagePart::File { path, name, size, .. } => {
                 let rel = Path::new(path)
@@ -2081,11 +1466,7 @@ pub fn build_prompt(
                     out.push(PromptPart::Text(format!("Attached file: {rel} ({name}, {size})")));
                 }
             }
-            // A style's context comes from the app, which has its prompt and notes.
-            MessagePart::Tool { .. }
-            | MessagePart::Thought { .. }
-            | MessagePart::A2ui { .. }
-            | MessagePart::StyleMention { .. } => {}
+            MessagePart::Tool { .. } | MessagePart::Thought { .. } | MessagePart::A2ui { .. } => {}
             MessagePart::A2uiAction { summary, action } => {
                 out.push(PromptPart::Text(format!("{summary}\n\n```a2ui-action\n{action}\n```")));
             }
@@ -2219,45 +1600,18 @@ pub fn attach_file(
     copy_attachment(&cwd, Path::new(&source_path), MAX_ATTACHMENT)
 }
 
-/// Frame images must live inside the working folder or inside the recorded folder of
-/// the frame's own (known, existing) project.
-pub fn check_frame_images(
-    working: &Path,
-    parts: &[MessagePart],
-    project_folder: impl Fn(&str) -> Option<PathBuf>,
-) -> CmdResult<()> {
-    for part in parts {
-        if let MessagePart::Frame { image_path, project_id, .. } = part {
-            let image = Path::new(image_path);
-            let in_project = project_folder(project_id)
-                .filter(|f| f.is_dir())
-                .is_some_and(|f| projects::ensure_inside(&f, image));
-            if !in_project && !projects::ensure_inside(working, image) {
-                return Err("That frame image is outside your working folder".into());
-            }
-        }
-    }
-    Ok(())
-}
-
 #[tauri::command]
 pub async fn agent_prompt(
     state: State<'_, AppState>,
     chat_id: String,
     parts: Vec<MessagePart>,
 ) -> CmdResult<()> {
-    let settings = state.db.get_settings(&state.home);
-    let fps = settings.fps;
-    let working = PathBuf::from(&settings.working_folder);
     if parts.iter().any(|p| matches!(p, MessagePart::File { .. })) {
         let folder = project_folder_for_chat(&state, &chat_id)?;
-        let cwd = resolve_cwd(&working, &chat_id, folder.as_deref())?;
+        let cwd = resolve_cwd(&state.working(), &chat_id, folder.as_deref())?;
         check_file_parts(&cwd, &parts)?;
     }
-    check_frame_images(&working, &parts, |id| {
-        state.db.get_project(id).ok().flatten().map(|p| PathBuf::from(p.folder))
-    })?;
-    let prompt = build_prompt(&parts, fps, |id| state.db.get_project(id).ok().flatten(), read_brief);
+    let prompt = build_prompt(&parts, |id| state.db.get_project(id).ok().flatten(), read_brief);
     state.acp.prompt(&chat_id, prompt).await.map_err(err)
 }
 
@@ -2320,8 +1674,6 @@ pub fn agent_respond_permission(
     state.acp.respond_permission(&request_id, option_id).map_err(err)
 }
 
-// ---- media ----
-
 fn project_folder(state: &AppState, project_id: &str) -> CmdResult<PathBuf> {
     state
         .db
@@ -2347,245 +1699,20 @@ pub async fn find_project_files(state: State<'_, AppState>, project_id: String, 
     tauri::async_runtime::spawn_blocking(move || crate::files::find(&root, &query)).await.map_err(err)?
 }
 
+/// Opens a project's folder in the file manager. The path is found here, so the webview can't ask to
+/// open any other folder.
+#[tauri::command]
+pub async fn open_project_folder(app: AppHandle, state: State<'_, AppState>, project_id: String) -> CmdResult<()> {
+    let folder = project_folder(&state, &project_id)?;
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_path(folder.to_string_lossy(), None::<&str>).map_err(err)
+}
+
 /// One project file to show: its text, or what kind of file it is.
 #[tauri::command]
 pub async fn read_project_file(state: State<'_, AppState>, project_id: String, path: String) -> CmdResult<crate::files::FileContent> {
     let root = project_folder(&state, &project_id)?;
     tauri::async_runtime::spawn_blocking(move || crate::files::read(&root, &path)).await.map_err(err)?
-}
-
-fn path_string(p: &Path) -> String {
-    p.to_string_lossy().into_owned()
-}
-
-#[tauri::command]
-pub fn media_latest_render(
-    state: State<'_, AppState>,
-    project_id: String,
-) -> CmdResult<Option<String>> {
-    let folder = project_folder(&state, &project_id)?;
-    Ok(media::latest_render(&folder).map(|p| path_string(&p)))
-}
-
-/// Where `recent_images` looks and from when: None for a chat without a project folder (no project,
-/// an unknown chat, or a deleted project), an error for a time that is not RFC 3339.
-fn images_lookup(state: &AppState, chat_id: &str, since: &str) -> CmdResult<Option<(PathBuf, chrono::DateTime<chrono::Utc>)>> {
-    let since = chrono::DateTime::parse_from_rfc3339(since)
-        .map_err(|_| format!("Not an RFC 3339 time: {since}"))?
-        .with_timezone(&chrono::Utc);
-    Ok(project_folder_for_chat(state, chat_id).ok().flatten().map(|f| (f, since)))
-}
-
-/// Images the agent made in a project chat's folder since `since` (RFC 3339), newest first.
-/// A chat without a project folder has none.
-#[tauri::command]
-pub async fn recent_images(
-    state: State<'_, AppState>,
-    chat_id: String,
-    since: String,
-    limit: u32,
-) -> CmdResult<Vec<crate::types::FileInfo>> {
-    let Some((folder, since)) = images_lookup(&state, &chat_id, &since)? else {
-        return Ok(Vec::new());
-    };
-    tauri::async_runtime::spawn_blocking(move || media::recent_images(&folder, since, limit as usize))
-        .await
-        .map_err(err)
-}
-
-/// The newest render with its size and time, so the UI can tell whether a turn made a video.
-#[tauri::command]
-pub fn latest_render_info(state: State<'_, AppState>, project_id: String) -> CmdResult<Option<crate::types::FileInfo>> {
-    let folder = project_folder(&state, &project_id)?;
-    Ok(media::latest_render_info(&folder))
-}
-
-/// Shows a video in the file manager: its newest render selected, or its project folder before there is
-/// one. The path is found here, so the webview can't ask to show any other file.
-#[tauri::command]
-pub async fn show_video_in_folder(app: AppHandle, state: State<'_, AppState>, project_id: String) -> CmdResult<()> {
-    let folder = project_folder(&state, &project_id)?;
-    let f = folder.clone();
-    let video = tauri::async_runtime::spawn_blocking(move || media::latest_render(&f)).await.map_err(err)?;
-    use tauri_plugin_opener::OpenerExt;
-    match video {
-        Some(v) => app.opener().reveal_item_in_dir(v).map_err(err),
-        None => app.opener().open_path(folder.to_string_lossy(), None::<&str>).map_err(err),
-    }
-}
-
-/// The newest `*.mp4` where renders land (empty too), for spotting a render that is being written.
-#[tauri::command]
-pub async fn newest_video_info(state: State<'_, AppState>, project_id: String) -> CmdResult<Option<crate::types::FileInfo>> {
-    let folder = project_folder(&state, &project_id)?;
-    tauri::async_runtime::spawn_blocking(move || media::newest_video_info(&folder)).await.map_err(err)
-}
-
-/// One frame of the project's newest render for its Videos card, cached in `<app data>/thumbs`; None without
-/// a render or ffmpeg. Runs off the main thread, each ffmpeg run within the usual time limit.
-#[tauri::command]
-pub async fn video_thumbnail(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    project_id: String,
-) -> CmdResult<Option<media::VideoThumb>> {
-    let folder = project_folder(&state, &project_id)?;
-    let thumbs = app.path().app_data_dir().map_err(err)?.join("thumbs");
-    let tools = state.media.clone();
-    // The newest render's thumbnail is already there: no slot needed.
-    let (f, t, id) = (folder.clone(), thumbs.clone(), project_id.clone());
-    if let Some(hit) = tauri::async_runtime::spawn_blocking(move || media::cached_video_thumbnail(&f, &t, &id)).await.map_err(err)? {
-        return Ok(Some(hit));
-    }
-    // It looks in the cache again: another lookup may have made it while this one waited.
-    in_thumb_slot(&THUMB_SLOTS, move || media::video_thumbnail(&tools, &folder, &thumbs, &project_id, media::THUMB_TIMEOUT)).await
-}
-
-/// At most two thumbnails are made at once: a Videos screen full of new renders must not start an ffprobe
-/// and an ffmpeg per card at the same time (an agent's render may be running).
-static THUMB_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
-
-/// Runs a blocking thumbnail job off the async runtime once one of `slots` is free.
-async fn in_thumb_slot<T: Send + 'static>(
-    slots: &'static tokio::sync::Semaphore,
-    job: impl FnOnce() -> T + Send + 'static,
-) -> CmdResult<T> {
-    let _slot = slots.acquire().await.map_err(err)?;
-    tokio::task::spawn_blocking(job).await.map_err(err)
-}
-
-#[tauri::command]
-pub async fn media_probe(
-    state: State<'_, AppState>,
-    project_id: String,
-) -> CmdResult<Option<MediaInfo>> {
-    let folder = project_folder(&state, &project_id)?;
-    let tools = state.media.clone();
-    tauri::async_runtime::spawn_blocking(move || match media::latest_render(&folder) {
-        Some(video) => media::probe(&tools, &video).map(Some),
-        None => Ok(None),
-    })
-    .await
-    .map_err(err)?
-}
-
-#[tauri::command]
-pub async fn media_extract_frame(
-    state: State<'_, AppState>,
-    project_id: String,
-    time_sec: f64,
-) -> CmdResult<String> {
-    let folder = project_folder(&state, &project_id)?;
-    let tools = state.media.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let video = media::latest_render(&folder).ok_or("This project has no render yet")?;
-        let out = folder.join(".buma").join("frames");
-        media::extract_frame(&tools, &video, time_sec, &out).map(|p| path_string(&p))
-    })
-    .await
-    .map_err(err)?
-}
-
-#[tauri::command]
-pub async fn media_thumbnails(
-    state: State<'_, AppState>,
-    project_id: String,
-    count: u32,
-) -> CmdResult<Vec<String>> {
-    let folder = project_folder(&state, &project_id)?;
-    let tools = state.media.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let video = media::latest_render(&folder).ok_or("This project has no render yet")?;
-        let out = folder.join(".buma").join("thumbs");
-        media::thumbnails(&tools, &video, count, &out)
-            .map(|v| v.iter().map(|p| path_string(p)).collect())
-    })
-    .await
-    .map_err(err)?
-}
-
-#[tauri::command]
-pub async fn media_render(state: State<'_, AppState>, project_id: String) -> CmdResult<String> {
-    let folder = project_folder(&state, &project_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        media::render(&folder).map(|p| path_string(&p))
-    })
-    .await
-    .map_err(err)?
-}
-
-/// A public catalog from the API (`/v1/niches`, `/v1/voices`), as the API sends it.
-async fn catalog(state: &State<'_, AppState>, path: &str) -> CmdResult<serde_json::Value> {
-    use crate::styles_sync::Fetcher;
-    let api_url = crate::styles_sync::effective_api_url(&state.db.get_settings(&state.home));
-    let fetcher = crate::styles_sync::HttpFetcher::new(std::time::Duration::from_secs(10))?;
-    let res = fetcher.get(&crate::styles_sync::endpoint(&api_url, path), 1024 * 1024).await?;
-    if !(200..300).contains(&res.status) {
-        return Err(format!("{path} returned {}", res.status));
-    }
-    serde_json::from_slice(&res.body).map_err(err)
-}
-
-#[tauri::command]
-pub async fn list_niches(state: State<'_, AppState>) -> CmdResult<serde_json::Value> {
-    catalog(&state, "/v1/niches").await
-}
-
-#[tauri::command]
-pub async fn list_voices(state: State<'_, AppState>) -> CmdResult<serde_json::Value> {
-    catalog(&state, "/v1/voices").await
-}
-
-/// Fetches the built-in styles from the API; keeps the cached ones when offline.
-#[tauri::command]
-pub async fn sync_styles(state: State<'_, AppState>) -> CmdResult<StylesSync> {
-    let api_url = crate::styles_sync::effective_api_url(&state.db.get_settings(&state.home));
-    let fetcher = crate::styles_sync::HttpFetcher::new(std::time::Duration::from_secs(10))?;
-    crate::styles_sync::sync_styles(&state.db, &api_url, &fetcher).await
-}
-
-/// Unpacks the project's style template into its folder (once, never over existing files).
-#[tauri::command]
-pub async fn install_style_template(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    project_id: String,
-) -> CmdResult<InstallResult> {
-    let api_url = crate::styles_sync::effective_api_url(&state.db.get_settings(&state.home));
-    let templates = app.path().app_data_dir().map_err(err)?.join("templates");
-    let fetcher = crate::styles_sync::HttpFetcher::new(std::time::Duration::from_secs(120))?;
-    let installed =
-        crate::styles_sync::install_template(&state.db, &fetcher, &api_url, &templates, &project_id)
-            .await?;
-    Ok(InstallResult { installed })
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct RenderCommand {
-    pub install: Option<Vec<String>>,
-    pub render: Vec<String>,
-}
-
-/// The exact command "Render video" will run when the project has a `buma.json`.
-#[tauri::command]
-pub fn render_command(
-    state: State<'_, AppState>,
-    project_id: String,
-) -> CmdResult<Option<RenderCommand>> {
-    let folder = project_folder(&state, &project_id)?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    Ok(media::render_command(&folder, now)?.map(|p| RenderCommand { install: p.install, render: p.render }))
-}
-
-/// Rewrites the project's AGENTS.md and CLAUDE.md (e.g. after a template could not be installed).
-#[tauri::command]
-pub fn write_brief(state: State<'_, AppState>, project_id: String, brief: String) -> CmdResult<()> {
-    let folder = project_folder(&state, &project_id)?;
-    projects::write_project_brief(&folder, &brief)
-        .map_err(|e| format!("Can't write the project brief: {e}"))
 }
 
 // ---- Your API (the `custom` agent: opencode with the user's provider, see api_engine) ----
@@ -2687,78 +1814,7 @@ pub async fn devops_sign_out(keys: State<'_, ApiKeys>) -> CmdResult<crate::devop
     Ok(crate::devops::DevopsStatus { signed_in: false, profile: None })
 }
 
-// ---- the user's own voice (Fish Audio or VoiceStudio, see voice) ----
-
-/// What Settings › Video shows about the voice sources: which keys are saved.
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VoiceStatus {
-    has_eleven_key: bool,
-    has_fish_key: bool,
-}
-
-/// The keychain account of a source that has an API key, and its name in Settings.
-fn voice_key_source(source: crate::types::VoiceSource) -> CmdResult<(&'static str, &'static str)> {
-    let account = source.key_account().ok_or("That voice source has no API key")?;
-    Ok((account, if source == crate::types::VoiceSource::Elevenlabs { "elevenlabs" } else { "fishaudio" }))
-}
-
-#[tauri::command]
-pub async fn voice_status(keys: State<'_, ApiKeys>) -> CmdResult<VoiceStatus> {
-    let mut saved = [false, false];
-    for (i, source) in [crate::types::VoiceSource::Elevenlabs, crate::types::VoiceSource::Fishaudio].into_iter().enumerate() {
-        if let Some(account) = source.key_account() {
-            saved[i] = keys.get_account(account).await.ok().flatten().is_some_and(|k| !k.is_empty());
-        }
-    }
-    Ok(VoiceStatus { has_eleven_key: saved[0], has_fish_key: saved[1] })
-}
-
-/// Checks the source's API key (no `key`: the saved one) and, when it is good, saves it and makes
-/// that source the voice source. A refused key changes nothing.
-#[tauri::command]
-pub async fn voice_key_save(
-    state: State<'_, AppState>,
-    keys: State<'_, ApiKeys>,
-    source: crate::types::VoiceSource,
-    key: Option<String>,
-) -> CmdResult<(crate::voice::VoiceCheck, Settings)> {
-    let (account, name) = voice_key_source(source)?;
-    let typed = key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty());
-    let key = match &typed {
-        Some(k) => k.clone(),
-        None => keys.get_account(account).await?.unwrap_or_default(),
-    };
-    let client = api_client(std::time::Duration::from_secs(20))?;
-    let check = crate::voice::key_check(&client, source, source.base(), &key).await;
-    if !check.ok {
-        return Ok((check, state.db.get_settings(&state.home)));
-    }
-    if let Some(k) = typed {
-        keys.set_account(account, k).await?;
-    }
-    let settings = state.db.update_settings(serde_json::json!({ "voiceSource": name })).map_err(err)?;
-    Ok((check, settings))
-}
-
-/// Forgets the source's API key; the voice source goes back to Buma when it was that source.
-#[tauri::command]
-pub async fn voice_key_clear(state: State<'_, AppState>, keys: State<'_, ApiKeys>, source: crate::types::VoiceSource) -> CmdResult<Settings> {
-    let (account, _) = voice_key_source(source)?;
-    keys.delete_account(account).await?;
-    let settings = state.db.get_settings(&state.home);
-    if settings.voice_source != source {
-        return Ok(settings);
-    }
-    state.db.update_settings(serde_json::json!({ "voiceSource": "buma" })).map_err(err)
-}
-
-/// Whether VoiceStudio is open on this computer.
-#[tauri::command]
-pub async fn voice_studio_check() -> CmdResult<crate::voice::VoiceCheck> {
-    let client = api_client(std::time::Duration::from_secs(5))?;
-    Ok(crate::voice::voicestudio_check(&client, crate::voice::VOICESTUDIO_BASE).await)
-}
+// ---- Your API engine download and checks ----
 
 /// One engine download at a time.
 #[derive(Default)]
@@ -2959,35 +2015,8 @@ mod tests {
     #[test]
     fn chat_kind_names_what_the_chat_is_for() {
         assert_eq!(chat_kind("setup", false), "setup");
-        assert_eq!(chat_kind("study-atlas", false), "study");
-        assert_eq!(chat_kind("autopilot-1", false), "autopilot");
         assert_eq!(chat_kind("abc", true), "project");
         assert_eq!(chat_kind("abc", false), "chat");
-    }
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn at_most_two_thumbnails_are_made_at_once() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        use std::sync::Arc;
-        assert_eq!(super::THUMB_SLOTS.available_permits(), 2);
-        let slots: &'static tokio::sync::Semaphore = Box::leak(Box::new(tokio::sync::Semaphore::new(2)));
-        let now = Arc::new(AtomicUsize::new(0));
-        let most = Arc::new(AtomicUsize::new(0));
-        let jobs = (0..6).map(|i| {
-            let (now, most) = (now.clone(), most.clone());
-            tokio::spawn(super::in_thumb_slot(slots, move || {
-                let n = now.fetch_add(1, Ordering::SeqCst) + 1;
-                most.fetch_max(n, Ordering::SeqCst);
-                std::thread::sleep(std::time::Duration::from_millis(80));
-                now.fetch_sub(1, Ordering::SeqCst);
-                i
-            }))
-        });
-        let mut done = Vec::new();
-        for j in jobs.collect::<Vec<_>>() {
-            done.push(j.await.unwrap().unwrap());
-        }
-        assert_eq!(done, [0, 1, 2, 3, 4, 5]);
-        assert_eq!(most.load(Ordering::SeqCst), 2);
     }
 
     #[test]
@@ -3009,18 +2038,7 @@ mod tests {
             title: "P".into(),
             slug: "p".into(),
             folder: "/w/p".into(),
-            kind: VideoKind::Promo,
-            format: VideoFormat::Portrait,
-            language: VideoLanguage::Id,
-            status: ProjectStatus::Rendered,
-            style_id: None,
-            scheduled_at: None,
-            review_state: ReviewState::Pending,
-            posted_at: None,
-            reminded_at: Some("2026-11-01T00:00:00Z".into()),
-            review_reminded_at: None,
-            social_post_id: None,
-            duration_sec: None,
+            status: ProjectStatus::Building,
             created_at: "t".into(),
             updated_at: "t".into(),
         })
@@ -3028,142 +2046,15 @@ mod tests {
         db
     }
 
-    fn batch_now() -> chrono::DateTime<chrono::Utc> {
-        chrono::DateTime::parse_from_rfc3339("2026-11-04T10:00:00Z").unwrap().with_timezone(&chrono::Utc)
-    }
-    fn existing(id: &str, at: &str) -> BatchItem {
-        BatchItem { project_id: Some(id.into()), at: at.into(), draft: None }
-    }
-    fn draft(title: &str, at: &str) -> BatchItem {
-        BatchItem {
-            project_id: None,
-            at: at.into(),
-            draft: Some(BatchDraft {
-                input: NewProject { title: title.into(), kind: VideoKind::Explainer, format: VideoFormat::Portrait, language: VideoLanguage::Id, style_id: None },
-                brief: format!("# {title}\n"),
-            }),
-        }
-    }
-
-    #[test]
-    fn schedule_batch_schedules_existing_videos_and_new_drafts() {
-        let db = seeded();
-        let tmp = tempfile::tempdir().unwrap();
-        let out = schedule_batch(
-            &db,
-            tmp.path(),
-            vec![existing("p", "2026-11-05T19:00:00+07:00"), draft("Jalur Rempah", "2026-11-06T12:00:00+07:00")],
-            batch_now(),
-        )
-        .unwrap();
-        assert_eq!(out[0].scheduled_at.as_deref(), Some("2026-11-05T12:00:00Z"));
-        assert_eq!(out[0].reminded_at, None);
-        assert_eq!(out[1].title, "Jalur Rempah");
-        assert_eq!(out[1].scheduled_at.as_deref(), Some("2026-11-06T05:00:00Z"));
-        assert!(Path::new(&out[1].folder).join("AGENTS.md").exists());
-        assert_eq!(db.list_projects().unwrap().len(), 2);
-    }
-
-    #[test]
-    fn schedule_batch_checks_everything_before_writing_anything() {
-        let db = seeded();
-        let tmp = tempfile::tempdir().unwrap();
-        let ok = "2026-11-05T19:00:00+07:00";
-        for (items, code) in [
-            (vec![], "schedule:count"),
-            (vec![existing("p", ok), draft("A", ok), draft("B", "2026-11-31T19:00:00+07:00")], "schedule:badTime:3"),
-            (vec![draft("A", "2026-02-30T10:00:00+07:00")], "schedule:badTime:1"),
-            (vec![draft("A", "2026-11-05T24:00:00+07:00")], "schedule:badTime:1"),
-            (vec![draft("A", ok), draft("B", "2026-11-03T19:00:00+07:00")], "schedule:past:2"),
-            (vec![draft("A", "2027-11-06T19:00:00+07:00")], "schedule:tooFar:1"),
-            (vec![existing("nope", ok)], "schedule:unknown:1"),
-            (vec![draft("  ", ok)], "schedule:badItem:1"),
-            (vec![existing("p", ok), draft("A", ok), existing("p", "2026-11-06T19:00:00+07:00")], "schedule:twice:3"),
-            (vec![BatchItem { project_id: None, at: ok.into(), draft: None }], "schedule:badItem:1"),
-        ] {
-            assert_eq!(schedule_batch(&db, tmp.path(), items, batch_now()).unwrap_err(), code);
-        }
-        let too_many = (0..21).map(|i| draft(&format!("T{i}"), ok)).collect();
-        assert_eq!(schedule_batch(&db, tmp.path(), too_many, batch_now()).unwrap_err(), "schedule:count");
-        // Nothing was written: no drafts, no folders, the video keeps its reminder.
-        assert_eq!(db.list_projects().unwrap().len(), 1);
-        assert_eq!(std::fs::read_dir(tmp.path()).unwrap().count(), 0);
-        assert!(db.get_project("p").unwrap().unwrap().reminded_at.is_some());
-    }
-
-    #[test]
-    fn schedule_batch_undoes_everything_when_a_write_fails_part_way() {
-        let db = seeded();
-        db.update_project("p", serde_json::json!({ "scheduledAt": "2026-11-20T02:00:00Z" })).unwrap();
-        let before = db.get_project("p").unwrap().unwrap();
-        let tmp = tempfile::tempdir().unwrap();
-        let calls = std::cell::Cell::new(0);
-        let err = schedule_batch_with(
-            &db,
-            tmp.path(),
-            vec![
-                existing("p", "2026-11-05T19:00:00+07:00"),
-                draft("A", "2026-11-06T19:00:00+07:00"),
-                draft("B", "2026-11-07T19:00:00+07:00"),
-            ],
-            batch_now(),
-            |db, id, at| {
-                calls.set(calls.get() + 1);
-                if calls.get() == 3 {
-                    return Err("disk full".into());
-                }
-                schedule_project(db, id, Some(at))
-            },
-        )
-        .unwrap_err();
-        assert_eq!(err, "schedule:write");
-        // The drafts are gone, row and folder; the moved video has its old schedule and reminder back.
-        assert_eq!(db.list_projects().unwrap().len(), 1);
-        assert_eq!(std::fs::read_dir(tmp.path()).unwrap().count(), 0);
-        let after = db.get_project("p").unwrap().unwrap();
-        assert_eq!(after.scheduled_at, before.scheduled_at);
-        assert_eq!(after.reminded_at, before.reminded_at);
-    }
-
     #[test]
     fn a_draft_whose_brief_cant_be_written_leaves_no_folder() {
         let db = seeded();
         let tmp = tempfile::tempdir().unwrap();
-        let input = NewProject { title: "Jalur Rempah".into(), kind: VideoKind::Explainer, format: VideoFormat::Portrait, language: VideoLanguage::Id, style_id: None };
+        let input = NewProject { title: "Jalur Rempah".into() };
         let err = new_project_with(&db, tmp.path(), input, |_| Err(std::io::Error::other("disk full"))).unwrap_err();
         assert!(err.contains("brief"), "{err}");
         assert_eq!(std::fs::read_dir(tmp.path()).unwrap().count(), 0);
         assert_eq!(db.list_projects().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn set_schedule_validates_sets_clears_and_resets_the_reminder() {
-        let db = seeded();
-        assert!(schedule_project(&db, "p", Some("tomorrow".into())).is_err());
-        assert!(schedule_project(&db, "p", Some("2026-11-05 09:00".into())).is_err());
-        assert!(schedule_project(&db, "nope", Some("2026-11-05T09:00:00+07:00".into())).is_err());
-        assert!(schedule_project(&db, "nope", None).is_err());
-        let p = schedule_project(&db, "p", Some("2026-11-05T09:00:00+07:00".into())).unwrap();
-        assert_eq!(p.scheduled_at.as_deref(), Some("2026-11-05T02:00:00Z"));
-        assert_eq!(p.reminded_at, None);
-        db.update_project("p", serde_json::json!({ "remindedAt": "2026-11-05T01:00:00Z", "reviewRemindedAt": "2026-11-05T00:00:00Z" })).unwrap();
-        let p = schedule_project(&db, "p", None).unwrap();
-        assert_eq!(p.scheduled_at, None);
-        assert_eq!(p.reminded_at, None);
-        assert_eq!(p.review_reminded_at, None);
-        assert_eq!(db.get_project("p").unwrap().unwrap().scheduled_at, None);
-    }
-
-    #[test]
-    fn set_posted_stamps_and_clears_and_approve_approves() {
-        let db = seeded();
-        let p = mark_posted(&db, "p", true).unwrap();
-        assert!(p.posted_at.is_some());
-        assert_eq!(mark_posted(&db, "p", false).unwrap().posted_at, None);
-        assert!(mark_posted(&db, "nope", true).is_err());
-        assert_eq!(approve(&db, "p").unwrap().review_state, ReviewState::Approved);
-        assert_eq!(db.get_project("p").unwrap().unwrap().review_state, ReviewState::Approved);
-        assert!(approve(&db, "nope").is_err());
     }
 
     #[test]
@@ -3172,65 +2063,6 @@ mod tests {
     }
 
     use super::*;
-
-    #[test]
-    fn a_title_goes_to_the_platforms_that_show_one() {
-        assert_eq!(title_configurations(None), None);
-        assert_eq!(title_configurations(Some("  ")), None);
-        let c = title_configurations(Some(" Lampu lalu lintas ")).unwrap();
-        assert_eq!(c["youtube"]["title"], "Lampu lalu lintas");
-        assert_eq!(c["tiktok"]["title"], "Lampu lalu lintas");
-        let long = "x".repeat(150);
-        assert_eq!(title_configurations(Some(&long)).unwrap()["youtube"]["title"].as_str().unwrap().len(), 100);
-    }
-
-    #[test]
-    fn recent_images_looks_only_in_a_video_chats_folder() {
-        let tmp = tempfile::tempdir().unwrap();
-        let state = AppState {
-            db: seeded(),
-            acp: AcpManager::new(),
-            media: MediaTools::from_env_or_path(),
-            home: tmp.path().to_path_buf(),
-            study_working: Default::default(),
-        };
-        let since = "2026-11-04T10:00:00+07:00";
-        let video = state.db.create_chat(Some("p"), AgentId::Claude, "Video").unwrap();
-        let loose = state.db.create_chat(None, AgentId::Claude, "Loose").unwrap();
-        let (folder, at) = images_lookup(&state, &video.id, since).unwrap().unwrap();
-        assert_eq!(folder, PathBuf::from("/w/p"));
-        assert_eq!(at.to_rfc3339(), "2026-11-04T03:00:00+00:00");
-        // No project, an unknown chat, or a project that was deleted: nothing to look in.
-        assert!(images_lookup(&state, &loose.id, since).unwrap().is_none());
-        assert!(images_lookup(&state, "nope", since).unwrap().is_none());
-        state.db.delete_project("p").unwrap();
-        assert!(images_lookup(&state, &video.id, since).unwrap().is_none());
-        assert!(images_lookup(&state, &loose.id, "yesterday").is_err());
-    }
-
-    #[test]
-    fn a_study_keeps_the_working_folder_it_started_in() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (old, new) = (tmp.path().join("old"), tmp.path().join("new"));
-        let db = Db::open_in_memory().unwrap();
-        db.update_settings(serde_json::json!({ "workingFolder": old.to_string_lossy() })).unwrap();
-        let state = AppState {
-            db,
-            acp: AcpManager::new(),
-            media: MediaTools::from_env_or_path(),
-            home: tmp.path().to_path_buf(),
-            study_working: Default::default(),
-        };
-        let dir = study_path(&state.working(), "s1").unwrap();
-        std::fs::create_dir_all(&dir).unwrap();
-        state.study_working.lock().unwrap().insert("s1".into(), state.working());
-        state.db.update_settings(serde_json::json!({ "workingFolder": new.to_string_lossy() })).unwrap();
-        assert_eq!(state.working(), new);
-        assert_eq!(state.working_for_study("s1"), old);
-        assert_eq!(state.working_for_study("other"), new);
-        media::remove_study_dir(&state.working_for_study("s1"), "s1").unwrap();
-        assert!(!dir.exists());
-    }
 
     #[test]
     fn session_options_for_claude_load_the_plugin() {
@@ -3303,16 +2135,11 @@ mod tests {
     #[test]
     fn internal_sessions_get_no_meta() {
         assert!(!wants_skills("setup"));
-        assert!(!wants_skills("study-abc"));
-        assert!(!wants_skills("autopilot-a1"));
-        assert!(wants_skills("ideas-2026-11-04"));
         assert!(wants_skills("c1"));
     }
 
     #[test]
     fn auto_mode_rules() {
-        assert!(wants_auto("study-abc", false));
-        assert!(wants_auto("autopilot-a1", false));
         assert!(!wants_auto("setup", true));
         assert!(wants_auto("c1", true));
         assert!(!wants_auto("c1", false));
@@ -3334,26 +2161,15 @@ mod tests {
     }
 
     #[test]
-    fn timecode_matches_ts() {
-        assert_eq!(format_timecode(0.0, 30), "0:00.00");
-        assert_eq!(format_timecode(65.5, 30), "1:05.50");
-        assert_eq!(format_timecode(1.999, 30), "0:01.96");
-    }
-
-    #[test]
     fn cwd_rules() {
         let tmp = tempfile::tempdir().unwrap();
         let w = tmp.path();
         let setup = resolve_cwd(w, "setup", None).unwrap();
         assert!(setup.ends_with(".buma/setup") || setup.ends_with(r".buma\setup"));
         assert!(setup.is_dir());
-        let topics = resolve_cwd(w, "autopilot-a1", None).unwrap();
-        assert_eq!(topics, w.join(".buma").join("chats").join("autopilot-a1"));
-        let study = resolve_cwd(w, "study-abc", None).unwrap();
-        assert_eq!(study, w.join(".buma").join("style-study").join("abc"));
         let chat = resolve_cwd(w, "c1", None).unwrap();
         assert_eq!(chat, w.join(".buma").join("chats").join("c1"));
-        let proj = w.join("my-video");
+        let proj = w.join("my-feature");
         std::fs::create_dir(&proj).unwrap();
         assert_eq!(resolve_cwd(w, "c2", Some(&proj)).unwrap(), proj);
     }
@@ -3378,36 +2194,8 @@ mod tests {
         let outside = tmp.path().join("elsewhere");
         std::fs::create_dir(&outside).unwrap();
         assert!(resolve_cwd(&w, "../x", None).is_err());
-        assert!(resolve_cwd(&w, "study-../x", None).is_err());
-        assert!(resolve_cwd(&w, "ideas-../x", None).is_err());
+        assert!(resolve_cwd(&w, "a/../../x", None).is_err());
         let _ = outside;
-    }
-
-    #[test]
-    fn frame_images_must_be_inside_working() {
-        let tmp = tempfile::tempdir().unwrap();
-        let w = tmp.path().join("work");
-        std::fs::create_dir_all(&w).unwrap();
-        let frame = |p: PathBuf| MessagePart::Frame {
-            project_id: "p".into(),
-            frame: 1,
-            time_sec: 0.0,
-            image_path: p.to_string_lossy().into_owned(),
-            marks: vec![],
-        };
-        let none = |_: &str| None;
-        assert!(check_frame_images(&w, &[frame(w.join("a/f.png"))], none).is_ok());
-        assert!(check_frame_images(&w, &[frame(tmp.path().join("secret.png"))], none).is_err());
-        assert!(check_frame_images(&w, &[frame(w.join("../secret.png"))], none).is_err());
-
-        // A project left in an old working folder: its own frames are fine, others aren't.
-        let old = tmp.path().join("old").join("p");
-        std::fs::create_dir_all(&old).unwrap();
-        let known = |id: &str| (id == "p").then(|| old.clone());
-        let in_old = frame(old.join(".buma/frames/f.png"));
-        assert!(check_frame_images(&w, std::slice::from_ref(&in_old), known).is_ok());
-        assert!(check_frame_images(&w, &[in_old], none).is_err());
-        assert!(check_frame_images(&w, &[frame(old.join("../secret.png"))], known).is_err());
     }
 
     #[test]
@@ -3421,18 +2209,7 @@ mod tests {
             title: id.into(),
             slug: id.into(),
             folder: folder.to_string_lossy().into_owned(),
-            kind: VideoKind::Promo,
-            format: VideoFormat::Portrait,
-            language: VideoLanguage::En,
             status: ProjectStatus::Draft,
-            style_id: None,
-            scheduled_at: None,
-            review_state: ReviewState::None,
-            posted_at: None,
-            reminded_at: None,
-            review_reminded_at: None,
-            social_post_id: None,
-            duration_sec: None,
             created_at: String::new(),
             updated_at: String::new(),
         };
@@ -3482,7 +2259,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            build_prompt(&parts, 30, |_| None, |_| None),
+            build_prompt(&parts, |_| None, |_| None),
             vec![PromptPart::Text(
                 "Picked: Kenapa rupiah melemah?\n\n```a2ui-action\n{\"action\":{\"name\":\"pick\"},\"version\":\"v0.9\"}\n```".into()
             )]
@@ -3490,22 +2267,12 @@ mod tests {
     }
 
     #[test]
-    fn style_mention_adds_nothing_of_its_own() {
-        // The app sends the style's prompt and notes in front of the message itself.
-        let parts = vec![
-            MessagePart::StyleMention { style_id: "s1".into(), name: "Atlas".into() },
-            MessagePart::Text { text: "pakai ini".into() },
-        ];
-        assert_eq!(build_prompt(&parts, 30, |_| None, |_| None), vec![PromptPart::Text("pakai ini".into())]);
-    }
-
-    #[test]
     fn missing_mention_has_no_empty_folder() {
         let parts = vec![MessagePart::Mention { project_id: "x".into(), title: "Gone".into() }];
         assert_eq!(
-            build_prompt(&parts, 30, |_| None, |_| None),
+            build_prompt(&parts, |_| None, |_| None),
             vec![PromptPart::Text(
-                "Context: video project \"Gone\" (no longer on this computer).".into()
+                "Context: project \"Gone\" (no longer on this computer).".into()
             )]
         );
     }
@@ -3517,31 +2284,13 @@ mod tests {
             title: "Launch".into(),
             slug: "launch".into(),
             folder: "/w/launch".into(),
-            kind: VideoKind::Promo,
-            format: VideoFormat::Portrait,
-            language: VideoLanguage::En,
             status: ProjectStatus::Draft,
-            style_id: None,
-            scheduled_at: None,
-            review_state: ReviewState::None,
-            posted_at: None,
-            reminded_at: None,
-            review_reminded_at: None,
-            social_post_id: None,
-            duration_sec: None,
             created_at: String::new(),
             updated_at: String::new(),
         };
         let parts = vec![
             MessagePart::Text { text: "hi".into() },
             MessagePart::Mention { project_id: "p1".into(), title: "old".into() },
-            MessagePart::Frame {
-                project_id: "p1".into(),
-                frame: 45,
-                time_sec: 1.5,
-                image_path: "/w/f.png".into(),
-                marks: vec![Mark { x: 0.5, y: 0.25 }],
-            },
             MessagePart::Tool {
                 tool_call_id: "t".into(),
                 title: "x".into(),
@@ -3553,7 +2302,6 @@ mod tests {
         ];
         let out = build_prompt(
             &parts,
-            30,
             |id| (id == "p1").then(|| project.clone()),
             |f| (f == Path::new("/w/launch")).then(|| "# Launch\n- Kind: promo\n".to_string()),
         );
@@ -3562,12 +2310,8 @@ mod tests {
             vec![
                 PromptPart::Text("hi".into()),
                 PromptPart::Text(
-                    "Context: video project \"Launch\". Its Buma id is p1. Its files are in /w/launch.\nIts AGENTS.md:\n\n# Launch\n- Kind: promo"
+                    "Context: project \"Launch\". Its Buma id is p1. Its files are in /w/launch.\nIts AGENTS.md:\n\n# Launch\n- Kind: promo"
                         .into()
-                ),
-                PromptPart::Image { path: PathBuf::from("/w/f.png") },
-                PromptPart::Text(
-                    "Frame 45 at 0:01.50 of Launch. Marks (x,y relative): (0.50, 0.25)".into()
                 ),
             ]
         );
@@ -3662,7 +2406,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            build_prompt(&parts, 30, |_| None, |_| None),
+            build_prompt(&parts, |_| None, |_| None),
             vec![
                 PromptPart::Image { path: PathBuf::from("/w/c/attachments/shot.PNG") },
                 PromptPart::Text("Attached image: attachments/shot.PNG (shot.PNG, 10 B)".into()),
@@ -3687,7 +2431,7 @@ mod tests {
             file("big.jpg", MAX_IMAGE_BLOCK + 1),
             file("edge.webp", MAX_IMAGE_BLOCK),
         ];
-        let out = build_prompt(&parts, 30, |_| None, |_| None);
+        let out = build_prompt(&parts, |_| None, |_| None);
         assert_eq!(out[0], PromptPart::Text("Attached file: attachments/loop.gif (loop.gif, 10 B)".into()));
         assert_eq!(out[1], PromptPart::Text("Attached file: attachments/big.jpg (big.jpg, 5.0 MB)".into()));
         assert_eq!(out[2], PromptPart::Image { path: PathBuf::from("/w/c/attachments/edge.webp") });

@@ -10,7 +10,7 @@ import { NewFeatureDialog } from '@/components/NewFeatureDialog';
 import { SDLC_STAGES } from '@/components/SdlcWorkflow';
 import { StatusIcon } from '@/components/StatusIcon';
 import { featureChat, runStage } from '@/lib/featureFlow';
-import { listProjects, showVideoInFolder } from '@/lib/ipc';
+import { listProjects, openProjectFolder } from '@/lib/ipc';
 import { readFeatureState, type FeatureState } from '@/lib/sdlcState';
 import { ago } from '@/lib/time';
 import { cn } from '@/lib/utils';
@@ -175,7 +175,7 @@ function FeatureDetail({ project, state, job, agent }: { project: Project; state
             {state?.intentDir ?? project.folder}
           </span>
         </div>
-        <Button variant="secondary" className="gap-1.5" onClick={() => void showVideoInFolder(project.id).catch(() => {})}>
+        <Button variant="secondary" className="gap-1.5" onClick={() => void openProjectFolder(project.id).catch(() => {})}>
           <FolderOpen size={14} aria-hidden="true" />
           {t('workflow.openFolder')}
         </Button>

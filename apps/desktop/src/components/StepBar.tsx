@@ -18,8 +18,6 @@ export function currentStep(status: ProjectStatus, verifying = false): number {
 type Props =
   | {
       status: ProjectStatus;
-      /** A render of this project is running (state/render.ts). */
-      rendering?: boolean;
     }
   | {
       /** Visible step names, in order. */
@@ -31,13 +29,12 @@ type Props =
       onPick?: (index: number) => void;
     };
 
-/** A project's progress (`status`), or any numbered steps (`steps`), such as the autopilot wizard's. */
+/** A project's progress (`status`), or any numbered steps (`steps`). */
 export function StepBar(props: Props) {
   const { t } = useTranslation();
   const own = 'steps' in props;
   const names = own ? props.steps : STEPS.map((s) => t(`stepBar.${s}`));
-  const rendering = !own && !!props.rendering;
-  const cur = own ? props.current : currentStep(props.status, rendering);
+  const cur = own ? props.current : currentStep(props.status);
   const onPick = own ? props.onPick : undefined;
   return (
     // A project's steps sit in the chat header: one line always, and when its container (`@container/steps`)
@@ -49,7 +46,6 @@ export function StepBar(props: Props) {
       {names.map((name, i) => {
         const done = i < cur;
         const active = i === cur;
-        const pulse = active && rendering;
         const body = (
           <>
             <span
@@ -74,13 +70,6 @@ export function StepBar(props: Props) {
             >
               {name}
             </span>
-            {pulse && (
-              <>
-                {/* Still under reduced motion. */}
-                <span aria-hidden="true" data-step-pulse className="size-1.5 rounded-full bg-primary motion-safe:animate-pulse" />
-                <span className="sr-only">{t('stepBar.renderingNow')}</span>
-              </>
-            )}
           </>
         );
         return (

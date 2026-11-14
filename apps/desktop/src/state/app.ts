@@ -7,14 +7,12 @@ export type Route =
   | { name: 'requirements' }
   /** Onboarding's last, required step: sign in to Azure DevOps. */
   | { name: 'onboarding-account' }
-  | { name: 'chat-new'; styleId?: string }
+  | { name: 'chat-new' }
   | {
       name: 'chat';
       chatId: string;
       /** Prefilled in the composer, never sent. */
       draft?: string;
-      /** A chat without a project that New chat started from a template on the Style screen. */
-      styleId?: string;
     }
   /** The SDLC in one place: every feature, its pipeline and its agent. */
   | { name: 'workflow' }
@@ -53,7 +51,7 @@ interface AppState {
   /** Bumped when a project is created so the sidebar's Recent list refreshes. */
   projectsVersion: number;
   bumpProjects(): void;
-  /** Set when a reminder was due but the system denied notifications; the Calendar explains it. */
+  /** Set when the system denied notifications (Settings' test button found out). */
   notificationsBlocked: boolean;
   setNotificationsBlocked(blocked: boolean): void;
 }

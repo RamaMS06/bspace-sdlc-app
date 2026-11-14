@@ -41,7 +41,7 @@ export interface Account extends Entitlements {
 
 /** POST /v1/auth/token, status 200. The token is issued once; the device code is then used up. */
 export interface AuthTokenResponse {
-  /** `tyg_…`; send as `Authorization: Bearer <token>`. */
+  /** The bearer token (the API's own prefix); send as `Authorization: Bearer <token>`. */
   token: string;
   account: Account;
 }

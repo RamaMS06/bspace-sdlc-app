@@ -588,7 +588,7 @@ impl Auth {
     }
 
     /// The stored token for `base`, for the other API calls Rust makes for the signed-in user
-    /// (billing). It never goes to the webview. None when signed out or the address isn't safe.
+    /// (AI credits and images). It never goes to the webview. None when signed out or the address isn't safe.
     pub async fn token(&self, base: &str) -> Option<String> {
         let key = account_key(base.trim()).ok()?;
         self.load_token(&key).await
@@ -1046,7 +1046,7 @@ pub(crate) mod tests {
 
     pub(crate) const DEVICE: &str = r#"{"deviceCode":"dev-secret","userCode":"ABCD-EFGH","verificationUri":"http://x/api/auth/device","verificationUriComplete":"http://x/api/auth/device?code=ABCD-EFGH","expiresIn":600,"interval":1}"#;
     pub(crate) const ISSUED: &str = r#"{"token":"tyg_abc","account":{"id":"acc_1","email":"a@b.c","name":"Ana","plan":"free","features":[]}}"#;
-    pub(crate) const ME: &str = r#"{"id":"acc_1","email":"a@b.c","name":"Ana","plan":"pro","features":["voiceover"],"credits":310}"#;
+    pub(crate) const ME: &str = r#"{"id":"acc_1","email":"a@b.c","name":"Ana","plan":"pro","features":["ai-images"],"credits":310}"#;
     pub(crate) fn err(code: &str) -> (u16, String) {
         (400, format!(r#"{{"error":"{code}"}}"#))
     }
@@ -1155,7 +1155,7 @@ pub(crate) mod tests {
         let c = http_client().unwrap();
         let f = fake(|r, _| if r.auth.as_deref() == Some("Bearer tyg_ok") { (200, ME.into()) } else { (401, r#"{"error":"unauthorized"}"#.into()) }).await;
         let Me::Account(a) = fetch_me(&c, &f.base, "tyg_ok").await else { panic!("expected the account") };
-        assert_eq!((a.plan.as_str(), a.features.as_slice(), a.credits), ("pro", ["voiceover".to_string()].as_slice(), 310));
+        assert_eq!((a.plan.as_str(), a.features.as_slice(), a.credits), ("pro", ["ai-images".to_string()].as_slice(), 310));
         assert_eq!(f.hits("/api/v1/me")[0].method, "GET");
         assert!(matches!(fetch_me(&c, &f.base, "tyg_old").await, Me::Unauthorized));
         let f = fake(|_, _| (503, "{}".into())).await;

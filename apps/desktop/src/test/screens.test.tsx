@@ -9,32 +9,10 @@ vi.mock('@/lib/ipc', () => ({
   setThreadArchived: vi.fn().mockResolvedValue(undefined),
   purgeArchive: vi.fn().mockResolvedValue({ chats: 0, cards: 0 }),
   setJobsArchived: vi.fn().mockResolvedValue(undefined),
-  listAutopilots: vi.fn().mockResolvedValue([]),
-  listSlots: vi.fn().mockResolvedValue([]),
-  saveAutopilot: vi.fn(),
-  setAutopilotStatus: vi.fn(),
-  deleteAutopilot: vi.fn().mockResolvedValue(undefined),
-  updateSlot: vi.fn(),
   listProjects: vi.fn(),
-  videoThumbnail: vi.fn().mockResolvedValue(null),
-  showVideoInFolder: vi.fn().mockResolvedValue(undefined),
-  updateProject: vi.fn(),
-  setSchedule: vi.fn(),
-  setPosted: vi.fn(),
-  approveProject: vi.fn(),
+  openProjectFolder: vi.fn().mockResolvedValue(undefined),
   listChats: vi.fn(),
   createChat: vi.fn(),
-  listStyles: vi.fn(),
-  syncStyles: vi.fn(),
-  saveStyle: vi.fn(),
-  deleteStyle: vi.fn(),
-  readStyleResult: vi.fn(),
-  studyDir: vi.fn(),
-  makeStylePreview: vi.fn(),
-  makeStyleSheets: vi.fn(async () => []),
-  keepStyleRefs: vi.fn(async () => []),
-  copyStyleRefs: vi.fn(async () => 0),
-  removeStudyDir: vi.fn().mockResolvedValue(undefined),
   assetUrl: vi.fn((p: string) => `asset://localhost/${p}`),
   listJobs: vi.fn(),
   upsertJob: vi.fn(),
@@ -63,7 +41,6 @@ const updateHandlers: ((e: { chatId: string; update: AgentUpdate }) => void)[] =
 const permHandlers: ((r: PermissionRequest) => void)[] = [];
 vi.mock('@/lib/events', () => ({
   onQuestion: vi.fn(async () => () => {}),
-  onAgentAction: vi.fn(async () => () => {}),
   onAgentUpdate: vi.fn(async (f: (e: { chatId: string; update: AgentUpdate }) => void) => {
     updateHandlers.push(f);
     return () => {};
@@ -96,16 +73,11 @@ import * as autostart from '@tauri-apps/plugin-autostart';
 import { Settings as SettingsScreen } from '@/screens/Settings';
 import { Agents as AgentsScreen } from '@/screens/Agents';
 import { useApp } from '@/state/app';
-import { useStudy } from '@/state/study';
 import { setUiLanguage } from '@/i18n';
 
 const settings: Settings = {
   workingFolder: '/w/Buma',
   defaultAgent: 'claude',
-  frameCheck: true,
-  language: 'id',
-  format: '9:16',
-  fps: 30,
   onboarded: true,
   apiUrl: 'https://bspace.buma.internal/api',
   installId: '',
@@ -115,8 +87,6 @@ const settings: Settings = {
   uiLanguage: null,
   backgroundMode: false,
   openAtLogin: false,
-  buildJobsChecked: true,
-  projectStatusChecked: true,
   agentModels: {},
 };
 
@@ -127,11 +97,8 @@ const agents: AgentInfo[] = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useStudy.getState().dismiss();
   useApp.setState({ settings, needsYouCount: 0, route: { name: 'features' } });
   vi.mocked(ipc.listProjects).mockResolvedValue([]);
-  vi.mocked(ipc.listStyles).mockResolvedValue([]);
-  vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [], offline: false });
   vi.mocked(ipc.listJobs).mockResolvedValue([]);
   vi.mocked(ipc.detectAgents).mockResolvedValue(agents);
   vi.mocked(ipc.checkTools).mockResolvedValue([]);
@@ -269,7 +236,7 @@ describe('Settings', () => {
     await userEvent.click(btn);
     expect(await screen.findByText(/Test notification sent\. If you don't see it/)).toBeInTheDocument();
     await userEvent.click(btn);
-    expect(await screen.findByText(/Reminders can't show/)).toBeInTheDocument();
+    expect(await screen.findByText(/Notifications can't show/)).toBeInTheDocument();
     await userEvent.click(btn);
     expect(await screen.findByText("Couldn't send it: no toast")).toBeInTheDocument();
   });

@@ -9,7 +9,7 @@ export function slugify(title: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 48)
     .replace(/-+$/g, '');
-  return s || 'video';
+  return s || 'feature';
 }
 
 export function uniqueSlug(base: string, taken: string[]): string {
@@ -33,22 +33,4 @@ export function versionAtLeast(v: string | null, min: number): boolean {
 
 export function requiredMissing(tools: ToolStatus[]): ToolStatus[] {
   return tools.filter((t) => t.required && !t.ok);
-}
-
-export function formatTimecode(sec: number, fps: number): string {
-  const total = Math.max(0, sec);
-  const whole = Math.floor(total);
-  const frame = Math.min(Math.round((total - whole) * fps), fps - 1);
-  const cc = Math.floor((frame / fps) * 100);
-  const m = Math.floor(whole / 60);
-  const s = whole % 60;
-  return `${m}:${String(s).padStart(2, '0')}.${String(cc).padStart(2, '0')}`;
-}
-
-export function frameAt(sec: number, fps: number): number {
-  return Math.round(sec * fps);
-}
-
-export function secAt(frame: number, fps: number): number {
-  return frame / fps;
 }

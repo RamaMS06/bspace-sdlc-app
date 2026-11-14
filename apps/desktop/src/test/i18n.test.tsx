@@ -17,8 +17,7 @@ vi.mock('@/lib/ipc', () => ({
   checkTools: vi.fn().mockResolvedValue([]),
 }));
 vi.mock('@/lib/events', () => ({
-  onQuestion: vi.fn(async () => () => {}),
-  onAgentAction: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
+  onQuestion: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
 
 import { en } from '@/i18n/en';
@@ -89,10 +88,6 @@ describe('translations', () => {
 const settings: Settings = {
   workingFolder: '/w/Buma',
   defaultAgent: 'claude',
-  frameCheck: true,
-  language: 'id',
-  format: '9:16',
-  fps: 30,
   onboarded: true,
   apiUrl: 'https://bspace.buma.internal/api',
   installId: '',
@@ -102,8 +97,6 @@ const settings: Settings = {
   uiLanguage: 'en',
   backgroundMode: false,
   openAtLogin: false,
-  buildJobsChecked: true,
-  projectStatusChecked: true,
   agentModels: {},
 };
 
@@ -200,15 +193,15 @@ describe('saved text', () => {
 
   it('translates a saved text inside another, and leaves anything else alone', () => {
     setUiLanguage('id');
-    const nested = stored('chat.templateProblem', { problem: stored('chat.templateGone') });
-    expect(localized(nested)).toBe('Template belum bisa disiapkan: gaya itu sudah tidak ada di koleksimu. Lanjut tanpa template.');
+    const nested = stored('chat.modeFailed', { reason: stored('chat.busyNote') });
+    expect(localized(nested)).toBe('Gagal mengganti mode: Tunggu agen selesai dulu, lalu coba lagi. Chat tetap di Tanya.');
     expect(localized('Kenapa rupiah melemah?')).toBe('Kenapa rupiah melemah?');
     expect(localized('Couldn’t reach the agent (code 7)')).toBe('Couldn’t reach the agent (code 7)');
   });
 
   it('only rewrites parameters that can be saved text', () => {
     setUiLanguage('id');
-    expect(localized(stored('chat.settingTemplate', { name: 'Cancelled' }))).toBe('Menyiapkan template Cancelled…');
+    expect(localized(stored('chat.switched', { name: 'Cancelled' }))).toBe('Beralih ke Cancelled. Agen ini mulai dari nol dan tidak melihat pesan sebelumnya.');
     expect(localized(stored('chat.ranWithoutAsking', { what: 'Cancelled' }))).toBe('Dijalankan tanpa minta izin: Cancelled');
   });
 

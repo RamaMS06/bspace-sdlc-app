@@ -1,14 +1,5 @@
-import type { PlanId } from './billing';
-import type { Gift } from './promo';
-import { CREDIT_COSTS } from './billing';
+// AI credits (images), metered per cycle. This file has the rules and the wire shapes.
 
-// AI credits (fal image and voice) and auto-posts (PostForMe), metered per cycle.
-// Prices and quotas live in billing.ts; this file has the rules and the wire shapes.
-
-/** About one minute of speech, the cost basis of CREDIT_COSTS.voiceMinute. */
-export const VOICE_CHARS_PER_MINUTE = 900;
-/** fal's limit for one voice request. */
-export const MAX_VOICE_CHARS = 5000;
 export const MAX_IMAGES_PER_REQUEST = 4;
 export const USAGE_CYCLE_DAYS = 30;
 
@@ -19,10 +10,6 @@ export const IMAGE_ASPECTS = {
   '1:1': { width: 960, height: 960 },
 } as const;
 export type ImageAspect = keyof typeof IMAGE_ASPECTS;
-
-/** Voice is charged by characters (code points), before generation: at least 1 credit. */
-export const voiceCredits = (text: string): number =>
-  Math.max(1, Math.ceil(([...text].length * CREDIT_COSTS.voiceMinute) / VOICE_CHARS_PER_MINUTE));
 
 const DAY_MS = 86_400_000;
 
@@ -44,8 +31,6 @@ export function usageCycle(anchor: string | null, now: Date): { start: string; e
   return { start: new Date(start).toISOString(), end: new Date(start + step).toISOString() };
 }
 
-export type Meter = 'credits' | 'posts';
-
 export interface UsageMeter {
   allowance: number;
   used: number;
@@ -54,13 +39,10 @@ export interface UsageMeter {
 
 /** GET /v1/usage (Bearer). */
 export interface UsageResponse {
-  plan: PlanId;
+  plan: string;
   cycleStart: string;
   cycleEnd: string;
   credits: UsageMeter;
-  posts: UsageMeter;
-  /** Gifts still running; their credits and posts are in the meters above too. */
-  gifts?: Gift[];
 }
 
 /** POST /v1/ai/image body. */
@@ -75,71 +57,4 @@ export interface ImageResponse {
   images: { url: string; width: number; height: number; flagged: boolean }[];
   creditsCharged: number;
   usage: UsageMeter;
-}
-
-/** POST /v1/ai/voice body. */
-export interface VoiceRequest {
-  text: string;
-  voice?: string;
-  language?: 'id' | 'en';
-  clientRequestId?: string;
-}
-
-export interface VoiceResponse {
-  audioUrl: string;
-  contentType: string;
-  creditsCharged: number;
-  usage: UsageMeter;
-}
-
-/**
- * The platforms a user can connect. Bluesky is left out (it needs an app password, not OAuth); X,
- * LinkedIn and Pinterest are left out for now.
- */
-export const SOCIAL_PLATFORMS = ['tiktok', 'tiktok_business', 'instagram', 'youtube', 'facebook', 'threads'] as const;
-export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
-
-export interface SocialAccount {
-  id: string;
-  platform: string;
-  username: string | null;
-  profilePhotoUrl: string | null;
-  status: 'connected' | 'disconnected';
-}
-
-export interface ConnectRequest {
-  platform: SocialPlatform;
-}
-
-export interface ConnectResponse {
-  url: string;
-}
-
-export interface UploadUrlResponse {
-  uploadUrl: string;
-  mediaUrl: string;
-}
-
-/** Each target account counts as 1 post. */
-export interface CreatePostRequest {
-  caption: string;
-  socialAccountIds: string[];
-  mediaUrl: string;
-  scheduledAt?: string;
-  platformConfigurations?: Record<string, unknown>;
-  clientRequestId: string;
-}
-
-export interface CreatePostResponse {
-  postId: string;
-  status: string;
-  postsCharged: number;
-  usage: UsageMeter;
-}
-
-export interface PostDetails {
-  postId: string;
-  status: string;
-  scheduledAt: string | null;
-  results: { socialAccountId: string; success: boolean; error: string | null; url: string | null }[];
 }

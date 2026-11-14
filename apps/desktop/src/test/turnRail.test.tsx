@@ -141,17 +141,12 @@ describe('TurnRail fix round 1', () => {
     expect(document.activeElement).toBe(a);
   });
 
-  it('labels frame-only and file-only turns', () => {
-    const frame: ChatMessage = {
-      id: 'f', chatId: 'c', role: 'user', createdAt: '',
-      parts: [{ type: 'frame', projectId: 'p', frame: 0, timeSec: 75, imagePath: '', marks: [] }],
-    };
+  it('labels file-only turns', () => {
     const file: ChatMessage = {
       id: 'g', chatId: 'c', role: 'user', createdAt: '',
       parts: [{ type: 'file', path: '/a/brief.pdf', name: 'brief.pdf', mime: 'x', size: 1 }],
     };
-    render(<Harness messages={[frame, agent('2', 'ok'), file]} tops={{ 0: 0, 2: 600 }} />);
-    expect(screen.getByRole('button', { name: 'Jump to: Frame at 1:15' })).toBeInTheDocument();
+    render(<Harness messages={[user('f', 'First prompt'), agent('2', 'ok'), file]} tops={{ 0: 0, 2: 600 }} />);
     expect(screen.getByRole('button', { name: 'Jump to: brief.pdf' })).toBeInTheDocument();
   });
 

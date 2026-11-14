@@ -7,19 +7,13 @@ vi.mock('@/lib/ipc', () => ({
   getChat: vi.fn(),
   listProjects: vi.fn(),
   listMessages: vi.fn().mockResolvedValue([]),
-  renderCommand: vi.fn().mockResolvedValue(null),
-  mediaLatestRender: vi.fn().mockResolvedValue(null),
-  mediaProbe: vi.fn().mockResolvedValue(null),
-  mediaThumbnails: vi.fn().mockResolvedValue([]),
-  mediaRender: vi.fn(),
   assetUrl: (p: string) => p,
   projectFiles: vi.fn(async () => []),
   findProjectFiles: vi.fn(async () => []),
   readProjectFile: vi.fn(),
 }));
 vi.mock('@/lib/events', () => ({
-  onQuestion: vi.fn(async () => () => {}),
-  onAgentAction: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
+  onQuestion: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 
 import * as ipc from '@/lib/ipc';
 import { ChatProject } from '@/screens/ChatProject';
@@ -30,13 +24,7 @@ const project: Project = {
   title: 'Kenapa rupiah melemah?',
   slug: 'p1',
   folder: '/tmp/p1',
-  kind: 'explainer',
-  format: '9:16',
-  language: 'id',
   status: 'draft',
-  styleId: null,
-  scheduledAt: null, reviewState: 'none', postedAt: null, remindedAt: null, reviewRemindedAt: null,
-  durationSec: null,
   createdAt: '2026-11-01T00:00:00Z',
   updatedAt: '2026-11-01T00:00:00Z',
 };

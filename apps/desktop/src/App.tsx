@@ -9,11 +9,9 @@ import { VersionTag } from '@/components/VersionTag';
 import { BumaLoading } from '@/components/buma/Loading';
 import { setUiLanguage } from '@/i18n';
 import { systemLanguage } from '@/lib/language';
-import { getSettings, getSystemInfo, syncStyles, updateSettings } from '@/lib/ipc';
+import { getSettings, getSystemInfo, updateSettings } from '@/lib/ipc';
 import { getVersion } from '@tauri-apps/api/app';
 import { startAnalytics } from '@/lib/analytics';
-import { recheckDoneBuildJobs } from '@/lib/buildJobs';
-import { backfillProjectStatus } from '@/lib/projectStatus';
 import { startUpdateChecks } from '@/state/updater';
 import { useWindowDrag } from '@/lib/windowDrag';
 import { ChatRoute, useSoloChat } from '@/screens/ChatRoute';
@@ -81,10 +79,6 @@ export default function App() {
             .then((next) => next && useApp.getState().settings?.uiLanguage === lang && useApp.getState().setSettings(next))
             .catch(() => {});
         }
-        // Built-in styles in the background, like the install ping: never blocks, failures are ignored.
-        void Promise.resolve()
-          .then(syncStyles)
-          .catch(() => {});
         // The app doesn't open without an Azure DevOps sign-in: back to the last onboarding step.
         const devops = st.onboarded ? await useDevops.getState().init().catch(() => null) : null;
         if (st.onboarded && !devops?.signedIn) {
@@ -92,10 +86,6 @@ export default function App() {
         } else if (st.onboarded) {
           useApp.getState().navigate({ name: 'chat-new' });
           void refreshJobs().catch(() => {});
-          // Once per install: old build jobs marked done without a video go back to needs-you.
-          void recheckDoneBuildJobs(st.buildJobsChecked);
-          // Once per install: projects made before their status moved on its own catch up.
-          void backfillProjectStatus(st.projectStatusChecked);
         }
       })
       .catch(() => setLoadError(true));

@@ -1,4 +1,4 @@
-//! SQLite storage for settings, projects, chats, styles and jobs.
+//! SQLite storage for settings, projects, chats and jobs.
 
 use crate::types::*;
 use rusqlite::types::{Value as Sql, ValueRef};
@@ -10,10 +10,6 @@ use std::sync::Mutex;
 
 #[derive(Debug)]
 pub struct DbError(pub String);
-
-/// `delete_style`'s refusal while an autopilot uses the style, followed by that autopilot's name; the
-/// UI says it in the user's language.
-pub const STYLE_IN_USE: &str = "style-in-use:";
 
 impl std::fmt::Display for DbError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -35,15 +31,15 @@ impl From<serde_json::Error> for DbError {
 
 pub type Result<T> = std::result::Result<T, DbError>;
 
+// `projects.kind`, `format` and `language` are left from the video app: databases made by it require
+// them (NOT NULL), so every insert writes fixed values and nothing reads them. Its other tables
+// (styles, autopilots, autopilot_slots) and columns are no longer read or written.
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY, title TEXT NOT NULL, slug TEXT NOT NULL, folder TEXT NOT NULL,
-  kind TEXT NOT NULL, format TEXT NOT NULL, language TEXT NOT NULL, status TEXT NOT NULL,
-  style_id TEXT, scheduled_at TEXT, duration_sec REAL,
-  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-  review_state TEXT NOT NULL DEFAULT 'none', posted_at TEXT, reminded_at TEXT,
-  review_reminded_at TEXT, social_post_id TEXT
+  kind TEXT NOT NULL DEFAULT 'explainer', format TEXT NOT NULL DEFAULT '9:16', language TEXT NOT NULL DEFAULT 'id',
+  status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS chats (
   id TEXT PRIMARY KEY, project_id TEXT, agent_id TEXT NOT NULL,
@@ -55,56 +51,23 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS messages_chat_at ON messages(chat_id, created_at);
 DROP INDEX IF EXISTS messages_chat;
-CREATE TABLE IF NOT EXISTS styles (
-  id TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT NOT NULL, source_url TEXT,
-  notes TEXT NOT NULL, prompt TEXT NOT NULL, created_at TEXT NOT NULL,
-  engine TEXT, preview_url TEXT, preview_video_url TEXT, template TEXT, version INTEGER, based_on TEXT
-);
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, project_id TEXT, chat_id TEXT,
-  agent_id TEXT NOT NULL, status TEXT NOT NULL, progress REAL, note TEXT, source_url TEXT, updated_at TEXT NOT NULL,
-  render_baseline_at TEXT
-);
-CREATE TABLE IF NOT EXISTS autopilots (
-  id TEXT PRIMARY KEY, name TEXT NOT NULL, niche TEXT NOT NULL, language TEXT NOT NULL,
-  style_id TEXT NOT NULL, agent_id TEXT NOT NULL, frequency TEXT NOT NULL, length_sec INTEGER NOT NULL,
-  review INTEGER NOT NULL, posting TEXT NOT NULL, status TEXT NOT NULL,
-  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-  niche_id TEXT, voice_id TEXT, social_account_ids TEXT NOT NULL DEFAULT '[]'
-);
-CREATE TABLE IF NOT EXISTS autopilot_slots (
-  id TEXT PRIMARY KEY, autopilot_id TEXT NOT NULL, due_at TEXT NOT NULL, status TEXT NOT NULL,
-  project_id TEXT, error TEXT, UNIQUE(autopilot_id, due_at)
+  agent_id TEXT NOT NULL, status TEXT NOT NULL, progress REAL, note TEXT, updated_at TEXT NOT NULL
 );
 ";
 
 // Column lists use camelCase aliases so rows deserialize straight into the serde types.
-const PROJECT_SELECT: &str = "SELECT id, title, slug, folder, kind, format, language, status, \
-    style_id AS styleId, scheduled_at AS scheduledAt, duration_sec AS durationSec, \
-    created_at AS createdAt, updated_at AS updatedAt, review_state AS reviewState, \
-    posted_at AS postedAt, reminded_at AS remindedAt, review_reminded_at AS reviewRemindedAt, \
-    social_post_id AS socialPostId FROM projects";
-const PROJECT_KEYS: [&str; 18] = [
-    "id", "title", "slug", "folder", "kind", "format", "language", "status", "styleId",
-    "scheduledAt", "durationSec", "createdAt", "updatedAt", "reviewState", "postedAt", "remindedAt",
-    "reviewRemindedAt", "socialPostId",
-];
+// A status from the video app (`rendered`, `scheduled`) reads as `building`.
+const PROJECT_SELECT: &str = "SELECT id, title, slug, folder, \
+    CASE status WHEN 'draft' THEN 'draft' ELSE 'building' END AS status, \
+    created_at AS createdAt, updated_at AS updatedAt FROM projects";
+const PROJECT_KEYS: [&str; 7] = ["id", "title", "slug", "folder", "status", "createdAt", "updatedAt"];
 const CHAT_SELECT: &str = "SELECT id, project_id AS projectId, agent_id AS agentId, title, \
     created_at AS createdAt, folder FROM chats";
 const JOB_SELECT: &str = "SELECT id, kind, title, project_id AS projectId, chat_id AS chatId, \
-    agent_id AS agentId, status, progress, note, source_url AS sourceUrl, updated_at AS updatedAt, \
-    render_baseline_at AS renderBaselineAt, archived_at AS archivedAt FROM jobs";
-const JOB_KEYS: [&str; 12] = [
-    "id", "kind", "title", "projectId", "chatId", "agentId", "status", "progress", "note",
-    "sourceUrl", "updatedAt", "renderBaselineAt",
-];
-
-const AUTOPILOT_SELECT: &str = "SELECT id, name, niche, language, style_id AS styleId, agent_id AS agentId, \
-    frequency, length_sec AS lengthSec, review, posting, status, created_at AS createdAt, \
-    updated_at AS updatedAt, niche_id AS nicheId, voice_id AS voiceId, \
-    social_account_ids AS socialAccountIds FROM autopilots";
-const SLOT_SELECT: &str = "SELECT id, autopilot_id AS autopilotId, due_at AS dueAt, status, \
-    project_id AS projectId, error FROM autopilot_slots";
+    agent_id AS agentId, status, progress, note, updated_at AS updatedAt, archived_at AS archivedAt FROM jobs";
+const JOB_KEYS: [&str; 10] = ["id", "kind", "title", "projectId", "chatId", "agentId", "status", "progress", "note", "updatedAt"];
 
 pub const DEFAULT_API_URL: &str = "https://bspace.buma.internal/api";
 
@@ -120,118 +83,12 @@ fn migrate_api_url(url: &str) -> Option<String> {
     }
 }
 
-/// Ids of the hard-coded built-ins older versions seeded; they now come from the API.
-const LEGACY_BUILTIN_IDS: [&str; 3] =
-    ["builtin-bold-explainer", "builtin-kinetic-quote", "builtin-news-recap"];
-
 pub fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
 fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()
-}
-
-/// An RFC 3339 instant as UTC text (`...Z`, seconds), so slots compare as plain strings.
-fn utc(at: &str) -> Result<String> {
-    chrono::DateTime::parse_from_rfc3339(at)
-        .map(|dt| dt.with_timezone(&chrono::Utc).to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
-        .map_err(|_| DbError(format!("That date and time isn't valid: {at}")))
-}
-
-fn valid_time(t: &str) -> bool {
-    let b = t.as_bytes();
-    b.len() == 5
-        && b[2] == b':'
-        && matches!(t[..2].parse::<u8>(), Ok(h) if h < 24)
-        && matches!(t[3..].parse::<u8>(), Ok(m) if m < 60)
-        && b[0].is_ascii_digit()
-        && b[1].is_ascii_digit()
-        && b[3].is_ascii_digit()
-        && b[4].is_ascii_digit()
-}
-
-/// 1 to 6 distinct "HH:MM" times.
-fn check_times(times: &[String]) -> Result<()> {
-    let bad = |m: &str| Err(DbError(m.to_string()));
-    if times.is_empty() || times.len() > 6 {
-        return bad("Pick 1 to 6 times a day");
-    }
-    if times.iter().any(|t| !valid_time(t)) {
-        return bad("Times must look like 09:30");
-    }
-    let mut sorted = times.to_vec();
-    sorted.sort();
-    sorted.dedup();
-    if sorted.len() != times.len() {
-        return bad("Each time can only be used once");
-    }
-    Ok(())
-}
-
-/// 1 to 7 distinct weekdays, 0 to 6.
-fn check_days(days: &[u8]) -> Result<()> {
-    let bad = |m: &str| Err(DbError(m.to_string()));
-    if days.is_empty() || days.iter().any(|d| *d > 6) {
-        return bad("Pick days between 0 and 6");
-    }
-    let mut sorted = days.to_vec();
-    sorted.sort();
-    sorted.dedup();
-    if sorted.len() != days.len() {
-        return bad("Each day can only be picked once");
-    }
-    Ok(())
-}
-
-/// Most target accounts one post may have (the API's limit).
-const MAX_POST_ACCOUNTS: usize = 10;
-
-/// The rules the wizard also follows: name and niche filled in, 1 to 6 distinct "HH:MM" times on
-/// chosen days, a short-form length of 15 to 180 s, a voice name the voice route takes, and
-/// automatic posting only with 1 to 10 distinct accounts.
-pub fn validate_autopilot(a: &AutopilotInput) -> Result<()> {
-    let bad = |m: &str| Err(DbError(m.to_string()));
-    if a.name.trim().is_empty() {
-        return bad("Give the autopilot a name");
-    }
-    if a.niche.trim().is_empty() {
-        return bad("Describe the niche");
-    }
-    if a.style_id.trim().is_empty() {
-        return bad("Pick a style");
-    }
-    if !(15..=180).contains(&a.length_sec) {
-        return bad("The video length must be 15 to 180 seconds");
-    }
-    if let Some(v) = &a.voice_id {
-        if v.is_empty() || v.len() > 64 || !v.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '_' | '-')) {
-            return bad("That voice can't be used");
-        }
-    }
-    let mut accounts = a.social_account_ids.clone();
-    accounts.sort();
-    accounts.dedup();
-    if accounts.len() != a.social_account_ids.len() || accounts.len() > MAX_POST_ACCOUNTS {
-        return bad("Pick up to 10 different accounts");
-    }
-    if a.posting == Posting::Automatic && accounts.is_empty() {
-        return bad("Pick at least one account to post to");
-    }
-    match &a.frequency {
-        AutopilotFrequency::Daily { times } => check_times(times)?,
-        AutopilotFrequency::Weekly { days, time } => {
-            check_days(days)?;
-            if !valid_time(time) {
-                return bad("The time must look like 09:30");
-            }
-        }
-        AutopilotFrequency::Days { days, times } => {
-            check_days(days)?;
-            check_times(times)?;
-        }
-    }
-    Ok(())
 }
 
 fn sql_from_json(v: &Value) -> Sql {
@@ -308,10 +165,6 @@ impl Db {
 
     fn init(conn: Connection) -> Result<Db> {
         conn.execute_batch(SCHEMA)?;
-        Self::migrate_styles(&conn)?;
-        Self::migrate_jobs(&conn)?;
-        Self::migrate_projects(&conn)?;
-        Self::migrate_autopilots(&conn)?;
         Self::migrate_archive(&conn)?;
         Self::migrate_chat_folder(&conn)?;
         Ok(Db { conn: Mutex::new(conn), home: Mutex::new(Default::default()) })
@@ -327,10 +180,6 @@ impl Db {
         json!({
             "workingFolder": home.join("Buma").to_string_lossy(),
             "defaultAgent": "claude",
-            "frameCheck": true,
-            "language": "id",
-            "format": "9:16",
-            "fps": 30,
             "onboarded": false,
             "apiUrl": DEFAULT_API_URL,
             "installId": "",
@@ -340,10 +189,7 @@ impl Db {
             "uiLanguage": null,
             "backgroundMode": false,
             "openAtLogin": false,
-            "buildJobsChecked": false,
-            "projectStatusChecked": false,
             "agentModels": {},
-            "voiceSource": "buma",
         })
     }
 
@@ -449,18 +295,10 @@ impl Db {
     pub fn insert_project(&self, p: &Project) -> Result<()> {
         let vals = bind_values(p, &PROJECT_KEYS)?;
         self.conn().execute(
-            "INSERT INTO projects (id, title, slug, folder, kind, format, language, status, \
-             style_id, scheduled_at, duration_sec, created_at, updated_at, \
-             review_state, posted_at, reminded_at, review_reminded_at, social_post_id) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
+            "INSERT INTO projects (id, title, slug, folder, status, created_at, updated_at, kind, format, language) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,'explainer','9:16','id')",
             params_from_iter(vals),
         )?;
-        Ok(())
-    }
-
-    /// Removes a project row. Only for drafts a failed schedule batch created a moment ago.
-    pub fn delete_project(&self, id: &str) -> Result<()> {
-        self.conn().execute("DELETE FROM projects WHERE id = ?1", [id])?;
         Ok(())
     }
 
@@ -490,28 +328,19 @@ impl Db {
         let id_val = vals.remove(0);
         vals.push(id_val);
         self.conn().execute(
-            "UPDATE projects SET title=?1, slug=?2, folder=?3, kind=?4, format=?5, language=?6, \
-             status=?7, style_id=?8, scheduled_at=?9, duration_sec=?10, created_at=?11, \
-             updated_at=?12, review_state=?13, posted_at=?14, reminded_at=?15, review_reminded_at=?16, \
-             social_post_id=?17 WHERE id=?18",
+            "UPDATE projects SET title=?1, slug=?2, folder=?3, status=?4, created_at=?5, updated_at=?6 WHERE id=?7",
             params_from_iter(vals),
         )?;
         Ok(updated)
     }
 
-    /// Moves a project along draft → building → rendered. Without `reset` it never goes back, and a
-    /// project already there (or `scheduled`, from older data) is returned as it is, unwritten.
-    /// `scheduled` is never set: scheduling lives in `scheduledAt`. `updatedAt` never changes.
+    /// Moves a project along draft → building. Without `reset` it never goes back, and a project
+    /// already there is returned as it is, unwritten. `updatedAt` never changes.
     pub fn set_project_status(&self, id: &str, status: ProjectStatus, reset: bool) -> Result<Project> {
         let rank = |s: ProjectStatus| match s {
             ProjectStatus::Draft => 0,
             ProjectStatus::Building => 1,
-            ProjectStatus::Rendered => 2,
-            ProjectStatus::Scheduled => 3,
         };
-        if status == ProjectStatus::Scheduled {
-            return Err(DbError("a project's schedule is its scheduledAt, not its status".into()));
-        }
         let current = self
             .get_project(id)?
             .ok_or_else(|| DbError(format!("project not found: {id}")))?;
@@ -629,7 +458,7 @@ impl Db {
     }
 
     /// Deletes everything archived for good: archived chats with their messages, and archived cards.
-    /// Projects and their folders (the videos) stay. Returns (chats, cards) removed.
+    /// Projects and their folders stay. Returns (chats, cards) removed.
     pub fn purge_archive(&self) -> Result<(usize, usize)> {
         let conn = self.conn();
         let tx = conn.unchecked_transaction()?;
@@ -716,81 +545,14 @@ impl Db {
         let mut out = Vec::new();
         for row in rows {
             let mut v = row?;
-            let parts: Value = serde_json::from_str(v["parts"].as_str().unwrap_or("[]"))?;
-            v["parts"] = parts;
+            // A part this version no longer knows (a video app's frame or style mention) is left out,
+            // so an old chat still opens.
+            let parts: Vec<Value> = serde_json::from_str(v["parts"].as_str().unwrap_or("[]"))?;
+            let known: Vec<MessagePart> = parts.into_iter().filter_map(|p| serde_json::from_value(p).ok()).collect();
+            v["parts"] = serde_json::to_value(known)?;
             out.push(serde_json::from_value(v)?);
         }
         Ok(out)
-    }
-
-    // ---- styles ----
-
-    /// Adds the API-backed columns to databases created before them and drops the old
-    /// hard-coded built-ins (the API owns built-ins now).
-    fn migrate_styles(conn: &Connection) -> Result<()> {
-        let mut have: Vec<String> = Vec::new();
-        {
-            let mut stmt = conn.prepare("PRAGMA table_info(styles)")?;
-            let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
-            for r in rows {
-                have.push(r?);
-            }
-        }
-        for (col, ty) in [
-            ("engine", "TEXT"),
-            ("preview_url", "TEXT"),
-            ("preview_video_url", "TEXT"),
-            ("template", "TEXT"),
-            ("version", "INTEGER"),
-            ("based_on", "TEXT"),
-            ("build", "TEXT"),
-            ("palette", "TEXT"),
-            ("refs", "TEXT"),
-        ] {
-            if !have.iter().any(|c| c == col) {
-                conn.execute_batch(&format!("ALTER TABLE styles ADD COLUMN {col} {ty}"))?;
-            }
-        }
-        for id in LEGACY_BUILTIN_IDS {
-            conn.execute("DELETE FROM styles WHERE id = ?1 AND source = 'builtin'", [id])?;
-        }
-        Ok(())
-    }
-
-    /// Adds the niche, voice and account columns to databases created before them.
-    fn migrate_autopilots(conn: &Connection) -> Result<()> {
-        let mut stmt = conn.prepare("PRAGMA table_info(autopilots)")?;
-        let have = stmt
-            .query_map([], |r| r.get::<_, String>(1))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        drop(stmt);
-        for (col, def) in [("niche_id", "TEXT"), ("voice_id", "TEXT"), ("social_account_ids", "TEXT NOT NULL DEFAULT '[]'")] {
-            if !have.iter().any(|c| c == col) {
-                conn.execute_batch(&format!("ALTER TABLE autopilots ADD COLUMN {col} {def}"))?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Adds the review and posting columns to databases created before them.
-    fn migrate_projects(conn: &Connection) -> Result<()> {
-        let mut stmt = conn.prepare("PRAGMA table_info(projects)")?;
-        let have = stmt
-            .query_map([], |r| r.get::<_, String>(1))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        drop(stmt);
-        for (col, def) in [
-            ("review_state", "TEXT NOT NULL DEFAULT 'none'"),
-            ("posted_at", "TEXT"),
-            ("reminded_at", "TEXT"),
-            ("review_reminded_at", "TEXT"),
-            ("social_post_id", "TEXT"),
-        ] {
-            if !have.iter().any(|c| c == col) {
-                conn.execute_batch(&format!("ALTER TABLE projects ADD COLUMN {col} {def}"))?;
-            }
-        }
-        Ok(())
     }
 
     /// Adds `archived_at` to chats and jobs in databases created before the archive.
@@ -819,202 +581,16 @@ impl Db {
         Ok(())
     }
 
-    /// Adds `jobs.source_url` and `jobs.render_baseline_at` to databases created before them.
-    fn migrate_jobs(conn: &Connection) -> Result<()> {
-        let mut stmt = conn.prepare("PRAGMA table_info(jobs)")?;
-        let have = stmt
-            .query_map([], |r| r.get::<_, String>(1))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        drop(stmt);
-        if !have.iter().any(|c| c == "source_url") {
-            conn.execute_batch("ALTER TABLE jobs ADD COLUMN source_url TEXT")?;
-        }
-        if !have.iter().any(|c| c == "render_baseline_at") {
-            conn.execute_batch("ALTER TABLE jobs ADD COLUMN render_baseline_at TEXT")?;
-        }
-        Ok(())
-    }
-
-    /// Replaces every built-in style with `styles` (API order is kept, styles the API no
-    /// longer lists are deleted). Copied and own styles are untouched.
-    pub fn replace_builtin_styles(&self, styles: &[Style]) -> Result<()> {
-        let mut conn = self.conn();
-        let tx = conn.transaction()?;
-        // A built-in the API no longer offers stays while an autopilot uses it or a clone is based on it:
-        // a style in use never vanishes.
-        tx.execute(
-            "DELETE FROM styles WHERE source = 'builtin' \
-             AND id NOT IN (SELECT style_id FROM autopilots) \
-             AND id NOT IN (SELECT based_on FROM styles WHERE based_on IS NOT NULL)",
-            [],
-        )?;
-        for s in styles {
-            let existing: Option<String> =
-                tx.query_row("SELECT source FROM styles WHERE id = ?1", [&s.id], |r| r.get(0)).optional()?;
-            if existing.as_deref().is_some_and(|src| src != "builtin") {
-                // Not a built-in: this one belongs to the user.
-                eprintln!("style sync: skipping built-in \"{}\", a style of that id already exists", s.id);
-                continue;
-            }
-            let engine = match s.engine {
-                Some(e) => serde_json::to_value(e)?.as_str().map(str::to_string),
-                None => None,
-            };
-            let template = match &s.template {
-                Some(t) => Some(serde_json::to_string(t)?),
-                None => None,
-            };
-            tx.execute(
-                "INSERT OR REPLACE INTO styles (id, name, source, source_url, notes, prompt, created_at, \
-                 engine, preview_url, preview_video_url, template, version) \
-                 VALUES (?1,?2,'builtin',NULL,?3,?4,?5,?6,?7,?8,?9,?10)",
-                rusqlite::params![
-                    s.id,
-                    s.name,
-                    serde_json::to_string(&s.notes)?,
-                    s.prompt,
-                    s.created_at,
-                    engine,
-                    s.preview_url,
-                    s.preview_video_url,
-                    template,
-                    s.version
-                ],
-            )?;
-        }
-        tx.commit()?;
-        Ok(())
-    }
-
-    #[cfg(test)]
-    pub fn break_for_test(&self) {
-        self.conn().execute_batch("DROP TABLE styles").unwrap();
-    }
-
-    pub fn get_style(&self, id: &str) -> Result<Option<Style>> {
-        Ok(self.list_styles()?.into_iter().find(|s| s.id == id))
-    }
-
-    pub fn list_styles(&self) -> Result<Vec<Style>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT id, name, source, source_url AS sourceUrl, notes, prompt, created_at AS createdAt, \
-             engine, preview_url AS previewUrl, preview_video_url AS previewVideoUrl, template, version, based_on AS basedOn, build, palette, refs AS \"references\" FROM styles \
-             ORDER BY CASE source WHEN 'builtin' THEN 0 ELSE 1 END, \
-             CASE source WHEN 'builtin' THEN rowid END, created_at, rowid",
-        )?;
-        let names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
-        let rows = stmt.query_map([], |row| {
-            let mut obj = Map::new();
-            for (i, n) in names.iter().enumerate() {
-                obj.insert(n.clone(), json_from_ref(row.get_ref(i)?));
-            }
-            Ok(Value::Object(obj))
-        })?;
-        let mut out = Vec::new();
-        for row in rows {
-            let mut v = row?;
-            let notes: Value = serde_json::from_str(v["notes"].as_str().unwrap_or("{}"))?;
-            v["notes"] = notes;
-            if let Some(t) = v["template"].as_str().map(str::to_string) {
-                v["template"] = serde_json::from_str(&t)?;
-            }
-            // JSON arrays in TEXT columns; empty or unreadable means none.
-            for key in ["palette", "references"] {
-                let list = v[key].as_str().and_then(|t| serde_json::from_str::<Value>(t).ok()).unwrap_or(Value::Array(vec![]));
-                v[key] = list;
-            }
-            out.push(serde_json::from_value(v)?);
-        }
-        Ok(out)
-    }
-
-    /// Inserts or replaces a style. Built-in styles are read-only.
-    pub fn save_style(&self, s: &Style) -> Result<()> {
-        let conn = self.conn();
-        if Self::is_builtin(&conn, &s.id)? || s.source == StyleSource::Builtin {
-            return Err(DbError("built-in styles cannot be changed".into()));
-        }
-        let source = serde_json::to_value(s.source)?;
-        let engine = match s.engine {
-            Some(e) => serde_json::to_value(e)?.as_str().map(str::to_string),
-            None => None,
-        };
-        let template = match &s.template {
-            Some(t) => Some(serde_json::to_string(t)?),
-            None => None,
-        };
-        conn.execute(
-            "INSERT INTO styles (id, name, source, source_url, notes, prompt, created_at, engine, preview_url, \
-             preview_video_url, template, version, based_on, build, palette, refs) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16) ON CONFLICT(id) DO UPDATE SET name=excluded.name, \
-             source=excluded.source, source_url=excluded.source_url, notes=excluded.notes, \
-             prompt=excluded.prompt, created_at=excluded.created_at, engine=excluded.engine, \
-             preview_url=excluded.preview_url, preview_video_url=excluded.preview_video_url, \
-             template=excluded.template, version=excluded.version, based_on=excluded.based_on, \
-             build=excluded.build, palette=excluded.palette, refs=excluded.refs",
-            rusqlite::params![
-                s.id,
-                s.name,
-                source.as_str().unwrap_or_default(),
-                s.source_url,
-                serde_json::to_string(&s.notes)?,
-                s.prompt,
-                s.created_at,
-                engine,
-                s.preview_url,
-                s.preview_video_url,
-                template,
-                s.version,
-                s.based_on,
-                s.build,
-                serde_json::to_string(&s.palette)?,
-                serde_json::to_string(&s.references)?
-            ],
-        )?;
-        Ok(())
-    }
-
-    pub fn delete_style(&self, id: &str) -> Result<()> {
-        let conn = self.conn();
-        if Self::is_builtin(&conn, id)? {
-            return Err(DbError("built-in styles cannot be deleted".into()));
-        }
-        // An autopilot would quietly lose its look: the user changes that autopilot first.
-        let user: Option<String> = conn
-            .query_row("SELECT name FROM autopilots WHERE style_id = ?1 ORDER BY created_at LIMIT 1", [id], |r| r.get(0))
-            .optional()?;
-        if let Some(name) = user {
-            return Err(DbError(format!("{STYLE_IN_USE}{name}")));
-        }
-        conn.execute("DELETE FROM styles WHERE id = ?1", [id])?;
-        Ok(())
-    }
-
-    /// Tests: a style row gone the way older versions could lose it (a built-in dropped by sync).
-    #[cfg(test)]
-    pub fn remove_style_row(&self, id: &str) {
-        self.conn().execute("DELETE FROM styles WHERE id = ?1", [id]).unwrap();
-    }
-
-    fn is_builtin(conn: &Connection, id: &str) -> Result<bool> {
-        let source: Option<String> = conn
-            .query_row("SELECT source FROM styles WHERE id = ?1", [id], |r| r.get(0))
-            .optional()?;
-        Ok(source.as_deref() == Some("builtin"))
-    }
-
     // ---- jobs ----
 
     pub fn upsert_job(&self, j: &Job) -> Result<()> {
         let vals = bind_values(j, &JOB_KEYS)?;
         self.conn().execute(
-            "INSERT INTO jobs (id, kind, title, project_id, chat_id, agent_id, status, progress, note, source_url, updated_at, render_baseline_at) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, \
+            "INSERT INTO jobs (id, kind, title, project_id, chat_id, agent_id, status, progress, note, updated_at) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, \
              title=excluded.title, project_id=excluded.project_id, chat_id=excluded.chat_id, \
              agent_id=excluded.agent_id, status=excluded.status, progress=excluded.progress, \
-             note=excluded.note, source_url=excluded.source_url, updated_at=excluded.updated_at, \
-             render_baseline_at=excluded.render_baseline_at, \
+             note=excluded.note, updated_at=excluded.updated_at, \
              archived_at=CASE WHEN jobs.status = excluded.status THEN jobs.archived_at ELSE NULL END",
             params_from_iter(vals),
         )?;
@@ -1026,7 +602,7 @@ impl Db {
     pub fn fail_stale_jobs(&self, note: &str) -> Result<usize> {
         Ok(self.conn().execute(
             // A permission request (needs-you, no note) died with its session too; a build turn that
-            // stopped without a video (needs-you with its note) still waits for the user.
+            // stopped waiting for an answer (needs-you with its note) still waits for the user.
             "UPDATE jobs SET status = 'failed', note = ?1, updated_at = ?2 \
              WHERE status = 'working' OR (status = 'needs-you' AND note IS NULL)",
             rusqlite::params![note, now()],
@@ -1040,190 +616,12 @@ impl Db {
         Ok(())
     }
 
+    /// Build cards only: the video app's other cards (renders, style studies) are left out.
     pub fn list_jobs(&self) -> Result<Vec<Job>> {
-        let sql = format!("{JOB_SELECT} ORDER BY updated_at DESC, rowid DESC");
+        let sql = format!("{JOB_SELECT} WHERE kind = 'build' ORDER BY updated_at DESC, rowid DESC");
         query_as(&self.conn(), &sql, &[])
     }
 
-    // ---- autopilots ----
-
-    fn autopilot_row(mut v: Value) -> Result<Autopilot> {
-        // `frequency` and `socialAccountIds` are stored as JSON text and `review` as 0/1.
-        if let Some(Value::String(f)) = v.get("frequency").cloned() {
-            v["frequency"] = serde_json::from_str(&f)?;
-        }
-        if let Some(Value::String(ids)) = v.get("socialAccountIds").cloned() {
-            v["socialAccountIds"] = serde_json::from_str(&ids)?;
-        }
-        let review = v.get("review").and_then(Value::as_i64).unwrap_or(0) != 0;
-        v["review"] = Value::Bool(review);
-        Ok(serde_json::from_value(v)?)
-    }
-
-    pub fn list_autopilots(&self) -> Result<Vec<Autopilot>> {
-        let sql = format!("{AUTOPILOT_SELECT} ORDER BY created_at, rowid");
-        query_as::<Value>(&self.conn(), &sql, &[])?.into_iter().map(Self::autopilot_row).collect()
-    }
-
-    pub fn get_autopilot(&self, id: &str) -> Result<Option<Autopilot>> {
-        let sql = format!("{AUTOPILOT_SELECT} WHERE id = ?1");
-        query_as::<Value>(&self.conn(), &sql, &[&id])?.into_iter().next().map(Self::autopilot_row).transpose()
-    }
-
-    /// Creates an autopilot (no id; starts active) or edits one (keeps its status and creation time).
-    pub fn save_autopilot(&self, input: &AutopilotInput) -> Result<Autopilot> {
-        validate_autopilot(input)?;
-        let style_known: bool = self
-            .conn()
-            .query_row("SELECT 1 FROM styles WHERE id = ?1", [&input.style_id], |_| Ok(true))
-            .optional()?
-            .unwrap_or(false);
-        if !style_known {
-            return Err(DbError(format!("That style isn't in your library: {}", input.style_id)));
-        }
-        let existing = match input.id.as_deref() {
-            Some(id) => Some(self.get_autopilot(id)?.ok_or_else(|| DbError(format!("No autopilot with id {id}")))?),
-            None => None,
-        };
-        let stamp = now();
-        let a = Autopilot {
-            id: existing.as_ref().map(|e| e.id.clone()).unwrap_or_else(new_id),
-            name: input.name.trim().to_string(),
-            niche: input.niche.trim().to_string(),
-            niche_id: input.niche_id.clone(),
-            language: input.language,
-            style_id: input.style_id.clone(),
-            voice_id: input.voice_id.clone(),
-            agent_id: input.agent_id,
-            frequency: input.frequency.clone(),
-            length_sec: input.length_sec,
-            review: input.review,
-            posting: input.posting,
-            social_account_ids: input.social_account_ids.clone(),
-            status: existing.as_ref().map(|e| e.status).unwrap_or(AutopilotStatus::Active),
-            created_at: existing.as_ref().map(|e| e.created_at.clone()).unwrap_or_else(|| stamp.clone()),
-            updated_at: stamp,
-        };
-        let v = serde_json::to_value(&a)?;
-        let text = |k: &str| v[k].as_str().unwrap_or_default().to_string();
-        let conn = self.conn();
-        let tx = conn.unchecked_transaction()?;
-        // An edit may change when videos are due, so its future planned slots are dropped with it;
-        // the engine's slot upkeep plans them again from the new settings on its next pass.
-        if existing.is_some() {
-            tx.execute(
-                "DELETE FROM autopilot_slots WHERE autopilot_id = ?1 AND status = 'planned' AND due_at > ?2",
-                rusqlite::params![a.id, now()],
-            )?;
-        }
-        tx.execute(
-            "INSERT INTO autopilots (id, name, niche, language, style_id, agent_id, frequency, length_sec, review, posting, status, created_at, updated_at, niche_id, voice_id, social_account_ids) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16) ON CONFLICT(id) DO UPDATE SET name=excluded.name, \
-             niche=excluded.niche, language=excluded.language, style_id=excluded.style_id, agent_id=excluded.agent_id, \
-             frequency=excluded.frequency, length_sec=excluded.length_sec, review=excluded.review, \
-             posting=excluded.posting, updated_at=excluded.updated_at, niche_id=excluded.niche_id, \
-             voice_id=excluded.voice_id, social_account_ids=excluded.social_account_ids",
-            rusqlite::params![
-                a.id, a.name, a.niche, text("language"), a.style_id, text("agentId"),
-                serde_json::to_string(&a.frequency)?, a.length_sec, a.review as i64, text("posting"),
-                text("status"), a.created_at, a.updated_at, a.niche_id, a.voice_id,
-                serde_json::to_string(&a.social_account_ids)?
-            ],
-        )?;
-        tx.commit()?;
-        Ok(a)
-    }
-
-    pub fn set_autopilot_status(&self, id: &str, status: AutopilotStatus) -> Result<Autopilot> {
-        let text = serde_json::to_value(status)?.as_str().unwrap_or_default().to_string();
-        {
-            let conn = self.conn();
-            let tx = conn.unchecked_transaction()?;
-            let n = tx.execute(
-                "UPDATE autopilots SET status = ?1, updated_at = ?2 WHERE id = ?3",
-                rusqlite::params![text, now(), id],
-            )?;
-            if n == 0 {
-                return Err(DbError(format!("No autopilot with id {id}")));
-            }
-            // Pausing drops the future planned slots. Resuming leaves them empty: the engine's
-            // slot upkeep plans the next 7 days again on its next pass.
-            if status == AutopilotStatus::Paused {
-                tx.execute(
-                    "DELETE FROM autopilot_slots WHERE autopilot_id = ?1 AND status = 'planned' AND due_at > ?2",
-                    rusqlite::params![id, now()],
-                )?;
-            }
-            tx.commit()?;
-        }
-        self.get_autopilot(id)?.ok_or_else(|| DbError(format!("No autopilot with id {id}")))
-    }
-
-    /// Removes an autopilot and its slots that have not produced a video (planned, failed, skipped).
-    /// Done slots and a slot being made stay; the videos themselves are never touched.
-    pub fn delete_autopilot(&self, id: &str) -> Result<()> {
-        let conn = self.conn();
-        let tx = conn.unchecked_transaction()?;
-        tx.execute(
-            "DELETE FROM autopilot_slots WHERE autopilot_id = ?1 AND status IN ('planned', 'failed', 'skipped')",
-            [id],
-        )?;
-        tx.execute("DELETE FROM autopilots WHERE id = ?1", [id])?;
-        tx.commit()?;
-        Ok(())
-    }
-
-    /// Slots due in `[from, to]` (RFC 3339 instants), earliest first.
-    pub fn list_slots(&self, from: &str, to: &str) -> Result<Vec<AutopilotSlot>> {
-        let (from, to) = (utc(from)?, utc(to)?);
-        let sql = format!("{SLOT_SELECT} WHERE due_at >= ?1 AND due_at <= ?2 ORDER BY due_at, rowid");
-        query_as(&self.conn(), &sql, &[&from, &to])
-    }
-
-    /// Makes sure a planned slot exists for (autopilot, dueAt) and returns it. A slot that already
-    /// exists is returned untouched, so planning again never undoes progress.
-    pub fn upsert_slot(&self, autopilot_id: &str, due_at: &str) -> Result<AutopilotSlot> {
-        let due = utc(due_at)?;
-        if self.get_autopilot(autopilot_id)?.is_none() {
-            return Err(DbError(format!("No autopilot with id {autopilot_id}")));
-        }
-        let conn = self.conn();
-        // Only an active autopilot gets new slots (checked in the same statement, so a pause that lands
-        // during the engine's upkeep can't leave planned slots behind); an existing slot is returned as is.
-        conn.execute(
-            "INSERT OR IGNORE INTO autopilot_slots (id, autopilot_id, due_at, status) \
-             SELECT ?1, ?2, ?3, 'planned' WHERE EXISTS (SELECT 1 FROM autopilots WHERE id = ?2 AND status = 'active')",
-            rusqlite::params![new_id(), autopilot_id, due],
-        )?;
-        let sql = format!("{SLOT_SELECT} WHERE autopilot_id = ?1 AND due_at = ?2");
-        query_as::<AutopilotSlot>(&conn, &sql, &[&autopilot_id, &due])?
-            .into_iter()
-            .next()
-            .ok_or_else(|| DbError("This autopilot is paused, so it gets no new slots".into()))
-    }
-
-    /// Changes a slot's status, project or error. Keys left out stay as they are; `null` clears.
-    pub fn update_slot(&self, id: &str, patch: Value) -> Result<AutopilotSlot> {
-        let sql = format!("{SLOT_SELECT} WHERE id = ?1");
-        let conn = self.conn();
-        let current = query_as::<AutopilotSlot>(&conn, &sql, &[&id])?
-            .into_iter()
-            .next()
-            .ok_or_else(|| DbError(format!("No slot with id {id}")))?;
-        let mut v = serde_json::to_value(&current)?;
-        for key in ["status", "projectId", "error"] {
-            if let Some(x) = patch.get(key) {
-                v[key] = x.clone();
-            }
-        }
-        let next: AutopilotSlot = serde_json::from_value(v)?;
-        let status = serde_json::to_value(next.status)?.as_str().unwrap_or_default().to_string();
-        conn.execute(
-            "UPDATE autopilot_slots SET status = ?1, project_id = ?2, error = ?3 WHERE id = ?4",
-            rusqlite::params![status, next.project_id, next.error, id],
-        )?;
-        Ok(next)
-    }
 }
 
 #[cfg(test)]
@@ -1242,7 +640,6 @@ mod tests {
     }
     use super::*;
     use serde_json::json;
-    use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     #[test]
@@ -1254,7 +651,7 @@ mod tests {
             email: Some("a@b.c".into()),
             name: Some("Ana".into()),
             plan: "pro".into(),
-            features: vec!["voiceover".into()],
+            features: vec![],
             credits: 310,
         };
         assert_eq!(db.auth_account("api:https://bspace.buma.internal/api"), None);
@@ -1262,7 +659,7 @@ mod tests {
         assert_eq!(db.auth_account("api:https://bspace.buma.internal/api"), Some(a.clone()));
         assert_eq!(db.auth_account("api:http://localhost:8787/api"), None);
         let before = db.get_settings(&home);
-        db.update_settings(json!({ "fps": 60 })).unwrap();
+        db.update_settings(json!({ "autoMode": true })).unwrap();
         assert_eq!(db.get_settings(&home).api_url, before.api_url, "settings still parse");
         assert!(!serde_json::to_string(&db.get_settings(&home)).unwrap().contains("a@b.c"));
         db.set_auth_account("api:https://bspace.buma.internal/api", None).unwrap();
@@ -1279,18 +676,7 @@ mod tests {
             title: format!("Title {id}"),
             slug: id.into(),
             folder: format!("/w/{id}"),
-            kind: VideoKind::Promo,
-            format: VideoFormat::Portrait,
-            language: VideoLanguage::Id,
             status: ProjectStatus::Draft,
-            style_id: None,
-            scheduled_at: None,
-            review_state: ReviewState::None,
-            posted_at: None,
-            reminded_at: None,
-            review_reminded_at: None,
-            social_post_id: None,
-            duration_sec: None,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: updated.into(),
         }
@@ -1320,7 +706,7 @@ mod tests {
             assert_eq!(db.get_settings(&home).api_url, want, "{stored}");
             assert_eq!(db.get_settings(&home).api_url, want, "idempotent: {stored}");
             // A later save of another key keeps the migrated address.
-            assert_eq!(db.update_settings(json!({"fps": 60})).unwrap().api_url, want, "{stored}");
+            assert_eq!(db.update_settings(json!({"autoMode": true})).unwrap().api_url, want, "{stored}");
         }
     }
 
@@ -1331,45 +717,38 @@ mod tests {
         let s = db.get_settings(&home);
         assert_eq!(s.working_folder, home.join("Buma").to_string_lossy());
         assert_eq!(s.default_agent, AgentId::Claude);
-        assert!(s.frame_check && !s.onboarded);
+        assert!(!s.onboarded && !s.auto_mode);
         assert_eq!(s.api_url, "https://bspace.buma.internal/api");
-        assert_eq!((s.language, s.format, s.fps), (VideoLanguage::Id, VideoFormat::Portrait, 30));
         assert_eq!(s.ui_language, None);
         assert!(!s.background_mode && !s.open_at_login);
         let b = db.update_settings(json!({"backgroundMode": true, "openAtLogin": true})).unwrap();
         assert!(b.background_mode && b.open_at_login);
         assert!(db.get_settings(&home).background_mode);
         db.update_settings(json!({"backgroundMode": false, "openAtLogin": false})).unwrap();
-        assert!(!s.build_jobs_checked, "the one-time build job check hasn't run");
-        db.update_settings(json!({"buildJobsChecked": true})).unwrap();
-        assert!(db.get_settings(&home).build_jobs_checked);
-        assert!(!s.project_status_checked, "the one-time project status backfill hasn't run");
-        db.update_settings(json!({"projectStatusChecked": true})).unwrap();
-        assert!(db.get_settings(&home).project_status_checked);
         let l = db.update_settings(json!({"uiLanguage": "id"})).unwrap();
         assert_eq!(l.ui_language, Some(UiLanguage::Id));
         assert_eq!(db.get_settings(&home).ui_language, Some(UiLanguage::Id));
 
-        let u = db.update_settings(json!({"fps": 60, "onboarded": true, "defaultAgent": "gemini"})).unwrap();
-        assert_eq!(u.fps, 60);
+        let u = db.update_settings(json!({"autoMode": true, "onboarded": true, "defaultAgent": "gemini"})).unwrap();
+        assert!(u.auto_mode);
         let again = db.get_settings(&home);
         assert_eq!(again, u);
         assert!(again.onboarded);
         assert_eq!(again.default_agent, AgentId::Gemini);
         assert_eq!(again.working_folder, home.join("Buma").to_string_lossy());
-        assert!(db.update_settings(json!({"fps": "fast"})).is_err());
+        assert!(db.update_settings(json!({"autoMode": "fast"})).is_err());
         assert!(db.update_settings(json!([1])).is_err());
         assert!(db.update_settings(json!("x")).is_err());
-        assert_eq!(db.get_settings(&home).fps, 60);
+        assert!(db.get_settings(&home).auto_mode);
     }
 
     #[test]
     fn update_settings_before_get_keeps_home_default() {
         let db = db();
-        db.update_settings(json!({"fps": 24})).unwrap();
+        db.update_settings(json!({"autoMode": true})).unwrap();
         let home = PathBuf::from("/home/u");
         let s = db.get_settings(&home);
-        assert_eq!(s.fps, 24);
+        assert!(s.auto_mode);
         assert_eq!(s.working_folder, home.join("Buma").to_string_lossy());
         let other = PathBuf::from("/home/v");
         assert_eq!(db.get_settings(&other).working_folder, other.join("Buma").to_string_lossy());
@@ -1385,11 +764,10 @@ mod tests {
         assert_eq!(db.get_project("zzz").unwrap(), None);
 
         let up = db
-            .update_project("a", json!({"title": "New", "status": "rendered", "durationSec": 12.5, "styleId": "builtin-news-recap"}))
+            .update_project("a", json!({"title": "New", "status": "building"}))
             .unwrap();
         assert_eq!(up.title, "New");
-        assert_eq!(up.status, ProjectStatus::Rendered);
-        assert_eq!(up.duration_sec, Some(12.5));
+        assert_eq!(up.status, ProjectStatus::Building);
         assert_eq!(db.get_project("a").unwrap().unwrap(), up);
         let ids: Vec<_> = db.list_projects().unwrap().into_iter().map(|p| p.id).collect();
         assert_eq!(ids, ["a", "b"]);
@@ -1412,24 +790,13 @@ mod tests {
         // The same status again changes nothing, not even the time.
         let again = db.set_project_status("a", ProjectStatus::Building, false).unwrap();
         assert_eq!(again, b);
-        let r = db.set_project_status("a", ProjectStatus::Rendered, false).unwrap();
-        assert_eq!(r.status, ProjectStatus::Rendered);
-        assert_eq!(r.updated_at, "2026-01-01T00:00:00Z");
-        assert_eq!(db.set_project_status("a", ProjectStatus::Draft, true).unwrap().updated_at, "2026-01-01T00:00:00Z");
-        db.set_project_status("a", ProjectStatus::Rendered, false).unwrap();
         // Never backwards on its own.
-        assert_eq!(db.set_project_status("a", ProjectStatus::Building, false).unwrap().status, ProjectStatus::Rendered);
-        assert_eq!(db.set_project_status("a", ProjectStatus::Draft, false).unwrap().status, ProjectStatus::Rendered);
+        assert_eq!(db.set_project_status("a", ProjectStatus::Draft, false).unwrap().status, ProjectStatus::Building);
         // An explicit reset may.
         assert_eq!(db.set_project_status("a", ProjectStatus::Draft, true).unwrap().status, ProjectStatus::Draft);
         assert_eq!(db.get_project("a").unwrap().unwrap().status, ProjectStatus::Draft);
-        // Scheduling lives in scheduledAt, not in the status.
-        assert!(db.set_project_status("a", ProjectStatus::Scheduled, false).is_err());
-        assert!(db.set_project_status("a", ProjectStatus::Scheduled, true).is_err());
+        assert_eq!(db.get_project("a").unwrap().unwrap().updated_at, "2026-01-01T00:00:00Z");
         assert!(db.set_project_status("missing", ProjectStatus::Building, false).is_err());
-        // A project that somehow has `scheduled` keeps it.
-        db.update_project("a", json!({"status": "scheduled"})).unwrap();
-        assert_eq!(db.set_project_status("a", ProjectStatus::Rendered, false).unwrap().status, ProjectStatus::Scheduled);
     }
 
     #[test]
@@ -1487,8 +854,6 @@ mod tests {
             status,
             progress: None,
             note: None,
-            source_url: None,
-            render_baseline_at: None,
             updated_at: "2026-01-01T00:00:00Z".into(),
             archived_at: None,
         };
@@ -1519,7 +884,7 @@ mod tests {
     fn recent_chats_newest_activity_first_with_project_titles() {
         let db = db();
         db.insert_project(&project("a", "2026-01-01T00:00:00Z")).unwrap();
-        let video = db.create_chat(Some("a"), AgentId::Claude, "Video chat").unwrap();
+        let video = db.create_chat(Some("a"), AgentId::Claude, "Feature chat").unwrap();
         let loose = db.create_chat(None, AgentId::Codex, "Loose").unwrap();
         let quiet = db.create_chat(None, AgentId::Claude, "Quiet").unwrap();
         // A chat of a deleted project has nowhere to go: it is left out.
@@ -1608,157 +973,29 @@ mod tests {
         assert_eq!(db.get_chat(&chat.id).unwrap(), Some(chat.clone()));
         assert_eq!(db.get_chat("nope").unwrap(), None);
 
-        let frame = MessagePart::Frame {
-            project_id: "a".into(),
-            frame: 42,
-            time_sec: 1.4,
-            image_path: "/x.png".into(),
-            marks: vec![Mark { x: 0.5, y: 0.25 }],
-        };
-        let m1 = db.add_message(&chat.id, MessageRole::User, &[MessagePart::Text { text: "look".into() }, frame.clone()]).unwrap();
+        let file = MessagePart::File { path: "/w/a/brief.pdf".into(), name: "brief.pdf".into(), mime: "application/pdf".into(), size: 3, modified_at: None };
+        let m1 = db.add_message(&chat.id, MessageRole::User, &[MessagePart::Text { text: "look".into() }, file.clone()]).unwrap();
         let m2 = db.add_message(&chat.id, MessageRole::Agent, &[MessagePart::Text { text: "ok".into() }]).unwrap();
         let got = db.list_messages(&chat.id).unwrap();
         assert_eq!(got, vec![m1, m2]);
-        assert_eq!(got[0].parts[1], frame);
-    }
-
-    fn builtin(id: &str, template: bool) -> Style {
-        Style {
-            id: id.into(),
-            name: id.into(),
-            source: StyleSource::Builtin,
-            source_url: None,
-            notes: BTreeMap::new(),
-            prompt: "p".into(),
-            created_at: "2026-11-04T00:00:00Z".into(),
-            engine: Some(StyleEngine::Remotion),
-            preview_url: Some(format!("https://api/v1/styles/{id}/preview")),
-            preview_video_url: Some(format!("https://api/v1/styles/{id}/preview-video")),
-            based_on: None,
-            template: template
-                .then(|| StyleTemplate { sha256: "ab".repeat(32), size: 10, version: 2 }),
-            version: Some(2),
-            build: None,
-            palette: vec![],
-            references: vec![],
-        }
+        assert_eq!(got[0].parts[1], file);
     }
 
     #[test]
-    fn a_copied_style_keeps_its_recipe_palette_and_references() {
+    fn an_old_chat_with_video_app_parts_still_opens() {
         let db = db();
-        let copied = Style {
-            source: StyleSource::Copied,
-            source_url: Some("https://youtu.be/x".into()),
-            template: None,
-            preview_url: None,
-            preview_video_url: None,
-            build: Some("three.js in Remotion".into()),
-            palette: vec!["#5BC8F5".into(), "#F2C14E".into()],
-            references: vec!["/d/style-refs/copied-1/ref-1.jpg".into()],
-            ..builtin("copied-1", false)
-        };
-        db.save_style(&copied).unwrap();
-        assert_eq!(db.get_style("copied-1").unwrap(), Some(copied));
-    }
-
-    #[test]
-    fn no_builtins_without_sync_and_user_styles_work() {
-        let db = db();
-        assert!(db.list_styles().unwrap().is_empty());
-        let mine = Style {
-            source: StyleSource::Mine,
-            engine: None,
-            preview_url: None,
-            preview_video_url: None,
-            template: None,
-            based_on: None,
-            version: None,
-            ..builtin("s1", false)
-        };
-        db.save_style(&mine).unwrap();
-        assert_eq!(db.list_styles().unwrap(), vec![mine.clone()]);
-        db.delete_style("s1").unwrap();
-        assert!(db.list_styles().unwrap().is_empty());
-    }
-
-    #[test]
-    fn replace_builtins_upserts_orders_and_deletes_stale() {
-        let db = db();
-        let mine = Style { source: StyleSource::Mine, ..builtin("mine", false) };
-        db.save_style(&mine).unwrap();
-        db.replace_builtin_styles(&[builtin("b", true), builtin("a", false)]).unwrap();
-        let ids = |db: &Db| db.list_styles().unwrap().into_iter().map(|s| s.id).collect::<Vec<_>>();
-        assert_eq!(ids(&db), ["b", "a", "mine"]);
-        assert_eq!(db.get_style("b").unwrap().unwrap().template.unwrap().size, 10);
-        assert_eq!(
-            db.get_style("b").unwrap().unwrap().preview_video_url.as_deref(),
-            Some("https://api/v1/styles/b/preview-video")
-        );
-        // "a" disappears from the API, "c" is new.
-        db.replace_builtin_styles(&[builtin("b", true), builtin("c", true)]).unwrap();
-        assert_eq!(ids(&db), ["b", "c", "mine"]);
-        assert!(db.delete_style("b").is_err(), "built-ins stay read-only");
-    }
-
-    #[test]
-    fn a_clone_keeps_template_previews_and_based_on_and_survives_sync() {
-        let db = db();
-        db.replace_builtin_styles(&[builtin("atlas", true)]).unwrap();
-        let clone = Style {
-            id: "mine-1".into(),
-            name: "atlas (copy)".into(),
-            source: StyleSource::Mine,
-            based_on: Some("atlas".into()),
-            ..builtin("atlas", true)
-        };
-        db.save_style(&clone).unwrap();
-        assert_eq!(db.get_style("mine-1").unwrap().unwrap(), clone);
-        // Editing keeps every field; a later sync neither touches nor deletes it, nor the original
-        // it is based on (a style in use never vanishes).
-        let edited = Style { name: "Mine".into(), ..clone.clone() };
-        db.save_style(&edited).unwrap();
-        db.replace_builtin_styles(&[]).unwrap();
-        assert_eq!(db.get_style("mine-1").unwrap().unwrap(), edited);
-        assert!(db.get_style("atlas").unwrap().is_some());
-    }
-
-    #[test]
-    fn sync_never_overwrites_a_row_that_is_not_built_in() {
-        let db = db();
-        let mine = Style { id: "clash".into(), name: "Mine".into(), source: StyleSource::Mine, ..builtin("clash", false) };
-        let copied = Style { id: "clash2".into(), name: "Copied".into(), source: StyleSource::Copied, ..builtin("clash2", false) };
-        db.save_style(&mine).unwrap();
-        db.save_style(&copied).unwrap();
-        db.replace_builtin_styles(&[builtin("clash", true), builtin("clash2", true), builtin("ok", true)]).unwrap();
-        assert_eq!(db.get_style("clash").unwrap().unwrap(), mine);
-        assert_eq!(db.get_style("clash2").unwrap().unwrap(), copied);
-        assert_eq!(db.get_style("ok").unwrap().unwrap().source, StyleSource::Builtin);
-    }
-
-    #[test]
-    fn migration_adds_columns_and_drops_legacy_builtins() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("buma.db");
-        {
-            let c = Connection::open(&path).unwrap();
-            c.execute_batch(
-                "CREATE TABLE styles (id TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT NOT NULL, \
-                 source_url TEXT, notes TEXT NOT NULL, prompt TEXT NOT NULL, created_at TEXT NOT NULL);
-                 INSERT INTO styles VALUES ('builtin-bold-explainer','x','builtin',NULL,'{}','p','t');
-                 INSERT INTO styles VALUES ('keep','y','mine',NULL,'{}','p','t');",
+        let chat = db.create_chat(None, AgentId::Claude, "Old").unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO messages (id, chat_id, role, parts, created_at) VALUES ('m', ?1, 'user', ?2, 't')",
+                rusqlite::params![
+                    chat.id,
+                    r#"[{"type":"text","text":"look"},{"type":"frame","projectId":"p","frame":1,"timeSec":0,"imagePath":"/x.png","marks":[]},{"type":"style-mention","styleId":"s","name":"S"}]"#
+                ],
             )
             .unwrap();
-        }
-        let db = Db::open(&path).unwrap();
-        let styles = db.list_styles().unwrap();
-        assert_eq!(styles.len(), 1);
-        assert_eq!(styles[0].id, "keep");
-        assert_eq!(styles[0].template, None);
-        assert_eq!(styles[0].preview_video_url, None);
-        assert_eq!(styles[0].based_on, None);
-        drop(db);
-        assert_eq!(Db::open(&path).unwrap().list_styles().unwrap().len(), 1);
+        let got = db.list_messages(&chat.id).unwrap();
+        assert_eq!(got[0].parts, vec![MessagePart::Text { text: "look".into() }]);
     }
 
     #[test]
@@ -1766,16 +1003,14 @@ mod tests {
         let db = db();
         let mut j = Job {
             id: "j1".into(),
-            kind: JobKind::Render,
-            title: "Render".into(),
+            kind: JobKind::Build,
+            title: "Build".into(),
             project_id: None,
             chat_id: None,
             agent_id: AgentId::Claude,
             status: JobStatus::Queued,
             progress: None,
             note: None,
-            source_url: None,
-            render_baseline_at: None,
             archived_at: None,
             updated_at: "2026-01-01T00:00:00Z".into(),
         };
@@ -1783,18 +1018,12 @@ mod tests {
         j.status = JobStatus::Working;
         j.progress = Some(0.5);
         j.updated_at = "2026-01-02T00:00:00Z".into();
-        j.render_baseline_at = Some("2026-01-01T23:59:00.000Z".into());
         db.upsert_job(&j).unwrap();
         assert_eq!(db.list_jobs().unwrap(), vec![j.clone()]);
-        // A job written without it (an older UI) has none.
-        let raw = serde_json::json!({ "id": "j2", "kind": "build", "title": "B", "projectId": null, "chatId": null, "agentId": "claude",
-            "status": "done", "progress": null, "note": null, "sourceUrl": null, "updatedAt": "2026-01-03T00:00:00Z" });
-        db.upsert_job(&serde_json::from_value(raw).unwrap()).unwrap();
-        assert_eq!(db.list_jobs().unwrap()[0].render_baseline_at, None);
     }
 
     #[test]
-    fn jobs_migration_adds_source_url_to_an_old_database() {
+    fn a_video_app_database_still_opens() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("buma.db");
         {
@@ -1802,49 +1031,10 @@ mod tests {
             c.execute_batch(
                 "CREATE TABLE jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, \
                  project_id TEXT, chat_id TEXT, agent_id TEXT NOT NULL, status TEXT NOT NULL, \
-                 progress REAL, note TEXT, updated_at TEXT NOT NULL);
-                 INSERT INTO jobs VALUES ('old','study-style','Study','{}',NULL,'claude','failed',NULL,'n','t');",
-            )
-            .unwrap();
-        }
-        let db = Db::open(&path).unwrap();
-        let jobs = db.list_jobs().unwrap();
-        assert_eq!(jobs.len(), 1);
-        assert_eq!(jobs[0].source_url, None);
-        assert_eq!(jobs[0].render_baseline_at, None);
-        drop(db);
-        // Opening again must not try to add the column twice.
-        assert_eq!(Db::open(&path).unwrap().list_jobs().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn autopilots_migration_keeps_old_autopilots_and_adds_the_new_columns() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("buma.db");
-        {
-            let c = Connection::open(&path).unwrap();
-            c.execute_batch(
-                "CREATE TABLE autopilots (id TEXT PRIMARY KEY, name TEXT NOT NULL, niche TEXT NOT NULL, language TEXT NOT NULL, \
-                 style_id TEXT NOT NULL, agent_id TEXT NOT NULL, frequency TEXT NOT NULL, length_sec INTEGER NOT NULL, \
-                 review INTEGER NOT NULL, posting TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-                 INSERT INTO autopilots VALUES ('old','Kopi','Coffee','id','s1','claude','{\"kind\":\"weekly\",\"days\":[1],\"time\":\"08:00\"}',30,1,'manual','active','c','u');",
-            )
-            .unwrap();
-        }
-        let db = Db::open(&path).unwrap();
-        let a = db.get_autopilot("old").unwrap().unwrap();
-        assert_eq!((a.niche_id, a.voice_id, a.social_account_ids.len(), a.length_sec), (None, None, 0, 30));
-        assert_eq!(a.frequency, AutopilotFrequency::Weekly { days: vec![1], time: "08:00".into() });
-    }
-
-    #[test]
-    fn projects_migration_adds_review_and_posting_columns_to_an_old_database() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("buma.db");
-        {
-            let c = Connection::open(&path).unwrap();
-            c.execute_batch(
-                "CREATE TABLE projects (id TEXT PRIMARY KEY, title TEXT NOT NULL, slug TEXT NOT NULL, \
+                 progress REAL, note TEXT, source_url TEXT, updated_at TEXT NOT NULL, render_baseline_at TEXT);
+                 INSERT INTO jobs VALUES ('old','study-style','Study',NULL,NULL,'claude','failed',NULL,'n','u','t',NULL);
+                 INSERT INTO jobs VALUES ('b','build','Build',NULL,NULL,'claude','done',NULL,NULL,NULL,'t',NULL);
+                 CREATE TABLE projects (id TEXT PRIMARY KEY, title TEXT NOT NULL, slug TEXT NOT NULL, \
                  folder TEXT NOT NULL, kind TEXT NOT NULL, format TEXT NOT NULL, language TEXT NOT NULL, \
                  status TEXT NOT NULL, style_id TEXT, scheduled_at TEXT, duration_sec REAL, \
                  created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -1853,30 +1043,16 @@ mod tests {
             .unwrap();
         }
         let db = Db::open(&path).unwrap();
-        let p = db.get_project("old").unwrap().unwrap();
-        assert_eq!(p.review_state, ReviewState::None);
-        assert_eq!(p.posted_at, None);
-        assert_eq!(p.reminded_at, None);
-        assert_eq!(p.review_reminded_at, None);
-        assert_eq!(p.scheduled_at.as_deref(), Some("2026-11-05T09:00:00Z"));
+        // Only build cards show; a style study card from the video app is left out.
+        let jobs: Vec<String> = db.list_jobs().unwrap().into_iter().map(|j| j.id).collect();
+        assert_eq!(jobs, ["b"]);
+        // A rendered video reads as a feature being built; a new feature still saves next to it.
+        assert_eq!(db.get_project("old").unwrap().unwrap().status, ProjectStatus::Building);
+        db.insert_project(&project("new", "2026-01-01T00:00:00Z")).unwrap();
+        assert_eq!(db.list_projects().unwrap().len(), 2);
+        assert_eq!(db.update_project("new", json!({"title": "N"})).unwrap().title, "N");
         drop(db);
-        // Opening again must not try to add the columns twice.
-        assert_eq!(Db::open(&path).unwrap().list_projects().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn review_and_posting_fields_round_trip() {
-        let db = db();
-        db.insert_project(&project("a", "2026-01-01T00:00:00Z")).unwrap();
-        let u = db
-            .update_project(
-                "a",
-                json!({"reviewState": "pending", "postedAt": "2026-11-05T10:00:00Z", "remindedAt": "2026-11-05T08:00:00Z", "reviewRemindedAt": "2026-11-05T07:00:00Z"}),
-            )
-            .unwrap();
-        assert_eq!(u.review_state, ReviewState::Pending);
-        assert_eq!(u.review_reminded_at.as_deref(), Some("2026-11-05T07:00:00Z"));
-        assert_eq!(db.get_project("a").unwrap().unwrap(), u);
+        assert_eq!(Db::open(&path).unwrap().list_projects().unwrap().len(), 2);
     }
 
     #[test]
@@ -1892,8 +1068,6 @@ mod tests {
             status: JobStatus::Failed,
             progress: None,
             note: None,
-            source_url: None,
-            render_baseline_at: None,
             archived_at: None,
             updated_at: "2026-01-01T00:00:00Z".into(),
         };
@@ -1923,18 +1097,14 @@ mod tests {
             status,
             progress: None,
             note: None,
-            source_url: None,
-            render_baseline_at: None,
             archived_at: None,
             updated_at: "2026-01-01T00:00:00Z".into(),
         };
-        let mut w = job("w", JobStatus::Working);
-        w.source_url = Some("https://youtu.be/abc".into());
-        db.upsert_job(&w).unwrap();
+        db.upsert_job(&job("w", JobStatus::Working)).unwrap();
         db.upsert_job(&job("d", JobStatus::Done)).unwrap();
         db.upsert_job(&job("p", JobStatus::NeedsYou)).unwrap();
         let mut stopped = job("s", JobStatus::NeedsYou);
-        stopped.note = Some("No video yet. The agent stopped before rendering".into());
+        stopped.note = Some("Waiting for your answer".into());
         db.upsert_job(&stopped).unwrap();
         assert_eq!(db.fail_stale_jobs("closed").unwrap(), 2);
         let after = db.list_jobs().unwrap();
@@ -1943,288 +1113,6 @@ mod tests {
         let jobs = db.list_jobs().unwrap();
         let w = jobs.iter().find(|j| j.id == "w").unwrap();
         assert_eq!((w.status, w.note.as_deref()), (JobStatus::Failed, Some("closed")));
-        assert_eq!(w.source_url.as_deref(), Some("https://youtu.be/abc"));
         assert_eq!(jobs.iter().find(|j| j.id == "d").unwrap().status, JobStatus::Done);
-    }
-
-    /// A database whose library holds the styles `s1` and `s2`.
-    fn adb() -> Db {
-        let db = db();
-        for id in ["s1", "s2"] {
-            db.conn()
-                .execute(
-                    "INSERT INTO styles (id, name, source, notes, prompt, created_at) VALUES (?1, ?1, 'mine', '{}', '', 'x')",
-                    [id],
-                )
-                .unwrap();
-        }
-        db
-    }
-
-    fn input(name: &str) -> AutopilotInput {
-        AutopilotInput {
-            id: None,
-            name: name.into(),
-            niche: "Coffee tips".into(),
-            language: VideoLanguage::Id,
-            style_id: "s1".into(),
-            agent_id: AgentId::Claude,
-            frequency: AutopilotFrequency::Daily { times: vec!["12:00".into(), "19:00".into()] },
-            length_sec: 30,
-            review: true,
-            posting: Posting::Manual,
-            niche_id: None,
-            voice_id: None,
-            social_account_ids: vec![],
-        }
-    }
-
-    #[test]
-    fn autopilot_keeps_niche_voice_accounts_and_chosen_days() {
-        let db = adb();
-        let mut i = input("Kopi");
-        i.niche_id = Some("science-explained".into());
-        i.voice_id = Some("Rachel".into());
-        i.posting = Posting::Automatic;
-        i.social_account_ids = vec!["sa_1".into(), "sa_2".into()];
-        i.frequency = AutopilotFrequency::Days { days: vec![1, 2, 3, 4, 5], times: vec!["09:00".into(), "18:00".into()] };
-        let a = db.save_autopilot(&i).unwrap();
-        assert_eq!(db.get_autopilot(&a.id).unwrap().unwrap(), a);
-        assert_eq!(a.social_account_ids, vec!["sa_1", "sa_2"]);
-        assert_eq!(a.voice_id.as_deref(), Some("Rachel"));
-    }
-
-    #[test]
-    fn autopilot_refuses_automatic_posting_it_cant_do() {
-        let refused = |change: &dyn Fn(&mut AutopilotInput)| {
-            let mut i = input("Kopi");
-            change(&mut i);
-            assert!(validate_autopilot(&i).is_err());
-        };
-        refused(&|i| i.posting = Posting::Automatic);
-        refused(&|i| i.social_account_ids = vec!["a".into(), "a".into()]);
-        refused(&|i| i.social_account_ids = (0..11).map(|n| n.to_string()).collect());
-        refused(&|i| i.voice_id = Some("bad\"voice".into()));
-        refused(&|i| i.frequency = AutopilotFrequency::Days { days: vec![], times: vec!["09:00".into()] });
-        refused(&|i| i.frequency = AutopilotFrequency::Days { days: vec![1], times: vec![] });
-    }
-
-    #[test]
-    fn autopilot_create_edit_status_and_round_trip() {
-        let db = adb();
-        let a = db.save_autopilot(&input("  Kopi  ")).unwrap();
-        assert_eq!((a.name.as_str(), a.status, a.review), ("Kopi", AutopilotStatus::Active, true));
-        assert_eq!(db.get_autopilot(&a.id).unwrap().unwrap(), a);
-        let paused = db.set_autopilot_status(&a.id, AutopilotStatus::Paused).unwrap();
-        assert_eq!(paused.status, AutopilotStatus::Paused);
-        // Editing keeps the id, the status and the creation time.
-        let mut edit = input("Kopi 2");
-        edit.id = Some(a.id.clone());
-        edit.review = false;
-        edit.frequency = AutopilotFrequency::Weekly { days: vec![1, 3], time: "08:15".into() };
-        let b = db.save_autopilot(&edit).unwrap();
-        assert_eq!((b.id.as_str(), b.status, b.created_at.as_str()), (a.id.as_str(), AutopilotStatus::Paused, a.created_at.as_str()));
-        let listed = db.list_autopilots().unwrap();
-        assert_eq!(listed, vec![b]);
-        assert!(!listed[0].review);
-        assert!(db.set_autopilot_status("nope", AutopilotStatus::Active).is_err());
-        let mut ghost = input("x");
-        ghost.id = Some("nope".into());
-        assert!(db.save_autopilot(&ghost).is_err());
-    }
-
-    #[test]
-    fn autopilot_validation() {
-        let db = adb();
-        let reject = |f: &dyn Fn(&mut AutopilotInput)| {
-            let mut i = input("A");
-            f(&mut i);
-            assert!(db.save_autopilot(&i).is_err());
-        };
-        reject(&|i| i.name = "  ".into());
-        reject(&|i| i.niche = "".into());
-        reject(&|i| i.style_id = "".into());
-        reject(&|i| i.length_sec = 14);
-        reject(&|i| i.length_sec = 181);
-        reject(&|i| i.frequency = AutopilotFrequency::Daily { times: vec![] });
-        reject(&|i| i.frequency = AutopilotFrequency::Daily { times: (0..7).map(|h| format!("0{h}:00")).collect() });
-        for bad in ["24:00", "9:00", "12:60", "ab:cd", "12-00", ""] {
-            reject(&|i| i.frequency = AutopilotFrequency::Daily { times: vec![bad.into()] });
-        }
-        reject(&|i| i.frequency = AutopilotFrequency::Daily { times: vec!["09:00".into(), "09:00".into()] });
-        reject(&|i| i.frequency = AutopilotFrequency::Weekly { days: vec![], time: "09:00".into() });
-        reject(&|i| i.frequency = AutopilotFrequency::Weekly { days: vec![7], time: "09:00".into() });
-        reject(&|i| i.frequency = AutopilotFrequency::Weekly { days: vec![1, 1], time: "09:00".into() });
-        reject(&|i| i.frequency = AutopilotFrequency::Weekly { days: vec![1], time: "9am".into() });
-        let mut ok = input("A");
-        ok.length_sec = 15;
-        ok.frequency = AutopilotFrequency::Daily { times: (10..16).map(|h| format!("{h}:00")).collect() };
-        assert!(db.save_autopilot(&ok).is_ok());
-        ok.length_sec = 180;
-        ok.frequency = AutopilotFrequency::Weekly { days: vec![0, 6], time: "23:59".into() };
-        assert!(db.save_autopilot(&ok).is_ok());
-    }
-
-    #[test]
-    fn a_paused_autopilot_gets_no_new_slots() {
-        let db = adb();
-        let a = db.save_autopilot(&input("A")).unwrap();
-        let kept = db.upsert_slot(&a.id, "2026-11-01T09:00:00Z").unwrap();
-        db.set_autopilot_status(&a.id, AutopilotStatus::Paused).unwrap();
-        assert!(db.upsert_slot(&a.id, "2026-12-05T09:00:00Z").is_err());
-        assert!(db.list_slots("2026-12-05T09:00:00Z", "2026-12-05T09:00:00Z").unwrap().is_empty());
-        // An existing slot is still returned as it is.
-        assert_eq!(db.upsert_slot(&a.id, "2026-11-01T09:00:00Z").unwrap(), kept);
-    }
-
-    #[test]
-    fn slots_are_unique_normalised_listed_and_patched() {
-        let db = adb();
-        let a = db.save_autopilot(&input("A")).unwrap();
-        assert!(db.upsert_slot("nope", "2026-11-05T09:00:00Z").is_err());
-        assert!(db.upsert_slot(&a.id, "soon").is_err());
-        let s = db.upsert_slot(&a.id, "2026-11-05T16:00:00+07:00").unwrap();
-        assert_eq!((s.due_at.as_str(), s.status), ("2026-11-05T09:00:00Z", SlotStatus::Planned));
-        db.upsert_slot(&a.id, "2026-11-06T09:00:00Z").unwrap();
-        // The same instant in another offset is the same slot, and progress is never undone.
-        let done = db.update_slot(&s.id, json!({"status": "making", "projectId": "p1"})).unwrap();
-        assert_eq!((done.status, done.project_id.as_deref()), (SlotStatus::Making, Some("p1")));
-        let again = db.upsert_slot(&a.id, "2026-11-05T09:00:00Z").unwrap();
-        assert_eq!(again, done);
-        let all = db.list_slots("2026-11-05T00:00:00Z", "2026-11-07T00:00:00Z").unwrap();
-        assert_eq!(all.len(), 2);
-        assert!(all[0].due_at < all[1].due_at);
-        let one = db.list_slots("2026-11-05T09:00:00Z", "2026-11-05T09:00:00Z").unwrap();
-        assert_eq!(one.len(), 1);
-        assert!(db.list_slots("2026-11-07T00:00:00Z", "2026-11-08T00:00:00Z").unwrap().is_empty());
-        // A patch changes only the keys it carries; null clears.
-        let failed = db.update_slot(&s.id, json!({"status": "failed", "error": "No video"})).unwrap();
-        assert_eq!((failed.project_id.as_deref(), failed.error.as_deref()), (Some("p1"), Some("No video")));
-        let back = db.update_slot(&s.id, json!({"status": "planned", "error": null, "projectId": null})).unwrap();
-        assert_eq!((back.status, back.project_id, back.error), (SlotStatus::Planned, None, None));
-        assert!(db.update_slot("nope", json!({"status": "done"})).is_err());
-        assert!(db.update_slot(&s.id, json!({"status": "bogus"})).is_err());
-    }
-
-    #[test]
-    fn deleting_an_autopilot_drops_unfinished_slots_and_keeps_videos_and_other_autopilots() {
-        let db = adb();
-        db.insert_project(&project("p", "2026-01-01T00:00:00Z")).unwrap();
-        let a = db.save_autopilot(&input("A")).unwrap();
-        let b = db.save_autopilot(&input("B")).unwrap();
-        let slot = |id: &str, at: &str, status: &str| {
-            let s = db.upsert_slot(id, at).unwrap();
-            db.update_slot(&s.id, json!({"status": status})).unwrap();
-        };
-        slot(&a.id, "2026-11-05T09:00:00Z", "planned");
-        slot(&a.id, "2026-11-06T09:00:00Z", "failed");
-        slot(&a.id, "2026-11-07T09:00:00Z", "skipped");
-        slot(&a.id, "2026-11-08T09:00:00Z", "done");
-        slot(&b.id, "2026-11-05T09:00:00Z", "planned");
-        db.delete_autopilot(&a.id).unwrap();
-        db.delete_autopilot("missing").unwrap();
-        assert_eq!(db.list_autopilots().unwrap().len(), 1);
-        let left = db.list_slots("2026-11-01T00:00:00Z", "2026-12-01T00:00:00Z").unwrap();
-        let kept: Vec<_> = left.iter().map(|s| (s.autopilot_id.as_str(), s.status)).collect();
-        assert_eq!(kept, vec![(b.id.as_str(), SlotStatus::Planned), (a.id.as_str(), SlotStatus::Done)]);
-        assert_eq!(db.list_projects().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn a_style_an_autopilot_uses_cannot_be_deleted() {
-        let db = adb();
-        db.save_autopilot(&input("Kopi pagi")).unwrap();
-        assert_eq!(db.delete_style("s1").unwrap_err().0, "style-in-use:Kopi pagi");
-        assert!(db.get_style("s1").unwrap().is_some());
-        db.delete_style("s2").unwrap();
-    }
-
-    #[test]
-    fn sync_keeps_a_built_in_an_autopilot_or_a_clone_still_uses() {
-        let db = adb();
-        db.replace_builtin_styles(&[builtin("used", false), builtin("cloned", false), builtin("gone", false)]).unwrap();
-        let mut i = input("A");
-        i.style_id = "used".into();
-        db.save_autopilot(&i).unwrap();
-        db.save_style(&Style { id: "mine-1".into(), source: StyleSource::Mine, based_on: Some("cloned".into()), ..builtin("x", false) })
-            .unwrap();
-        // The API stops offering all three: only the unused one goes.
-        db.replace_builtin_styles(&[builtin("new", false)]).unwrap();
-        for id in ["used", "cloned", "new", "mine-1"] {
-            assert!(db.get_style(id).unwrap().is_some(), "{id}");
-        }
-        assert!(db.get_style("gone").unwrap().is_none());
-        // Offered again later, the kept row is updated in place.
-        let mut back = builtin("used", true);
-        back.name = "Used v2".into();
-        db.replace_builtin_styles(&[back]).unwrap();
-        assert_eq!(db.get_style("used").unwrap().unwrap().name, "Used v2");
-    }
-
-    #[test]
-    fn an_unknown_style_is_refused_and_a_known_one_saves() {
-        let db = adb();
-        let mut i = input("A");
-        i.style_id = "gone".into();
-        assert!(db.save_autopilot(&i).unwrap_err().0.contains("gone"));
-        i.style_id = "s2".into();
-        assert!(db.save_autopilot(&i).is_ok());
-    }
-
-    /// Slots at `days` days from now with the given status, for autopilot `id`.
-    fn slots_at(db: &Db, id: &str, days: &[(i64, &str)]) {
-        for (d, status) in days {
-            let at = (chrono::Utc::now() + chrono::Duration::days(*d)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-            let s = db.upsert_slot(id, &at).unwrap();
-            db.update_slot(&s.id, json!({"status": status})).unwrap();
-        }
-    }
-
-    fn statuses(db: &Db, id: &str) -> Vec<(String, SlotStatus)> {
-        let from = (chrono::Utc::now() - chrono::Duration::days(30)).to_rfc3339();
-        let to = (chrono::Utc::now() + chrono::Duration::days(30)).to_rfc3339();
-        db.list_slots(&from, &to).unwrap().into_iter().filter(|s| s.autopilot_id == id).map(|s| (s.due_at, s.status)).collect()
-    }
-
-    #[test]
-    fn editing_drops_future_planned_slots_only() {
-        let db = adb();
-        let a = db.save_autopilot(&input("A")).unwrap();
-        let b = db.save_autopilot(&input("B")).unwrap();
-        slots_at(&db, &a.id, &[(-2, "planned"), (1, "planned"), (2, "making"), (3, "failed"), (4, "planned")]);
-        slots_at(&db, &b.id, &[(1, "planned")]);
-        let mut edit = input("A");
-        edit.id = Some(a.id.clone());
-        edit.frequency = AutopilotFrequency::Daily { times: vec!["09:00".into()] };
-        db.save_autopilot(&edit).unwrap();
-        let left: Vec<_> = statuses(&db, &a.id).into_iter().map(|x| x.1).collect();
-        assert_eq!(left, vec![SlotStatus::Planned, SlotStatus::Making, SlotStatus::Failed]);
-        assert_eq!(statuses(&db, &b.id).len(), 1);
-    }
-
-    #[test]
-    fn creating_keeps_slots_and_a_failed_edit_keeps_them_too() {
-        let db = adb();
-        let a = db.save_autopilot(&input("A")).unwrap();
-        slots_at(&db, &a.id, &[(1, "planned")]);
-        let mut bad = input("A");
-        bad.id = Some(a.id.clone());
-        bad.length_sec = 5;
-        assert!(db.save_autopilot(&bad).is_err());
-        assert_eq!(statuses(&db, &a.id).len(), 1);
-    }
-
-    #[test]
-    fn pausing_drops_future_planned_slots_and_resuming_leaves_them_empty() {
-        let db = adb();
-        let a = db.save_autopilot(&input("A")).unwrap();
-        slots_at(&db, &a.id, &[(-1, "planned"), (1, "planned"), (2, "making"), (3, "planned")]);
-        db.set_autopilot_status(&a.id, AutopilotStatus::Paused).unwrap();
-        let left: Vec<_> = statuses(&db, &a.id).into_iter().map(|x| x.1).collect();
-        assert_eq!(left, vec![SlotStatus::Planned, SlotStatus::Making]);
-        db.set_autopilot_status(&a.id, AutopilotStatus::Active).unwrap();
-        assert_eq!(statuses(&db, &a.id).len(), 2);
-        // Setting an unknown autopilot fails without touching anything.
-        assert!(db.set_autopilot_status("nope", AutopilotStatus::Paused).is_err());
     }
 }

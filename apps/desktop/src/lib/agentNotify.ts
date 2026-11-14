@@ -14,7 +14,7 @@ function watching(chatId: string): boolean {
   return open && typeof document !== 'undefined' && document.hasFocus();
 }
 
-/** The chat's name as the sidebar shows it: its video's title, else its own. */
+/** The chat's name as the sidebar shows it: its feature's title, else its own. */
 async function chatName(chatId: string): Promise<string | null> {
   try {
     const c = (await listRecentChats(50)).find((r) => r.id === chatId);
@@ -27,7 +27,7 @@ async function chatName(chatId: string): Promise<string | null> {
 /**
  * Tells the user, with a system notification, that an agent finished, is waiting for them to pick
  * something, or asks to run a command, unless they are already looking at that chat. Never asks for
- * the permission itself (the scheduler's reminders do that the first time); never throws.
+ * the permission itself; never throws.
  */
 export async function notifyAgent(chatId: string, event: AgentEvent): Promise<void> {
   if (watching(chatId)) return;

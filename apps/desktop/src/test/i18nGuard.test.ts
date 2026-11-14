@@ -28,8 +28,8 @@ const TEXT_KEYS = new Set(['label', 'title', 'text', 'hint', 'description', 'mes
 const SAY = new Set(['appendSystem', 'fail', 'setError', 'setApiError', 'setUrlError', 'setSetupLine', 'say']);
 /** Names that stay as they are in every language. */
 const BRANDS = [
-  'Buma', 'Claude Code', 'Claude', 'claude', 'opencode', 'Codex', 'Gemini CLI', 'Gemini', 'Antigravity CLI', 'Antigravity', 'HyperFrames', 'Remotion',
-  'ElevenLabs', 'Fish Audio', 'VoiceStudio', 'FFmpeg', 'yt-dlp', 'Node.js', 'Chrome', 'Oyen', 'TikTok', 'Instagram', 'Reels', 'YouTube', 'ACP', 'MCP',
+  'Buma', 'Claude Code', 'Claude', 'claude', 'opencode', 'Codex', 'Gemini CLI', 'Gemini', 'Antigravity CLI', 'Antigravity',
+  'Node.js', 'Chrome', 'ACP', 'MCP',
   'DeepSeek', '9router', 'CommandCode', 'sk_', 'Shift', 'Esc', 'MP4', 'API', 'Bahasa Indonesia', 'English',
 ];
 
@@ -114,7 +114,7 @@ describe('no English copy outside t()', () => {
     expect(findCopy('d.ts', "const T = [{ label: 'Queued' }]; appendSystem(id, 'Hello there'); fail(`Could not ${x}`);")).toHaveLength(3);
     expect(findCopy('e.ts', "const T = [{ id: 'queued' }]; fail(t('a'), msg); ")).toEqual([]);
     const fine = [
-      `export const B = () => <div title={t('a')}>{t('b')} · Claude Code · yt-dlp {'→'}</div>;`,
+      `export const B = () => <div title={t('a')}>{t('b')} · Claude Code · Node.js {'→'}</div>;`,
       `export const C = () => <p>\n  {/* i18n-ignore: a sample */}\n  Kenapa rupiah melemah?\n</p>;`,
     ];
     for (const src of fine) expect(findCopy('b.tsx', src)).toEqual([]);

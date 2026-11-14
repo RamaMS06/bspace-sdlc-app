@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { IMAGE_ASPECTS, usageCycle, voiceCredits } from '../src/index';
+import { IMAGE_ASPECTS, usageCycle } from '../src/index';
 
 describe('usage rules', () => {
-  it('voice credits round up, minimum 1', () => {
-    expect(voiceCredits('a')).toBe(1);
-    expect(voiceCredits('x'.repeat(900))).toBe(7);
-    expect(voiceCredits('x'.repeat(901))).toBe(8);
-    expect(voiceCredits('x'.repeat(5000))).toBe(39);
-    expect(voiceCredits('😀'.repeat(900))).toBe(7); // code points, not UTF-16 units
-  });
   it('cycles run 30 days from the anchor', () => {
     const a = '2026-11-04T12:00:00.000Z';
     expect(usageCycle(a, new Date('2026-11-04T12:00:00.000Z'))).toEqual({ start: a, end: '2026-12-04T12:00:00.000Z' });

@@ -1,4 +1,4 @@
-//! Detects the OS, installed AI agents and the tools video rendering needs.
+//! Detects the OS, installed AI agents and the tools the SDLC skills need.
 
 use crate::types::*;
 use std::path::{Path, PathBuf};
@@ -29,7 +29,7 @@ fn newest_version_bin(root: &Path) -> Option<PathBuf> {
         .map(|e| e.path().join("bin"))
 }
 
-/// Where Node, npx, agents and the render tools usually live, beyond PATH. Both the PATH
+/// Where Node, npx, agents and their tools usually live, beyond PATH. Both the PATH
 /// we give spawned processes and `RealExec::which` are built from this one list, so a
 /// GUI launch (minimal PATH) finds what nvm, volta, fnm or Homebrew installed.
 pub fn tool_dirs(home: Option<&Path>, appdata: Option<&Path>) -> Vec<PathBuf> {
@@ -63,13 +63,13 @@ pub fn tool_dirs(home: Option<&Path>, appdata: Option<&Path>) -> Vec<PathBuf> {
             dirs.push(h.join(".claude").join("local"));
             dirs.push(h.join(".opencode").join("bin"));
         }
-        // System dirs last, so user-space installs (a newer node in nvm, ffmpeg in ~/.local/bin) win.
+        // System dirs last, so user-space installs (a newer node in nvm, tools in ~/.local/bin) win.
         dirs.push(PathBuf::from("/usr/bin"));
         dirs.push(PathBuf::from("/bin"));
     }
     if cfg!(windows) {
         dirs.extend(appdata.map(|a| a.join("npm")));
-        // winget puts portable tools (ffmpeg, yt-dlp) behind links here.
+        // winget puts portable tools behind links here.
         if let Some(h) = home {
             dirs.push(h.join("AppData").join("Local").join("Microsoft").join("WinGet").join("Links"));
             // Antigravity CLI's installer puts `agy` here.
@@ -254,7 +254,7 @@ pub fn home_dir() -> Option<PathBuf> {
 }
 
 /// PATH for processes we spawn. A GUI launch has a minimal PATH, so scripts with
-/// `#!/usr/bin/env node` (npx, gemini, hyperframes) would otherwise fail.
+/// `#!/usr/bin/env node` (npx, gemini, opencode) would otherwise fail.
 pub fn augmented_path() -> std::ffi::OsString {
     let node_dir = RealExec.which("node").and_then(|p| p.parent().map(Path::to_path_buf));
     let home = home_dir();

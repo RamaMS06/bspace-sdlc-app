@@ -35,47 +35,24 @@ export interface ToolStatus {
   detail: string;
 }
 
-export type VideoKind = 'explainer' | 'promo' | 'quote' | 'news' | 'tutorial' | 'data' | 'event';
-export type VideoFormat = '9:16' | '1:1' | '16:9';
-export type VideoLanguage = 'id' | 'en';
-/** Language of Buma's own interface (not of the videos). */
+/** Language of Buma's own interface. */
 export type UiLanguage = 'en' | 'id';
-export type ProjectStatus = 'draft' | 'building' | 'rendered' | 'scheduled';
+/** Where a feature stands: a draft is ideating; one whose chat edited files or ran commands is being built. */
+export type ProjectStatus = 'draft' | 'building';
 
-/** Whether a finished video still waits for the user's approval. */
-export type ReviewState = 'none' | 'pending' | 'approved';
-
+/** A feature: its own folder (where the skills write intent/, sdlc/, specs/) and its chats. */
 export interface Project {
   id: string;
   title: string;
   slug: string;
   folder: string;
-  kind: VideoKind;
-  format: VideoFormat;
-  language: VideoLanguage;
   status: ProjectStatus;
-  styleId: string | null;
-  scheduledAt: string | null;
-  reviewState: ReviewState;
-  /** When the user marked the video as posted (RFC 3339). */
-  postedAt: string | null;
-  /** When the post-time reminder was shown (RFC 3339); cleared when the schedule changes. */
-  remindedAt: string | null;
-  /** When the "review before it's due" reminder was shown (RFC 3339); cleared when the schedule changes. */
-  reviewRemindedAt: string | null;
-  /** The auto-post this video went out with (the Buma API's post id); missing when never posted. */
-  socialPostId?: string | null;
-  durationSec: number | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface NewProject {
   title: string;
-  kind: VideoKind;
-  format: VideoFormat;
-  language: VideoLanguage;
-  styleId?: string | null;
 }
 
 export interface Chat {
@@ -95,12 +72,6 @@ export interface RecentChat extends Chat {
   activeAt: string;
   /** When the thread was archived (RFC 3339); only in the archive's list. */
   archivedAt?: string;
-}
-
-/** Relative position, 0-1. */
-export interface Mark {
-  x: number;
-  y: number;
 }
 
 /** What an agent says a tool call is (ACP tool kinds). */
@@ -146,8 +117,6 @@ export interface ChatTrace {
 export type MessagePart =
   | { type: 'text'; text: string }
   | { type: 'mention'; projectId: string; title: string }
-  /** A style the user @mentioned; the agent gets its prompt and notes in front of the message. */
-  | { type: 'style-mention'; styleId: string; name: string }
   | {
       type: 'file';
       path: string;
@@ -156,14 +125,6 @@ export type MessagePart =
       size: number;
       /** When the file was last written (an image the agent made): a rewritten one reloads. */
       modifiedAt?: string;
-    }
-  | {
-      type: 'frame';
-      projectId: string;
-      frame: number;
-      timeSec: number;
-      imagePath: string;
-      marks: Mark[];
     }
   | {
       type: 'tool';
@@ -186,42 +147,8 @@ export interface ChatMessage {
   createdAt: string;
 }
 
-export type StyleAspect = 'camera' | 'pacing' | 'type' | 'color' | 'captions' | 'transitions';
-
-export type StyleEngine = 'hyperframes' | 'remotion';
-
-/** A built-in style's starter project, served by the API as a zip. */
-export interface StyleTemplate {
-  sha256: string;
-  size: number;
-  version: number;
-}
-
-export interface Style {
-  id: string;
-  name: string;
-  source: 'builtin' | 'copied' | 'mine';
-  sourceUrl: string | null;
-  notes: Partial<Record<StyleAspect, string>>;
-  prompt: string;
-  createdAt: string;
-  engine?: StyleEngine;
-  previewUrl?: string | null;
-  /** A short silent clip of the style, played in the style popup; null when there is none. */
-  previewVideoUrl?: string | null;
-  template?: StyleTemplate | null;
-  version?: number;
-  /** Id of the built-in style this one was cloned from (its template is downloaded under that id). */
-  basedOn?: string | null;
-  /** Copied styles: how to build the look (rendering technique, characters, rig, captions), from the study. */
-  build?: string | null;
-  /** Copied styles: the look's main colours as #RRGGBB, from the study's frames. */
-  palette?: string[];
-  /** Copied styles: reference frames on this computer (absolute paths in the style's media folder). */
-  references?: string[];
-}
-
-export type JobKind = 'build' | 'render' | 'install' | 'study-style' | 'script';
+/** A card on the Workflow board: a feature chat's turns. */
+export type JobKind = 'build';
 export type JobStatus = 'queued' | 'working' | 'needs-you' | 'done' | 'failed';
 
 export interface Job {
@@ -234,34 +161,14 @@ export interface Job {
   status: JobStatus;
   progress: number | null;
   note: string | null;
-  /** The link a style study was reading, so a failed study can be tried again. */
-  sourceUrl: string | null;
   updatedAt: string;
-  /**
-   * A build job: when the first turn since it was last done started (RFC 3339). A render made after it
-   * is this job's video. Missing on other jobs, done ones, and jobs saved before it existed.
-   */
-  renderBaselineAt?: string | null;
   /** When the card was archived off the board (RFC 3339); a card whose status changes comes back. */
   archivedAt?: string | null;
-}
-
-/** A file on disk as the UI needs it: a render, or an image the agent made. */
-export interface FileInfo {
-  path: string;
-  name: string;
-  size: number;
-  /** RFC 3339 UTC with milliseconds. */
-  modifiedAt: string;
 }
 
 export interface Settings {
   workingFolder: string;
   defaultAgent: AgentId;
-  frameCheck: boolean;
-  language: VideoLanguage;
-  format: VideoFormat;
-  fps: number;
   onboarded: boolean;
   /** Base URL of the optional Buma API. Settings saves an empty field as the default URL. */
   apiUrl: string;
@@ -271,7 +178,7 @@ export interface Settings {
   shareInstallStats: boolean;
   /** RFC 3339 time of the last successful ping. */
   lastPingAt: string | null;
-  /** Chats start in auto mode: the agent runs commands without asking. Style studies always do. */
+  /** Chats start in auto mode: the agent runs commands without asking. */
   autoMode: boolean;
   /** Interface language; null until the first run picks one from the system language. */
   uiLanguage: UiLanguage | null;
@@ -279,40 +186,10 @@ export interface Settings {
   backgroundMode: boolean;
   /** Start Buma at login; only available while backgroundMode is on. */
   openAtLogin: boolean;
-  /** Build jobs marked done before a job could only be done with its video were checked once. */
-  buildJobsChecked: boolean;
-  /** Project statuses were backfilled once from their renders and chats. */
-  projectStatusChecked: boolean;
   /** The model picked for each agent (agent id → the agent's own model value); missing: its default. */
   agentModels: Partial<Record<AgentId, string>>;
   /** "Your API" (the `custom` agent): provider preset, address and model. The key stays in the keychain. */
   apiProvider?: ApiProvider | null;
-  /** Where voice-overs come from; missing: Buma credits. API keys stay in the keychain. */
-  voiceSource?: VoiceSource;
-}
-
-/** Buma credits, the user's own ElevenLabs or Fish Audio key, or VoiceStudio running on this computer. */
-export type VoiceSource = 'buma' | 'elevenlabs' | 'fishaudio' | 'voicestudio';
-
-/** The voice sources that speak with the user's own API key. */
-export type VoiceKeySource = 'elevenlabs' | 'fishaudio';
-
-/** Why the user's own voice can't speak (the desktop's `VoiceError` codes). */
-export type VoiceErrorCode = 'no-key' | 'bad-key' | 'no-balance' | 'not-running' | 'too-long' | 'busy' | 'failed';
-
-/**
- * The answer of trying a voice source. `hasCredit`: the account has credit left (null when the key
- * can't read it); Fish Audio without credit speaks with its free model.
- */
-export interface VoiceCheck {
-  ok: boolean;
-  error: VoiceErrorCode | null;
-  hasCredit: boolean | null;
-}
-
-export interface VoiceStatus {
-  hasElevenKey: boolean;
-  hasFishKey: boolean;
 }
 
 /** A provider preset: `other` is any OpenAI-compatible address the user types. */
@@ -340,10 +217,6 @@ export interface ApiCheck {
 /** Defaults; workingFolder is `<home>/Buma`, resolved at runtime. */
 export const DEFAULT_SETTINGS: Omit<Settings, 'workingFolder'> = {
   defaultAgent: 'claude',
-  frameCheck: true,
-  language: 'id',
-  format: '9:16',
-  fps: 30,
   onboarded: false,
   apiUrl: 'https://bspace.buma.internal/api',
   installId: '',
@@ -353,8 +226,6 @@ export const DEFAULT_SETTINGS: Omit<Settings, 'workingFolder'> = {
   uiLanguage: null,
   backgroundMode: false,
   openAtLogin: false,
-  buildJobsChecked: false,
-  projectStatusChecked: false,
   agentModels: {},
 };
 
@@ -408,14 +279,6 @@ export interface PermissionRequest {
   }[];
 }
 
-export interface MediaInfo {
-  durationSec: number;
-  fps: number;
-  frames: number;
-  width: number;
-  height: number;
-}
-
 export interface UsageWindow {
   usedPercent: number;
   resetsAt: string | null;
@@ -447,55 +310,3 @@ export interface Spend {
   tokens: number;
   costUsd: number;
 }
-
-// ---- autopilot ----
-
-/** How often an autopilot makes a video. Times are "HH:MM" in local time; days are 0 (Sunday) to 6 (Saturday). */
-export type AutopilotFrequency =
-  | { kind: 'daily'; times: string[] }
-  | { kind: 'weekly'; days: number[]; time: string }
-  /** Weekdays, weekends or any chosen days, with the same 1 to 6 times on each. */
-  | { kind: 'days'; days: number[]; times: string[] };
-
-export interface Autopilot {
-  id: string;
-  name: string;
-  /** What the videos are about: the agent's brief. From a catalog niche this is a copy of its prompt. */
-  niche: string;
-  /** The catalog niche it started from; null for a niche the user wrote. */
-  nicheId: string | null;
-  language: VideoLanguage;
-  styleId: string;
-  /** The catalog voice for voice-overs; null lets the agent use the default. */
-  voiceId: string | null;
-  agentId: AgentId;
-  frequency: AutopilotFrequency;
-  lengthSec: number;
-  /** Finished videos wait for Approve (reviewState 'pending') instead of going straight to Ready. */
-  review: boolean;
-  /** 'automatic' posts to `socialAccountIds`, after Approve when `review` is on; 'manual' only reminds. */
-  posting: 'manual' | 'automatic';
-  socialAccountIds: string[];
-  status: 'active' | 'paused';
-  createdAt: string;
-  updatedAt: string;
-}
-
-/** What the UI sends to create (no id) or edit (with id) an autopilot; the status is kept on edit, active when new. */
-export type AutopilotInput = Omit<Autopilot, 'id' | 'status' | 'createdAt' | 'updatedAt'> & { id?: string };
-
-export type SlotStatus = 'planned' | 'making' | 'done' | 'failed' | 'skipped';
-
-/** One video an autopilot is due to make; unique per (autopilotId, dueAt). */
-export interface AutopilotSlot {
-  id: string;
-  autopilotId: string;
-  /** RFC 3339, stored in UTC. */
-  dueAt: string;
-  status: SlotStatus;
-  projectId: string | null;
-  error: string | null;
-}
-
-/** The fields `update_slot` may change. */
-export type SlotPatch = Partial<Pick<AutopilotSlot, 'status' | 'projectId' | 'error'>>;

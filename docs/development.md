@@ -5,12 +5,6 @@
 - Node 22 or newer
 - pnpm (the repo pins the version in `package.json`)
 - Rust (stable toolchain) and the Tauri 2 system dependencies for your platform
-- ffmpeg on your PATH. The app needs it at runtime and checks for it on first launch.
-  - macOS: `brew install ffmpeg`
-  - Windows: `winget install --id Gyan.FFmpeg -e`
-  - Linux: `sudo apt install ffmpeg`
-
-  The media tests use the bundled `ffmpeg-static` that `pnpm install` fetches, and skip if it is missing.
 
 Install dependencies once from the repo root:
 
@@ -36,9 +30,9 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 ## The API
 
-Online features (Google sign-in, paid plans, the built-in styles, install stats) come from the Buma API at `https://bspace.buma.internal/api`. Its code lives in a separate private repository; the desktop app talks to it only over HTTP, using the request and response types in `packages/shared`.
+Online features (Google sign-in, AI credits for the agents' images, install stats) come from the Buma API at `https://bspace.buma.internal/api`. Its code lives in a separate private repository; the desktop app talks to it only over HTTP, using the request and response types in `packages/shared`.
 
-The app works without it: making videos, styles you copy or write, and everything on this computer. To point the app at another API (for example a local one), set Settings › Account › API address, or start the app with `BUMA_API_URL` (a base with the path, used as given and never saved):
+The app works without it: chats, features, skills and everything else on this computer. To point the app at another API (for example a local one), set Settings › Account › API address, or start the app with `BUMA_API_URL` (a base with the path, used as given and never saved):
 
 ```
 BUMA_API_URL=http://localhost:8787/api pnpm dev:desktop
@@ -54,17 +48,17 @@ Old saved addresses are migrated when the app reads its settings: `https://api.b
 
 ## Permissions and the agent's own settings
 
-Buma answers the ACP permission requests an agent sends (`session/request_permission`) and only ever picks the allow-once option after the user presses Allow. It can't see or block commands the agent runs without asking: if the agent's own configuration auto-allows a command (for example Claude Code's `permissions.allow` rules in `~/.claude/settings.json`, or a "yolo"/auto-approve mode), that command runs without a card in Buma. Buma does not change agent configuration, with one exception: Auto mode. Style studies always run in auto mode, and chats do when Settings › Agents › Auto mode for chats (or a chat's Auto toggle) is on. For Claude Code, Buma sends `session/set_mode` with `auto` (and `default` when turned off); if the agent doesn't list an `auto` mode or the switch fails, and for every other agent, Buma answers each permission request with its allow-once option (never allow-always) and shows "Ran without asking: <command>". A request with no allow-once option still shows the card. The setup (install) chat never runs in auto mode. The product copy is worded to match: "Buma shows you every command your agent asks to run, and nothing it asks about runs until you allow it."
+Buma answers the ACP permission requests an agent sends (`session/request_permission`) and only ever picks the allow-once option after the user presses Allow. It can't see or block commands the agent runs without asking: if the agent's own configuration auto-allows a command (for example Claude Code's `permissions.allow` rules in `~/.claude/settings.json`, or a "yolo"/auto-approve mode), that command runs without a card in Buma. Buma does not change agent configuration, with one exception: Auto mode. Chats run in auto mode when Settings › Agents › Auto mode for chats (or a chat's Auto toggle) is on. For Claude Code, Buma sends `session/set_mode` with `auto` (and `default` when turned off); if the agent doesn't list an `auto` mode or the switch fails, and for every other agent, Buma answers each permission request with its allow-once option (never allow-always) and shows "Ran without asking: <command>". A request with no allow-once option still shows the card. The setup (install) chat never runs in auto mode. The product copy is worded to match: "Buma shows you every command your agent asks to run, and nothing it asks about runs until you allow it."
 
 ## Release smoke test
 
 Run this on a packaged build (`pnpm --filter @bspace-sdlc-app/desktop tauri build`) before shipping. A release build never falls back to the repo's copy of the agent plugin.
 
 - [ ] The bundle has the plugin: `agent-plugin/.claude-plugin/plugin.json` is in the app's resources (macOS: `BSpace SDLC.app/Contents/Resources/agent-plugin/`). Start the app's binary from a terminal (macOS: `BSpace SDLC.app/Contents/MacOS/`), start a Claude chat and check stderr has no "plugin.json is missing" warning. Without the plugin Claude still gets the skills, as text in its first prompt, but the bundle is wrong.
-- [ ] CSP: style previews load on the Style screen (from the API origin in `img-src`), the style popup plays its preview video (API origin in `media-src`; needs Range responses), and a rendered video and its frames play in the preview.
-- [ ] Questions: ask an agent for topic ideas; its question (Claude's AskUserQuestion, opencode's question) shows as a card with options and Other. Picking one starts the video in a new chat (the agent's POST /video).
-- [ ] Windows: build and install the Windows bundle, run onboarding (winget installs), start a chat and render one video.
-- [ ] Autopilot with the window hidden (packaged macOS build, by hand): turn on background mode and close the window. Make an autopilot whose next slot is 2 minutes ahead; confirm the slot starts and finishes on time while the window stays hidden. On a second slot, use Stop now from the Autopilot screen once. Use the tray's Pause all once and check every autopilot shows Paused. With the window hidden, confirm a review reminder and a post reminder arrive. If slots start late, a hidden webview is being throttled (App Nap): see the review's note on `NSAppSleepDisabled`.
+- [ ] CSP: an image an agent shows in an A2UI card from the API origin loads (`img-src`), and images and videos in a feature's folder open in the workspace (`asset:`).
+- [ ] Questions: start a feature with `/using-bspace-sdlc`; the agent's question (Claude's AskUserQuestion, opencode's question) shows as a card with options and Other, and the feature shows on Workflow.
+- [ ] Windows: build and install the Windows bundle, run onboarding (winget installs), start a chat and run one SDLC stage.
+- [ ] Background mode (packaged build, by hand): turn it on and close the window; the tray brings it back, and an agent that finishes or asks something while the window is hidden sends a notification.
 
 ## CI and releases
 
@@ -90,7 +84,11 @@ Chats saved by this version can store `thought` parts (the agent's reasoning) an
 
 ## Notifications and background mode
 
-- Reminders use `tauri-plugin-notification`. On desktop the plugin always reports the permission as granted, so Buma cannot tell when a user has turned its notifications off in the operating system (macOS, Windows). The Calendar banner only shows where the plugin does report a denial. Settings › General has a "Send a test notification" button so people can check that notifications reach them.
+- Agent notifications (a turn done, a question, a permission) use `tauri-plugin-notification`. On desktop the plugin always reports the permission as granted, so Buma cannot tell when a user has turned its notifications off in the operating system (macOS, Windows). Settings › General has a "Send a test notification" button so people can check that notifications reach them.
 - Background mode shows a tray icon only while it is on. On Linux the tray needs AppIndicator: the deb depends on `libayatana-appindicator3-1` and the rpm on `libayatana-appindicator-gtk3`; an AppImage uses the system's library, so it must be installed there. Without it the tray library crashes while loading; Buma catches that (`std::panic::catch_unwind`), turns background mode and Open at login back off, shows "Background mode needs a system tray, which isn't available here" in Settings, and never hides the window. The same failure at startup turns the setting off and the app opens normally.
 - Launching Buma a second time shows the running window (`tauri-plugin-single-instance`). "Open at login" starts the app with `--hidden`, which keeps the window hidden when a tray icon exists.
 - Dev builds register the login item for the dev binary, and notifications in dev may carry the terminal's identity until the app is bundled.
+
+## Databases from the video app
+
+BSpace SDLC started as a copy of a short-video app. A database that app made still opens: its `styles`, `autopilots` and `autopilot_slots` tables and the video columns of `projects` and `jobs` stay in the file but are no longer read or written, a project's `rendered`/`scheduled` status reads as `building`, only `build` cards show on the board, and chat parts this version doesn't know (frames, style mentions) are left out when a chat loads.

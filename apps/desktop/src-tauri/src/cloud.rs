@@ -1,6 +1,5 @@
-//! The Buma account's paid features through the Buma API: credits and auto-posts left, social
-//! accounts, posting a video, and AI images and voice. The sign-in token stays in Rust; the webview
-//! (and an agent) only ever see what the API answered.
+//! The Buma account's paid features through the Buma API: AI credits left and AI images. The sign-in
+//! token stays in Rust; the webview (and an agent) only ever see what the API answered.
 
 use std::path::Path;
 
@@ -14,7 +13,7 @@ use crate::styles_sync::endpoint;
 #[serde(rename_all = "kebab-case")]
 pub enum CloudError {
     SignedOut,
-    /// The plan has none of this (no AI credits, no auto-posts).
+    /// The plan has none of this (no AI credits).
     PlanRequired,
     /// This cycle's allowance is used up.
     QuotaExceeded,
@@ -25,8 +24,6 @@ pub enum CloudError {
     NotFound,
     /// The same request is still running.
     InProgress,
-    /// A post that already went out can't be cancelled.
-    AlreadyPosted,
     Invalid,
     Network,
     Server,
@@ -34,13 +31,6 @@ pub enum CloudError {
     BadUrl,
     /// What came back is bigger than Buma keeps.
     TooLarge,
-    /// Gift codes: no such code, its promo has ended, its uses are taken, this account or this
-    /// computer has this promo's gift already, or too many tries.
-    InvalidCode,
-    CodeExpired,
-    CodeUsed,
-    AlreadyRedeemed,
-    DeviceUsed,
     RateLimited,
 }
 
@@ -57,17 +47,11 @@ fn error_for(status: u16, body: &[u8]) -> CloudError {
         Some("unauthorized") => CloudError::SignedOut,
         Some("plan_required") => CloudError::PlanRequired,
         Some("quota_exceeded") => CloudError::QuotaExceeded,
-        Some("ai_unavailable" | "posting_unavailable") => CloudError::Unavailable,
+        Some("ai_unavailable") => CloudError::Unavailable,
         Some("provider") => CloudError::Provider,
         Some("not_found") => CloudError::NotFound,
         Some("in_progress") => CloudError::InProgress,
-        Some("already_posted") => CloudError::AlreadyPosted,
         Some("invalid_request") => CloudError::Invalid,
-        Some("invalid_code") => CloudError::InvalidCode,
-        Some("code_expired") => CloudError::CodeExpired,
-        Some("code_used") => CloudError::CodeUsed,
-        Some("already_redeemed") => CloudError::AlreadyRedeemed,
-        Some("device_used") => CloudError::DeviceUsed,
         Some("rate_limited") => CloudError::RateLimited,
         _ => match status {
             429 => CloudError::RateLimited,
@@ -111,33 +95,12 @@ pub async fn send(client: &reqwest::Client, method: reqwest::Method, base: &str,
     finish(req.send().await).await
 }
 
-/// Only https URLs are fetched, uploaded to or opened from what the API said.
+/// Only https URLs are fetched from what the API said.
 pub fn is_https(u: &str) -> bool {
     reqwest::Url::parse(u).is_ok_and(|u| u.scheme() == "https" && u.host_str().is_some())
 }
 
-/// PUTs a file to the signed upload URL PostForMe gave (no token: the URL is the permission).
-pub async fn upload(client: &reqwest::Client, upload_url: &str, file: &Path, content_type: &str) -> Result<(), CloudError> {
-    if !is_https(upload_url) {
-        return Err(CloudError::BadUrl);
-    }
-    let bytes = tokio::fs::read(file).await.map_err(|_| CloudError::NotFound)?;
-    let res = client
-        .put(upload_url)
-        .header(reqwest::header::CONTENT_TYPE, content_type)
-        .timeout(std::time::Duration::from_secs(600))
-        .body(bytes)
-        .send()
-        .await
-        .map_err(|_| CloudError::Network)?;
-    if res.status().is_success() {
-        Ok(())
-    } else {
-        Err(CloudError::Provider)
-    }
-}
-
-/// Downloads what a provider made (an image, a voice) to `dest`, at most `max` bytes. The file is
+/// Downloads what a provider made (an image) to `dest`, at most `max` bytes. The file is
 /// written next to `dest` first and moved into place, so a failed download leaves nothing behind.
 pub async fn download(client: &reqwest::Client, url: &str, dest: &Path, max: u64) -> Result<u64, CloudError> {
     if !is_https(url) {
@@ -169,49 +132,33 @@ mod tests {
     use crate::auth::http_client;
     use crate::auth::tests::fake;
 
-    #[test]
-    fn gift_code_refusals_become_their_codes() {
-        for (body, code) in [
-            (r#"{"error":"invalid_code"}"#, "invalid-code"),
-            (r#"{"error":"code_expired"}"#, "code-expired"),
-            (r#"{"error":"code_used"}"#, "code-used"),
-            (r#"{"error":"already_redeemed"}"#, "already-redeemed"),
-            (r#"{"error":"device_used"}"#, "device-used"),
-            (r#"{"error":"rate_limited"}"#, "rate-limited"),
-        ] {
-            assert_eq!(error_for(409, body.as_bytes()).code(), code);
-        }
-        assert_eq!(error_for(429, b"").code(), "rate-limited");
-    }
-
     #[tokio::test]
     async fn api_errors_become_codes() {
         let f = fake(|r, _| match r.path.as_str() {
             "/api/v1/usage" => (200, r#"{"plan":"lite"}"#.into()),
             "/api/v1/ai/image" => (403, r#"{"error":"plan_required"}"#.into()),
-            "/api/v1/social/posts" => (402, r#"{"error":"quota_exceeded","usage":{}}"#.into()),
-            "/api/v1/social/accounts" => (503, r#"{"error":"posting_unavailable"}"#.into()),
+            "/api/v1/ai/other" => (402, r#"{"error":"quota_exceeded","usage":{}}"#.into()),
+            "/api/v1/unavailable" => (503, r#"{"error":"ai_unavailable"}"#.into()),
             _ => (500, "oops".into()),
         })
         .await;
         let c = http_client().unwrap();
-        assert_eq!(get(&c, &f.base, "tyg_a", "/v1/usage").await.unwrap()["plan"], "lite");
-        assert_eq!(f.hits("/api/v1/usage")[0].auth.as_deref(), Some("Bearer tyg_a"));
+        assert_eq!(get(&c, &f.base, "tok_a", "/v1/usage").await.unwrap()["plan"], "lite");
+        assert_eq!(f.hits("/api/v1/usage")[0].auth.as_deref(), Some("Bearer tok_a"));
         let empty = serde_json::json!({});
-        let post = |path: &'static str| send(&c, reqwest::Method::POST, &f.base, "tyg_a", path, Some(&empty));
+        let post = |path: &'static str| send(&c, reqwest::Method::POST, &f.base, "tok_a", path, Some(&empty));
         assert_eq!(post("/v1/ai/image").await, Err(CloudError::PlanRequired));
-        assert_eq!(post("/v1/social/posts").await, Err(CloudError::QuotaExceeded));
-        assert_eq!(get(&c, &f.base, "tyg_a", "/v1/social/accounts").await, Err(CloudError::Unavailable));
-        assert_eq!(get(&c, &f.base, "tyg_a", "/v1/else").await, Err(CloudError::Server));
+        assert_eq!(post("/v1/ai/other").await, Err(CloudError::QuotaExceeded));
+        assert_eq!(get(&c, &f.base, "tok_a", "/v1/unavailable").await, Err(CloudError::Unavailable));
+        assert_eq!(get(&c, &f.base, "tok_a", "/v1/else").await, Err(CloudError::Server));
         assert_eq!(CloudError::PlanRequired.code(), "plan-required");
     }
 
     #[tokio::test]
-    async fn only_https_is_fetched_or_uploaded() {
+    async fn only_https_is_fetched() {
         let c = http_client().unwrap();
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(download(&c, "http://example.com/a.jpg", &dir.path().join("a.jpg"), 10).await, Err(CloudError::BadUrl));
-        assert_eq!(upload(&c, "file:///etc/passwd", &dir.path().join("a"), "video/mp4").await, Err(CloudError::BadUrl));
         assert!(is_https("https://v3.fal.media/x.jpg"));
         assert!(!is_https("javascript:alert(1)"));
     }

@@ -2,7 +2,6 @@
 //! Field names are camelCase and string unions serialize to the exact TS literals.
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -92,36 +91,7 @@ pub struct ToolStatus {
     pub detail: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum VideoKind {
-    Explainer,
-    Promo,
-    Quote,
-    News,
-    Tutorial,
-    Data,
-    Event,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum VideoFormat {
-    #[serde(rename = "9:16")]
-    Portrait,
-    #[serde(rename = "1:1")]
-    Square,
-    #[serde(rename = "16:9")]
-    Landscape,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum VideoLanguage {
-    Id,
-    En,
-}
-
-/// The language of Buma's own interface, not of the videos it makes.
+/// The language of Buma's own interface, not of the work it does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UiLanguage {
@@ -134,18 +104,6 @@ pub enum UiLanguage {
 pub enum ProjectStatus {
     Draft,
     Building,
-    Rendered,
-    Scheduled,
-}
-
-/// Whether a finished video still waits for the user's approval.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ReviewState {
-    #[default]
-    None,
-    Pending,
-    Approved,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -155,25 +113,7 @@ pub struct Project {
     pub title: String,
     pub slug: String,
     pub folder: String,
-    pub kind: VideoKind,
-    pub format: VideoFormat,
-    pub language: VideoLanguage,
     pub status: ProjectStatus,
-    pub style_id: Option<String>,
-    pub scheduled_at: Option<String>,
-    #[serde(default)]
-    pub review_state: ReviewState,
-    #[serde(default)]
-    pub posted_at: Option<String>,
-    #[serde(default)]
-    pub reminded_at: Option<String>,
-    /// When the "review before it's due" reminder was shown; separate from `reminded_at`.
-    #[serde(default)]
-    pub review_reminded_at: Option<String>,
-    /// The auto-post this video went out with (the Buma API's PostForMe post id).
-    #[serde(default)]
-    pub social_post_id: Option<String>,
-    pub duration_sec: Option<f64>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -182,11 +122,6 @@ pub struct Project {
 #[serde(rename_all = "camelCase")]
 pub struct NewProject {
     pub title: String,
-    pub kind: VideoKind,
-    pub format: VideoFormat,
-    pub language: VideoLanguage,
-    #[serde(default)]
-    pub style_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -219,13 +154,6 @@ pub struct RecentChat {
     pub archived_at: Option<String>,
 }
 
-/// Relative position, 0-1.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct Mark {
-    pub x: f64,
-    pub y: f64,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ToolCallStatus {
@@ -245,12 +173,6 @@ pub enum MessagePart {
         project_id: String,
         title: String,
     },
-    /// A style the user @mentioned. The app puts its prompt and notes in front of the message.
-    #[serde(rename = "style-mention")]
-    StyleMention {
-        style_id: String,
-        name: String,
-    },
     File {
         path: String,
         name: String,
@@ -259,13 +181,6 @@ pub enum MessagePart {
         /// When the file was last written (an image the agent made): the UI reloads a rewritten one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         modified_at: Option<String>,
-    },
-    Frame {
-        project_id: String,
-        frame: u32,
-        time_sec: f64,
-        image_path: String,
-        marks: Vec<Mark>,
     },
     Tool {
         tool_call_id: String,
@@ -310,97 +225,10 @@ pub struct ChatMessage {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum StyleAspect {
-    Camera,
-    Pacing,
-    Type,
-    Color,
-    Captions,
-    Transitions,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum StyleSource {
-    Builtin,
-    Copied,
-    Mine,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Style {
-    pub id: String,
-    pub name: String,
-    pub source: StyleSource,
-    pub source_url: Option<String>,
-    /// Partial record: only aspects with notes are present.
-    pub notes: BTreeMap<StyleAspect, String>,
-    pub prompt: String,
-    pub created_at: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub engine: Option<StyleEngine>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub preview_url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub preview_video_url: Option<String>,
-    /// The built-in style this one was cloned from; its template is downloaded under that id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub based_on: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub template: Option<StyleTemplate>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<u32>,
-    /// Copied styles: how to build the look (engine technique, characters, rig, captions).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub build: Option<String>,
-    /// Copied styles: the main colours as #RRGGBB.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub palette: Vec<String>,
-    /// Copied styles: reference frames on this computer (absolute paths under style-refs/<id>).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub references: Vec<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum StyleEngine {
-    Hyperframes,
-    Remotion,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StyleTemplate {
-    pub sha256: String,
-    pub size: u64,
-    pub version: u32,
-}
-
-/// Result of `sync_styles`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StylesSync {
-    pub styles: Vec<Style>,
-    pub offline: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InstallResult {
-    pub installed: bool,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum JobKind {
     Build,
-    Render,
-    Install,
-    StudyStyle,
-    Script,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -425,13 +253,6 @@ pub struct Job {
     pub status: JobStatus,
     pub progress: Option<f64>,
     pub note: Option<String>,
-    /// The link a style study was reading, so a failed study can be tried again.
-    #[serde(default)]
-    pub source_url: Option<String>,
-    /// A build job: when the first turn since it was last done started (RFC 3339). A render made
-    /// after it is this job's video. None for other jobs, done ones, and jobs saved before it existed.
-    #[serde(default)]
-    pub render_baseline_at: Option<String>,
     pub updated_at: String,
     /// When the card was archived off the board (RFC 3339). Only the database sets it: a write from the UI
     /// never carries it, and a card whose status changes comes back on the board.
@@ -439,27 +260,11 @@ pub struct Job {
     pub archived_at: Option<String>,
 }
 
-/// Where voice-overs come from: Buma credits, the user's own ElevenLabs or Fish Audio key, or
-/// VoiceStudio on this computer (see `voice`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum VoiceSource {
-    #[default]
-    Buma,
-    Elevenlabs,
-    Fishaudio,
-    Voicestudio,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub working_folder: String,
     pub default_agent: AgentId,
-    pub frame_check: bool,
-    pub language: VideoLanguage,
-    pub format: VideoFormat,
-    pub fps: u32,
     pub onboarded: bool,
     /// Base URL of the optional Buma API; `BUMA_API_URL` overrides it at read time
     /// (`styles_sync::effective_api_url`) without being stored. The Settings screen saves an
@@ -484,12 +289,6 @@ pub struct Settings {
     /// Start Buma when the user logs in; only meaningful while `background_mode` is on.
     #[serde(default)]
     pub open_at_login: bool,
-    /// The one-time startup check of build jobs marked done without a video has run.
-    #[serde(default)]
-    pub build_jobs_checked: bool,
-    /// The one-time startup backfill of project statuses (rendered, building) has run.
-    #[serde(default)]
-    pub project_status_checked: bool,
     /// The model picked for each agent (agent id → the agent's own model value). Missing: the
     /// agent's own default.
     #[serde(default)]
@@ -497,9 +296,6 @@ pub struct Settings {
     /// "Your API" (the `custom` agent): the provider, address and model. The key is in the keychain.
     #[serde(default)]
     pub api_provider: Option<crate::api_engine::ApiProvider>,
-    /// Where voice-overs come from. API keys are in the keychain.
-    #[serde(default)]
-    pub voice_source: VoiceSource,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -582,148 +378,16 @@ pub struct AgentQuestion {
     pub schema: serde_json::Value,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MediaInfo {
-    pub duration_sec: f64,
-    pub fps: f64,
-    pub frames: u64,
-    pub width: u32,
-    pub height: u32,
-}
-
-/// A file on disk as the UI needs it: a render, or an image the agent made.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FileInfo {
-    pub path: String,
-    pub name: String,
-    pub size: u64,
-    /// RFC 3339 UTC with milliseconds.
-    pub modified_at: String,
-}
-
-// ---- autopilot ----
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
-pub enum AutopilotFrequency {
-    /// `times` are "HH:MM" in local time, 1 to 6 of them.
-    Daily { times: Vec<String> },
-    /// `days` are 0 (Sunday) to 6 (Saturday).
-    Weekly { days: Vec<u8>, time: String },
-    /// Chosen days (0 to 6) with the same 1 to 6 "HH:MM" times on each.
-    Days { days: Vec<u8>, times: Vec<String> },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum AutopilotStatus {
-    Active,
-    Paused,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Posting {
-    Manual,
-    Automatic,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Autopilot {
-    pub id: String,
-    pub name: String,
-    pub niche: String,
-    #[serde(default)]
-    pub niche_id: Option<String>,
-    pub language: VideoLanguage,
-    pub style_id: String,
-    #[serde(default)]
-    pub voice_id: Option<String>,
-    pub agent_id: AgentId,
-    pub frequency: AutopilotFrequency,
-    pub length_sec: u32,
-    pub review: bool,
-    pub posting: Posting,
-    #[serde(default)]
-    pub social_account_ids: Vec<String>,
-    pub status: AutopilotStatus,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-/// What the UI sends to create (no id) or edit (with id) an autopilot.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutopilotInput {
-    #[serde(default)]
-    pub id: Option<String>,
-    pub name: String,
-    pub niche: String,
-    #[serde(default)]
-    pub niche_id: Option<String>,
-    pub language: VideoLanguage,
-    pub style_id: String,
-    #[serde(default)]
-    pub voice_id: Option<String>,
-    pub agent_id: AgentId,
-    pub frequency: AutopilotFrequency,
-    pub length_sec: u32,
-    pub review: bool,
-    pub posting: Posting,
-    #[serde(default)]
-    pub social_account_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum SlotStatus {
-    Planned,
-    Making,
-    Done,
-    Failed,
-    Skipped,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutopilotSlot {
-    pub id: String,
-    pub autopilot_id: String,
-    pub due_at: String,
-    pub status: SlotStatus,
-    pub project_id: Option<String>,
-    pub error: Option<String>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
 
     #[test]
-    fn video_format_uses_ratio_literals() {
-        assert_eq!(serde_json::to_value(VideoFormat::Portrait).unwrap(), json!("9:16"));
-        let f: VideoFormat = serde_json::from_value(json!("16:9")).unwrap();
-        assert_eq!(f, VideoFormat::Landscape);
-    }
-
-    #[test]
     fn tool_id_and_job_kind_literals() {
         assert_eq!(serde_json::to_value(ToolId::FigmaMcp).unwrap(), json!("figma-mcp"));
-        assert_eq!(serde_json::to_value(JobKind::StudyStyle).unwrap(), json!("study-style"));
+        assert_eq!(serde_json::to_value(JobKind::Build).unwrap(), json!("build"));
         assert_eq!(serde_json::to_value(JobStatus::NeedsYou).unwrap(), json!("needs-you"));
-    }
-
-    #[test]
-    fn message_part_frame_round_trips() {
-        let v = json!({"type":"frame","projectId":"p1","frame":12,"timeSec":0.4,
-            "imagePath":"/x.png","marks":[{"x":0.5,"y":0.25}]});
-        let part: MessagePart = serde_json::from_value(v.clone()).unwrap();
-        assert!(matches!(&part, MessagePart::Frame { frame: 12, .. }));
-        assert_eq!(serde_json::to_value(&part).unwrap(), v);
     }
 
     #[test]
@@ -735,14 +399,6 @@ mod tests {
         let v = json!({"type":"a2ui-action","summary":"Picked: A","action":{"version":"v0.9"}});
         let part: MessagePart = serde_json::from_value(v.clone()).unwrap();
         assert!(matches!(&part, MessagePart::A2uiAction { summary, .. } if summary == "Picked: A"));
-        assert_eq!(serde_json::to_value(&part).unwrap(), v);
-    }
-
-    #[test]
-    fn message_part_style_mention_round_trips() {
-        let v = json!({"type":"style-mention","styleId":"builtin-atlas","name":"Atlas journey"});
-        let part: MessagePart = serde_json::from_value(v.clone()).unwrap();
-        assert!(matches!(&part, MessagePart::StyleMention { style_id, .. } if style_id == "builtin-atlas"));
         assert_eq!(serde_json::to_value(&part).unwrap(), v);
     }
 
@@ -784,51 +440,6 @@ mod tests {
         assert_eq!(serde_json::to_value(&p).unwrap(), t);
     }
 
-    #[test]
-    fn style_notes_are_partial_and_new_project_style_optional() {
-        let v = json!({"id":"s","name":"n","source":"builtin","sourceUrl":null,
-            "notes":{"camera":"slow push"},"prompt":"p","createdAt":"t"});
-        let s: Style = serde_json::from_value(v.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&s).unwrap(), v);
-        let np: NewProject = serde_json::from_value(
-            json!({"title":"t","kind":"promo","format":"1:1","language":"id"}),
-        )
-        .unwrap();
-        assert_eq!(np.style_id, None);
-    }
-
-    #[test]
-    fn autopilot_json_matches_the_typescript_shape() {
-        let a: AutopilotInput = serde_json::from_value(json!({
-            "name": "Kopi", "niche": "Coffee", "language": "id", "styleId": "s", "agentId": "claude",
-            "frequency": {"kind": "weekly", "days": [1, 3], "time": "08:00"},
-            "lengthSec": 30, "review": true, "posting": "manual"
-        }))
-        .unwrap();
-        assert_eq!(a.id, None);
-        assert_eq!(a.frequency, AutopilotFrequency::Weekly { days: vec![1, 3], time: "08:00".into() });
-        let daily = serde_json::to_value(AutopilotFrequency::Daily { times: vec!["09:00".into()] }).unwrap();
-        assert_eq!(daily, json!({"kind": "daily", "times": ["09:00"]}));
-        let slot = AutopilotSlot {
-            id: "i".into(),
-            autopilot_id: "a".into(),
-            due_at: "2026-11-05T09:00:00Z".into(),
-            status: SlotStatus::Making,
-            project_id: None,
-            error: None,
-        };
-        assert_eq!(
-            serde_json::to_value(slot).unwrap(),
-            json!({"id": "i", "autopilotId": "a", "dueAt": "2026-11-05T09:00:00Z", "status": "making", "projectId": null, "error": null})
-        );
-        assert!(serde_json::from_value::<AutopilotInput>(json!({"posting": "automatic"})).is_err());
-        // An agent id Buma doesn't know never gets past parsing.
-        let bad = json!({
-            "name": "K", "niche": "C", "language": "id", "styleId": "s", "agentId": "nonsense",
-            "frequency": {"kind": "daily", "times": ["09:00"]}, "lengthSec": 30, "review": true, "posting": "manual"
-        });
-        assert!(serde_json::from_value::<AutopilotInput>(bad).is_err());
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -964,86 +575,4 @@ pub struct AuthStart {
     pub verification_uri: String,
     pub verification_uri_complete: String,
     pub expires_in: u64,
-}
-
-// ---- paid plans (shared `CheckoutResponse`, `BillingStatus`) ----
-
-/// `billing_checkout()`: the QRIS payment to finish in the browser.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Checkout {
-    pub order_id: String,
-    /// `GET /pay/<orderId>` on the API, which redirects to the provider: the only link opened.
-    #[serde(default)]
-    pub pay_url: String,
-    pub payment_link_url: String,
-    pub expires_at: String,
-    pub amount: u64,
-}
-
-/// What `billing_checkout()` started: a QRIS page, or (while payments are off and the owner sells
-/// over WhatsApp) a WhatsApp chat to buy the plan. Tagged by `kind`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind")]
-pub enum CheckoutStart {
-    #[serde(rename = "qris")]
-    Qris(Checkout),
-    #[serde(rename = "whatsapp")]
-    Whatsapp { url: String },
-}
-
-/// A started payment that hasn't been paid or run out yet.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PendingPayment {
-    pub order_id: String,
-    pub plan: String,
-    /// `GET /pay/<orderId>` on the API.
-    #[serde(default)]
-    pub pay_url: String,
-    pub payment_link_url: String,
-    pub expires_at: String,
-}
-
-/// `billing_status()`: the plan now, the last paid plan, until when, whether it still runs, and a payment in progress.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BillingStatus {
-    /// The plan now: `free` once a period ran out.
-    pub plan: String,
-    /// The plan last paid for, also after it ran out.
-    #[serde(default)]
-    pub last_plan: Option<String>,
-    pub current_period_end: Option<String>,
-    pub active: bool,
-    pub pending: Option<PendingPayment>,
-    /// The order of the last completed payment (how the app knows its own payment arrived).
-    #[serde(default)]
-    pub last_paid_order_id: Option<String>,
-}
-
-/// Why a billing command failed; the command rejects with `billing:<code>` (kebab-case, `bad_link` as named).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum BillingError {
-    /// No sign-in on this computer, or the API no longer accepts it.
-    SignedOut,
-    /// Not a plan that is for sale.
-    InvalidPlan,
-    /// The API couldn't be reached.
-    Network,
-    /// The API answered something unexpected.
-    Server,
-    /// The payment provider (SumoPod) failed.
-    PaymentProvider,
-    /// Payments aren't open (yet) on this API (`BILLING_MODE`).
-    Unavailable,
-    /// Too many checkouts in a short while.
-    RateLimited,
-    /// The payment link isn't a SumoPod page, so it isn't opened.
-    #[serde(rename = "bad_link")]
-    BadLink,
-    /// A lower plan while a higher one runs (the API's 409).
-    #[serde(rename = "downgrade_not_allowed")]
-    DowngradeNotAllowed,
 }

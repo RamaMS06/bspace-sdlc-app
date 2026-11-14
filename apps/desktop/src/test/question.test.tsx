@@ -55,10 +55,10 @@ describe('reading a question', () => {
     expect(mixed[1]!.choices.map((c) => c.label)).toEqual(['Indonesia', 'English']);
     expect(answered(mixed, {})).toBe(false);
     expect(answered(mixed, { name: '  ' })).toBe(false);
-    const a = { name: ' Oyen ', secs: '30', tags: ['a', 'b'], lang: 'en' };
+    const a = { name: ' Budi ', secs: '30', tags: ['a', 'b'], lang: 'en' };
     expect(answered(mixed, a)).toBe(true);
-    expect(answerContent(mixed, a)).toEqual({ tags: ['a', 'b'], lang: 'en', name: 'Oyen', secs: 30 });
-    expect(answerSummary(mixed, a)).toBe('A, B · English · Oyen · 30');
+    expect(answerContent(mixed, a)).toEqual({ tags: ['a', 'b'], lang: 'en', name: 'Budi', secs: 30 });
+    expect(answerSummary(mixed, a)).toBe('A, B · English · Budi · 30');
   });
 });
 
@@ -100,7 +100,7 @@ describe('QuestionCard', () => {
     );
     const send = screen.getByRole('button', { name: 'Send' });
     expect(send).toBeDisabled();
-    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'Oyen');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'Budi');
     expect(send).toBeEnabled();
   });
 

@@ -7,38 +7,24 @@ vi.mock('@/lib/ipc', () => ({
   updateSettings: vi.fn(),
   systemLocale: vi.fn(),
   listProjects: vi.fn().mockResolvedValue([]),
-  listAutopilots: vi.fn().mockResolvedValue([]),
-  listSlots: vi.fn().mockResolvedValue([]),
-  listStyles: vi.fn().mockResolvedValue([]),
-  listNiches: vi.fn().mockResolvedValue([]),
-  listVoices: vi.fn().mockResolvedValue([]),
   detectAgents: vi.fn().mockResolvedValue([]),
   listRecentChats: vi.fn().mockResolvedValue([]),
   listArchivedChats: vi.fn().mockResolvedValue([]),
   setThreadArchived: vi.fn().mockResolvedValue(undefined),
   purgeArchive: vi.fn().mockResolvedValue({ chats: 0, cards: 0 }),
   setJobsArchived: vi.fn().mockResolvedValue(undefined),
-  syncStyles: vi.fn().mockResolvedValue({ styles: [], offline: false }),
 }));
 vi.mock('@/lib/events', () => ({
   onQuestion: vi.fn(async () => () => {}),
-  onAgentAction: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(), onPermission: vi.fn() }));
-vi.mock('@/lib/buildJobs', () => ({ recheckDoneBuildJobs: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('@/lib/projectStatus', () => ({ backfillProjectStatus: vi.fn().mockResolvedValue(undefined) }));
+  onAgentUpdate: vi.fn(), onPermission: vi.fn() }));
 
-import { getSettings, syncStyles, systemLocale, updateSettings } from '@/lib/ipc';
+import { getSettings, systemLocale, updateSettings } from '@/lib/ipc';
 import App from '@/App';
-import { recheckDoneBuildJobs } from '@/lib/buildJobs';
-import { backfillProjectStatus } from '@/lib/projectStatus';
 import { useApp } from '@/state/app';
 
 const base: Settings = {
   workingFolder: '/tmp/Buma',
   defaultAgent: 'claude',
-  frameCheck: true,
-  language: 'id',
-  format: '9:16',
-  fps: 30,
   onboarded: false,
   apiUrl: 'https://bspace.buma.internal/api',
   installId: '',
@@ -48,8 +34,6 @@ const base: Settings = {
   uiLanguage: null,
   backgroundMode: false,
   openAtLogin: false,
-  buildJobsChecked: true,
-  projectStatusChecked: true,
   agentModels: {},
 };
 
@@ -68,23 +52,6 @@ describe('App start', () => {
     expect(await screen.findByText('What are we building?', { selector: 'h1' })).toBeInTheDocument();
     expect(useApp.getState().route.name).toBe('chat-new');
   });
-
-  it('once onboarded, starts the one-time check of old done build jobs with the saved flag', async () => {
-    vi.mocked(recheckDoneBuildJobs).mockClear();
-    vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true, buildJobsChecked: false });
-    render(<App />);
-    await screen.findByText('What are we building?', { selector: 'h1' });
-    expect(recheckDoneBuildJobs).toHaveBeenCalledWith(false);
-  });
-
-  it('once onboarded, starts the one-time project status backfill with the saved flag', async () => {
-    vi.mocked(backfillProjectStatus).mockClear();
-    vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true, projectStatusChecked: false });
-    render(<App />);
-    await screen.findByText('What are we building?', { selector: 'h1' });
-    expect(backfillProjectStatus).toHaveBeenCalledWith(false);
-  });
-
 });
 
 describe('App interface language', () => {
@@ -142,18 +109,6 @@ describe('App interface language', () => {
     expect(await screen.findByRole('button', { name: 'Get started' })).toBeInTheDocument();
     expect(updateSettings).not.toHaveBeenCalled();
     vi.restoreAllMocks();
-  });
-});
-
-describe('App built-in styles', () => {
-  it('syncs the styles in the background at startup, and a failed sync changes nothing', async () => {
-    useApp.setState({ route: { name: 'welcome' }, settings: null });
-    vi.mocked(syncStyles).mockClear().mockRejectedValueOnce(new Error('offline'));
-    vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true });
-    render(<App />);
-    expect(await screen.findByText('What are we building?', { selector: 'h1' })).toBeInTheDocument();
-    expect(syncStyles).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   });
 });
 

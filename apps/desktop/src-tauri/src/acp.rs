@@ -296,7 +296,7 @@ pub struct UsageLog {
     pub path: PathBuf,
     /// The agent's key, such as `claude`.
     pub agent: String,
-    /// What the chat is for: `project`, `chat`, `setup`, `study` or `autopilot`.
+    /// What the chat is for: `project`, `chat` or `setup`.
     pub kind: String,
 }
 

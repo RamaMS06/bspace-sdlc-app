@@ -24,7 +24,7 @@ export function NewFeatureDialog({ open, onOpenChange }: { open: boolean; onOpen
     setBusy(true);
     setError(null);
     try {
-      const project = await createFeature(title, settings);
+      const project = await createFeature(title);
       onOpenChange(false);
       setName('');
       await runStage(project, 0, settings.defaultAgent, t('workflow.startAsk', { title }));

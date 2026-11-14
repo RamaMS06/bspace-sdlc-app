@@ -1,4 +1,4 @@
-import type { AgentId, MessagePart, Project, Settings } from '@bspace-sdlc-app/shared';
+import type { AgentId, MessagePart, Project } from '@bspace-sdlc-app/shared';
 import { BUILTIN_SKILLS, buildProjectBrief } from '@bspace-sdlc-app/skills';
 import { SDLC_STAGES } from '@/components/SdlcWorkflow';
 import { track } from '@/lib/analytics';
@@ -6,29 +6,10 @@ import { createChat, createProject, listChats } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { useChat } from '@/state/chat';
 
-/**
- * A feature is a project: its own folder (where the skills write intent/, sdlc/, specs/) and its chat.
- * The project's video fields are filled with neutral values; the SDLC app doesn't use them.
- */
-export async function createFeature(title: string, settings: Pick<Settings, 'format' | 'language' | 'fps' | 'frameCheck'>): Promise<Project> {
-  const input = { title: title.trim(), kind: 'explainer' as const, format: settings.format, language: settings.language };
-  const draft = {
-    ...input,
-    id: '',
-    slug: '',
-    folder: '',
-    status: 'draft' as const,
-    styleId: null,
-    scheduledAt: null,
-    reviewState: 'none' as const,
-    postedAt: null,
-    remindedAt: null,
-    reviewRemindedAt: null,
-    durationSec: null,
-    createdAt: '',
-    updatedAt: '',
-  } satisfies Project;
-  const project = await createProject(input, buildProjectBrief(draft));
+/** A feature is a project: its own folder (where the skills write intent/, sdlc/, specs/) and its chat. */
+export async function createFeature(title: string): Promise<Project> {
+  const name = title.trim();
+  const project = await createProject({ title: name }, buildProjectBrief({ title: name, folder: '' }));
   useApp.getState().bumpProjects();
   track('feature created', {});
   return project;

@@ -6,15 +6,12 @@ pub mod ai_proxy;
 pub mod api_engine;
 pub mod auth;
 pub mod claude_account;
-pub mod billing;
 pub mod cloud;
 pub mod commands;
 pub mod db;
-pub mod device;
 pub mod plugins;
 pub mod devops;
 pub mod files;
-pub mod media;
 pub mod projects;
 pub mod scheduler;
 pub mod skills;
@@ -25,7 +22,6 @@ pub mod telemetry;
 pub mod types;
 pub mod trace;
 pub mod usage;
-pub mod voice;
 
 use commands::AppState;
 use tauri::Manager;
@@ -61,8 +57,6 @@ pub fn run() {
             let settings = db.get_settings(&home);
             let working = settings.working_folder.clone();
             commands::allow_asset_folders(app.handle(), &db, &working);
-            commands::allow_style_media(app.handle());
-            media::sweep_study_dirs(std::path::Path::new(&working));
             app.manage(usage::UsageCache::default());
             app.manage(commands::ClaudeSignIn::default());
             app.manage(commands::ApiKeys::new(&data));
@@ -71,9 +65,7 @@ pub fn run() {
             app.manage(AppState {
                 db,
                 acp: acp::AcpManager::new(),
-                media: media::MediaTools::from_env_or_path(),
                 home,
-                study_working: Default::default(),
             });
             // Signed in? Checked against the API in the background; the UI listens for the answer.
             let auth = commands::auth_manager(app.handle(), &data)?;
@@ -92,8 +84,7 @@ pub fn run() {
                     let _ = w.hide();
                 }
             }
-            scheduler::start_ticker(app.handle());
-            // The agents' AI images and voice, paid with the user's credits (see ai_proxy).
+            // The agents' AI images, paid with the user's credits (see ai_proxy).
             tauri::async_runtime::spawn(commands::start_ai_proxy(app.handle().clone()));
             // Anonymous install ping, in the background; never blocks the UI, failures are ignored.
             let handle = app.handle().clone();
@@ -126,10 +117,6 @@ pub fn run() {
             commands::skill_github_fetch,
             commands::skill_github_install,
             commands::skill_github_discard,
-            commands::voice_status,
-            commands::voice_key_save,
-            commands::voice_key_clear,
-            commands::voice_studio_check,
             commands::api_status,
             commands::api_check,
             commands::api_try,
@@ -153,32 +140,15 @@ pub fn run() {
             commands::create_project,
             commands::update_project,
             commands::set_project_status,
-            commands::set_schedule,
-            commands::set_posted,
-            commands::approve_project,
-            commands::list_autopilots,
-            commands::list_niches,
-            commands::list_voices,
-            commands::save_autopilot,
-            commands::delete_autopilot,
-            commands::set_autopilot_status,
-            commands::list_slots,
-            commands::upsert_slot,
-            commands::update_slot,
             commands::list_chats,
             commands::project_files,
             commands::find_project_files,
             commands::read_project_file,
+            commands::open_project_folder,
             commands::set_agent_model,
             commands::agent_models,
             commands::api_url_override,
             commands::cloud_usage,
-            commands::social_accounts,
-            commands::social_connect,
-            commands::social_disconnect,
-            commands::social_post,
-            commands::social_post_status,
-            commands::redeem_gift_code,
             commands::list_recent_chats,
             commands::list_archived_chats,
             commands::set_thread_archived,
@@ -188,16 +158,6 @@ pub fn run() {
             commands::update_chat_agent,
             commands::list_messages,
             commands::add_message,
-            commands::list_styles,
-            commands::save_style,
-            commands::delete_style,
-            commands::read_style_result,
-            commands::study_dir,
-            commands::remove_study_dir,
-            commands::make_style_preview,
-            commands::make_style_sheets,
-            commands::keep_style_refs,
-            commands::copy_style_refs,
             commands::list_jobs,
             commands::upsert_job,
             commands::delete_job,
@@ -214,17 +174,6 @@ pub fn run() {
             commands::agent_stop,
             commands::agent_respond_permission,
             commands::agent_respond_question,
-            commands::media_latest_render,
-            commands::latest_render_info,
-            commands::show_video_in_folder,
-            commands::newest_video_info,
-            commands::video_thumbnail,
-            commands::recent_images,
-            commands::schedule_videos,
-            commands::media_probe,
-            commands::media_extract_frame,
-            commands::media_thumbnails,
-            commands::media_render,
             commands::get_agent_usage,
             commands::agent_activity,
             commands::agent_model_catalog,
@@ -238,17 +187,10 @@ pub fn run() {
             commands::account_sign_in,
             commands::agent_failover_record,
             commands::get_chat_trace,
-            commands::sync_styles,
-            commands::install_style_template,
-            commands::render_command,
-            commands::write_brief,
             commands::auth_start,
             commands::auth_cancel,
             commands::auth_status,
             commands::auth_logout,
-            commands::billing_checkout,
-            commands::billing_open,
-            commands::billing_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building BSpace SDLC");
