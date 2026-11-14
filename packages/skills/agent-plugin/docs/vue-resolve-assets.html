@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>vue-resolve-assets — bspace-sdlc-skills</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/doc.css">
+<script src="assets/doc.js" defer></script>
+</head>
+<body data-page="vue-resolve-assets"><div class="wrap">
+<div class="topbar"><a class="brand" href="index.html">bspace <span>sdlc</span> skills</a><span class="note">v1.0.7</span><div class="langswitch" aria-label="Language"><button type="button" data-lang="id" aria-pressed="true">ID</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div></div>
+<nav class="pages"><a href="index.html">Overview</a><span class="navgroup">Router</span><a href="using-bspace-sdlc.html">using-bspace-sdlc</a><span class="navgroup">Dokumen</span><a href="blueprint-ftsd.html">blueprint-ftsd</a><span class="navgroup">Flutter</span><a href="flutter-slice-screen.html">flutter-slice-screen</a><a href="flutter-match-component.html">flutter-match-component</a><a href="flutter-resolve-assets.html">flutter-resolve-assets</a><a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a><a href="flutter-run-verify.html">flutter-run-verify</a><span class="navgroup">Vue</span><a href="vue-slice-screen.html">vue-slice-screen</a><a href="vue-resolve-assets.html" aria-current="page">vue-resolve-assets</a><span class="navgroup">Eksekusi</span><a href="subagent-driven-development.html">subagent-driven-development</a></nav>
+  <span class="navgroup">Wireframe</span><a href="wireframe-lofi.html">wireframe-lofi</a>
+  <span class="navgroup">Design</span><a href="figma-generate-screen.html">figma-generate-screen</a>
+<h1><em>vue</em>-resolve-assets</h1>
+<p class="lede">Menyelesaikan image dan illustration non-icon dari Figma menjadi asset yang benar-benar shipped Vue. Dipanggil standalone atau dari langkah 12 <a href="vue-slice-screen.html">vue-slice-screen</a>. Tidak berlaku untuk icon kecil yang punya prop/slot UI kit.</p>
+<div class="layer"><div class="layer-head"><span class="tag">Route contract</span><span class="note">CALLED BY VUE SLICE · DIRECT REPAIR</span></div><div class="layer-body"><div class="tablewrap"><table class="compact"><tr><th>Bagian</th><th>As-is</th></tr><tr><td>Trigger</td><td><code>vue-slice-screen</code> menemukan image/illustration non-icon; user melihat asset missing atau salah format/path.</td></tr><tr><td>Prasyarat</td><td>Figma node type/fill, target Vue app, <code>src/assets/</code> convention, dan <code>plan.md</code> bila dipanggil dari slice.</td></tr><tr><td>Memanggil</td><td>Tidak memanggil skill lain; memakai <code>download_assets</code>. Icon kecil kembali ke component resolution.</td></tr><tr><td>Output</td><td>Reused/exported file valid, inline import, <code>AS-XX</code>, atau explicit gap tanpa placeholder.</td></tr><tr><td>Next</td><td>Kembali ke Vue section; validator + visual verify. Export gagal dua kali → gap, bukan fake box.</td></tr></table></div></div></div>
+<div class="layer"><div class="layer-head"><span class="tag">Scope</span><span class="note">AS-XX · src/assets · no placeholder</span></div><div class="layer-body"><ul><li><b>Masuk:</b> raster image (photo/banner/avatar) atau illustration vector (multi-color graphic, scene, logo mark).</li><li><b>Keluar:</b> asset reused/exported yang tervalidasi, di-import inline, dan satu row <code>AS-XX</code>; atau gap eksplisit.</li><li><b>Keluar dari skill:</b> icon single-tone ≤32px yang mengisi prop/slot icon B<Name>; itu keputusan <code>CM-XX</code>.</li></ul></div></div>
+<h2>Alur</h2><pre>
+node type/fill → icon prop/slot?
+       │ ya ─► component resolution, bukan asset
+       │ tidak
+       ▼
+search src/assets/ reuse?
+       │ ya ─► reference file existing
+       │ tidak
+       ▼
+image fill ─► rawImages     vector/boolean ─► svgAssets
+       │                              │
+       └──────── download_assets ─────┘
+                         ▼
+              validate bytes/content on disk
+                         │ valid ─► import + AS-XX
+                         │ gagal 2× ─► gap + TODO(asset-gap)
+</pre>
+<h2>Langkah</h2>
+<div class="step"><h3><span class="n">1</span>Pastikan scope</h3><p>Cek apakah vector adalah icon kecil yang seharusnya masuk <code>icon="..."</code> atau slot prefix. Jika ya, jangan export. Jika bentuk, warna, dan isi adalah bagian khusus screen, perlakukan sebagai illustration.</p></div>
+<div class="step"><h3><span class="n">2</span>Pilih format dari node</h3><p>Baca fill/type dari <code>get_metadata</code>. Image fill → <code>rawImages</code>; vector paths/boolean group → <code>svgAssets</code>. Jangan menebak dari nama layer, atau menukar vector menjadi raster.</p></div>
+<div class="step"><h3><span class="n">3</span>Reuse dan tujuan</h3><p>Cari nama atau visual match di <code>src/assets/</code> serta subfolder yang sudah ada. Vue tidak punya asset-constants manifest; filesystem itu source of truth. Tujuan legal <code>src/assets/&lt;category&gt;/</code> atau ekuivalen layout repo. Jika kategori belum ada, buat folder feature/domain; tidak perlu registrasi manifest Vite.</p><p>Jangan tinggalkan file di root, <code>src/</code>, <code>specs/</code>, cwd, atau folder sementara. Sweep stray <code>*.svg</code>/<code>*.png</code>/<code>*.jpg</code> sebelum selesai.</p></div>
+<div class="step"><h3><span class="n">4</span>Download dan validasi</h3><p>URL <code>download_assets</code> temporary. Setelah setiap download, cek file:</p><ul><li>SVG dimulai <code>&lt;svg</code>/<code>&lt;?xml</code> dan punya drawing element (<code>&lt;path</code>, <code>&lt;rect</code>, <code>&lt;g</code>, <code>&lt;image</code>).</li><li>PNG/JPG punya magic bytes sesuai extension, bukan HTML/ASCII/empty; ukuran masuk akal terhadap dimensi node.</li><li>Gagal → hapus file, download ulang sekali. Gagal lagi → gap <code>AS-XX</code>, jangan tinggalkan file buruk.</li></ul></div>
+<div class="step"><h3><span class="n">5</span>Import traceable</h3><p>Ikuti convention screen existing: import bundler atau plain static path. Contoh:</p><pre>import heroImage from '@/assets/&lt;category&gt;/hero-banner.svg';
+&lt;img :src="heroImage" alt="Hero banner" /&gt;</pre><p>Nama file kebab-case dan binding camelCase mengikuti nama layer Figma. Jangan buat fixture atau asset-constants module.</p></div>
+<div class="step"><h3><span class="n">6</span>Fit, position, accessibility</h3><p>Match size/position metadata: <code>object-fit: cover|contain</code>, <code>width: 100%</code>, atau <code>position: absolute</code> + inset untuk edge anchor; parent harus <code>position: relative</code>. Setiap <code>&lt;img&gt;</code> punya <code>alt</code>; dekorasi memakai <code>alt=""</code> dan dicatat di AS/Coverage.</p></div>
+<div class="step"><h3><span class="n">7</span>Gap dan self-check</h3><p>Jika tidak ada reuse atau export gagal dua kali, jangan render solid <code>&lt;div&gt;</code> sebagai pengganti. Tulis row <code>AS-XX</code> gap dengan alasan, dan maksimal comment <code>&lt;!-- TODO(asset-gap): AS-XX --&gt;</code> di site. Untuk setiap non-gap: file ada di <code>src/assets/&lt;category&gt;/</code>, content check lulus, dan import/path muncul di .vue yang mengerjakan row.</p></div>
+<footer>Sumber: <code>skills/vue-resolve-assets/SKILL.md</code> dan <code>vue-slice-screen/references/output-contract.md</code>.</footer>
+</div></body></html>

@@ -1,0 +1,117 @@
+# Draft from FTSD SCR-xx field tables. BE owns this file after the draft; FE mocks it (e.g. `npx @stoplight/prism-cli mock openapi.yaml`).
+# Mapping: Field → property · Type(Len) → type + maxLength · M → required · Sample → example ·
+#          BR-xx → 400/422 · AR-xx → 403/409 · Draft/Submit/Approve → action endpoints · Source/Logic → comment only (BE concern).
+openapi: 3.0.3
+info:
+  title: <Project> API
+  version: 0.01.0
+  description: "Based-on: ftsd@<F1 hash>"
+servers:
+  - url: https://<host>/api/v1
+security:
+  - bearer: []
+paths:
+  /<resources>:
+    get:
+      x-id: API-01
+      x-scr: [SCR-01, US-01]
+      summary: List <resources> the user may see (AR-01)
+      parameters:
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/Status'}}
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/<Resource>'}}
+                  total: {type: integer}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      x-id: API-02
+      x-scr: [SCR-02, US-02]
+      summary: Save draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/<Resource>Input'}
+      responses:
+        '201':
+          description: Created as DRAFT
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/<Resource>'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /<resources>/{id}/submit:
+    post:
+      x-id: API-03
+      x-scr: [SCR-02, US-02]
+      summary: Submit for approval (DRAFT|NEED_REVISE → WAITING_APPROVAL)
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '200': {description: OK}
+        '409': {description: Wrong status for this action}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /<resources>/{id}/approval:
+    post:
+      x-id: API-04
+      x-scr: [SCR-03, US-03]
+      summary: Approve, revise or reject (active approver only)
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: {type: string, enum: [APPROVE, REVISE, REJECT]}
+                remark: {type: string, maxLength: 500, description: "Required for REVISE and REJECT (BR-xx)"}
+      responses:
+        '200': {description: OK}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {description: Not WAITING_APPROVAL, or not the active approval level}
+components:
+  securitySchemes:
+    bearer: {type: http, scheme: bearer}
+  parameters:
+    Id: {name: id, in: path, required: true, schema: {type: string}}
+  schemas:
+    Status:
+      type: string
+      enum: [DRAFT, IN_PROGRESS, WAITING_APPROVAL, NEED_REVISE, REJECTED, COMPLETED]
+    <Resource>Input:
+      type: object
+      required: [<field>]           # M/O/C = M
+      properties:
+        <field>:                     # SCR-02 field 1; Source: SRC-01 <view/table> (BE only)
+          type: string
+          maxLength: 50              # Type (Length)
+          example: <sample>          # Sample
+          description: <description>
+    <Resource>:
+      allOf:
+        - $ref: '#/components/schemas/<Resource>Input'
+        - type: object
+          properties:
+            id: {type: string}
+            status: {$ref: '#/components/schemas/Status'}
+    Error:
+      type: object
+      properties:
+        code: {type: string, example: BR-01}
+        message: {type: string, description: FTSD "Error message" column}
+        field: {type: string}
+  responses:
+    Invalid:
+      description: Validation failed (BR-xx)
+      content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Error'}}}}
+    Forbidden:
+      description: Authorization rule failed (AR-xx)
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}

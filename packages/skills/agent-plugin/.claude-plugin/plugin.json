@@ -1,0 +1,8 @@
+{
+  "name": "bspace-sdlc-skills",
+  "description": "BUMA SDLC workflows: Figma design-to-code slicing for Flutter and Vue, runner verification and subagent-driven execution.",
+  "version": "1.0.8",
+  "author": {
+    "name": "BUMA"
+  }
+}

@@ -1,0 +1,85 @@
+@import "@buma-dev/styles/src/assets/scss/config";
+@import "@buma-dev/styles/src/assets/scss/utils";
+
+.button {
+  @include typography(format, body);
+  display: flex;
+  line-height: unset;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: fit-content;
+  border: none;
+
+  /* !SECTION */
+
+  /* SECTION Button regular */
+  &--primary {
+    background-color: transparent;
+    color: color(primary, 500);
+    &:hover {
+      cursor: pointer;
+      color: color(primary, 600);
+      span {
+        @include typography(format, link);
+        text-decoration: underline;
+        // font-weight: 600;
+      }
+    }
+    &:active {
+      color: color(tertiary, 500);
+    }
+  }
+
+  &--secondary {
+    color: color(tertiary, 500);
+    background-color: transparent;
+    &:hover {
+      cursor: pointer;
+      color: color(tertiary, 600);
+      span {
+        @include typography(format, link);
+        text-decoration: underline;
+      }
+    }
+    &:active {
+      color: color(tertiary, 600);
+    }
+
+    &-dark {
+      color: color(text, dark);
+      background-color: transparent;
+      &:hover {
+        cursor: pointer;
+        color: color(text, dark);
+        span {
+          @include typography(format, link);
+          text-decoration: underline;
+        }
+      }
+      &:active {
+        color: color(text, lightdark);
+      }
+    }
+    &-white {
+      color: color(text, white);
+      background-color: transparent;
+      &:hover {
+        cursor: pointer;
+        color: color(text, white);
+        span {
+          @include typography(format, link);
+          text-decoration: underline;
+        }
+      }
+      &:active {
+        color: color(text, light);
+      }
+    }
+  }
+
+  &--disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+}

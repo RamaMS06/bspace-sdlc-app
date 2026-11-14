@@ -1,0 +1,20 @@
+feature: <feature-name>
+status: raw
+intake_file: intake.md
+created: <YYYY-MM-DD>
+updated: <YYYY-MM-DD>
+owner: <name / role>
+
+sources:
+  - id: SRC-01
+    name: <filename or short title>
+    path: sources/<filename>
+    type: brief
+    owner: <person / team>
+    received: <YYYY-MM-DD>
+    status: raw
+    topics: [problem, users, scope]
+    note: <optional conflict or handling note>
+
+# Allowed source status: raw | reviewed | superseded
+# Keep original files in sources/ unchanged. Use links when a file cannot be archived.

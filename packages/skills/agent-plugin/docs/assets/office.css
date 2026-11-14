@@ -1,0 +1,63 @@
+/* BUMA DS foundation colours — Figma "Mode 1.tokens.json". Single source for panels and the 3D scene. */
+:root{
+ --primary-50:#E9FFF1;--primary-100:#D5FADD;--primary-200:#9CDDB7;--primary-300:#6BCB94;--primary-400:#39BA70;--primary-500:#08A94C;--primary-600:#06873D;
+ --secondary-50:#FEF5E8;--secondary-100:#FEEAD2;--secondary-200:#FCD6A5;--secondary-300:#FBC177;--secondary-400:#F9AD4A;--secondary-500:#F8981D;--secondary-600:#C67A17;
+ --neutral-0:#FFFFFF;--neutral-100:#F5F8FA;--neutral-200:#E8ECF5;--neutral-300:#D2DFE8;--neutral-400:#B2BFC8;--neutral-500:#7E93A8;--neutral-600:#333F47;--neutral-700:#1A2730;--neutral-800:#000F19;
+ --success-50:#E9FFF1;--success-100:#D5FADD;--success-400:#39BA70;--success-500:#08A94C;--success-600:#06873D;
+ --warning-50:#FFFBE6;--warning-100:#FEF6CD;--warning-400:#FDDC37;--warning-500:#FCD305;--warning-600:#CAA904;
+ --info-50:#E6F2FC;--info-100:#CDE5F8;--info-400:#3696E4;--info-500:#047CDD;--info-600:#0363B1;
+ --danger-50:#FBEAE9;--danger-100:#F7D4D4;--danger-400:#DE5451;--danger-500:#D62926;--danger-600:#AB211E;
+ --grey-100:#E5E9EE;--grey-150:#D8DFE5;--grey-700:#4C5865;--grey-800:#323B43;--grey-850:#262C32;
+ /* semantic, dark office */
+ --bg:var(--neutral-800);--surface:var(--neutral-700);--sunken:var(--grey-850);--line:var(--neutral-600);--ink:var(--neutral-100);--muted:var(--neutral-500);
+ --accent:var(--info-400);--ok:var(--success-400);--warn:var(--warning-500);--bad:var(--danger-400);
+ /* soft = the status token at low alpha (DS has light tints only) */
+ --accent-soft:rgba(54,150,228,.16);--ok-soft:rgba(57,186,112,.16);--warn-soft:rgba(252,211,5,.14);--bad-soft:rgba(222,84,81,.18);
+ /* sprite; skin is the only colour outside the DS */
+ --hair:var(--grey-800);--body:var(--grey-700);--body-2:var(--neutral-600);--skin:#E8C9A8;
+ --font:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--font)}
+.wrap{max-width:1280px;margin:0 auto;padding:24px;display:grid;grid-template-columns:1fr 360px;gap:16px}
+header{grid-column:1/-1;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+header h1{font-size:20px;font-weight:600;margin:0}
+header .tag{color:var(--muted);font-size:13px;margin-right:auto}
+a{color:var(--muted)}
+.seg{display:inline-flex;background:var(--sunken);border:1px solid var(--line);border-radius:8px;padding:2px}
+.seg button,.btn{border:0;background:none;color:var(--muted);font:inherit;font-size:13px;padding:6px 12px;border-radius:6px;cursor:pointer}
+.seg button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.4)}
+.btn{background:var(--sunken);border:1px solid var(--line)}
+canvas{width:100%;display:block;border:1px solid var(--line);border-radius:12px;image-rendering:pixelated}
+.track{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.track span{padding:4px 10px;border-radius:999px;font-size:12.5px;border:1px solid var(--line);color:var(--muted)}
+.track .active{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+.track .done{color:var(--ok);border-color:transparent;background:var(--ok-soft)}
+.track .blocked{color:var(--bad);border-color:transparent;background:var(--bad-soft)}
+#needs{margin:12px 0 0;font-size:13px}
+#needs:not(:empty){padding:10px 12px;border-radius:8px;background:var(--bad-soft);color:var(--bad)}
+aside{display:flex;flex-direction:column;gap:16px}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+.box h2{font-size:12px;font-weight:600;margin:0 0 12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-weight:500;font-size:12px;color:var(--muted);padding:0 6px 6px 0;border-bottom:1px solid var(--line)}
+td{padding:6px 6px 6px 0;border-bottom:1px solid var(--line)}
+tr:last-child td{border:0}
+.badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:500;white-space:nowrap}
+.st-run{background:var(--accent-soft);color:var(--accent)}.st-done{background:var(--ok-soft);color:var(--ok)}
+.st-human{background:var(--warn-soft);color:var(--warn)}.st-needs{background:var(--bad-soft);color:var(--bad)}
+.bar{display:inline-block;width:48px;height:6px;border-radius:3px;background:var(--sunken);vertical-align:middle;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:3px}
+.num,time{font:12px var(--mono)}
+#log{height:240px;overflow:auto;margin:0;padding:0;list-style:none;font-size:12.5px;color:var(--muted)}
+#log li{padding:5px 0;border-bottom:1px solid var(--line)}
+#log time{margin-right:6px}
+#log b{color:var(--ink);font-weight:500}
+#log .e{color:var(--bad)}
+.iters{font-size:12.5px;color:var(--muted)}
+.iters div{margin:0 0 6px}
+.iters i{font:11.5px var(--mono);padding:1px 6px;border-radius:4px;margin:0 2px 2px 0;display:inline-block}
+.k-ok{background:var(--ok-soft);color:var(--ok)}.k-bad{background:var(--bad-soft);color:var(--bad)}
+.k-run{background:var(--accent-soft);color:var(--accent)}.k-info{background:var(--warn-soft);color:var(--warn)}
+.legend{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;font-size:13px;color:var(--muted)}
+.legend em{font-style:normal;color:var(--ink)}
+@media (max-width:960px){.wrap{grid-template-columns:1fr}}

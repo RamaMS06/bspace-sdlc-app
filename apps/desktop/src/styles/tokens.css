@@ -1,0 +1,314 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@fontsource/poppins/400.css';
+@import '@fontsource/poppins/500.css';
+@import '@fontsource/poppins/600.css';
+@import '@fontsource/poppins/700.css';
+@import '@fontsource/poppins/800.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import './buma-tokens.css';
+
+/* `dark:` applies inside .dark, except under a subtree forced light with .light. */
+@custom-variant dark (&:is(.dark *):not(.light, .light *));
+
+/* Colors come from the BUMA Design System (buma-tokens.css, generated from Figma). This file maps them
+   onto the app's semantic names (shadcn variables plus a few app extras). Components use only these names,
+   so a theme is just a different set of BUMA values: Light on :root, Dark on .dark. `.light` re-declares the
+   light layer on a subtree so it stays light inside a dark app. */
+
+:root,
+.light {
+  /* Surfaces */
+  --background: var(--buma-background-white);
+  --foreground: var(--buma-text-dark);
+  --card: var(--buma-background-white);
+  --card-foreground: var(--buma-text-dark);
+  --popover: var(--buma-background-white);
+  --popover-foreground: var(--buma-text-dark);
+  --sidebar: var(--buma-background-light);
+  --sidebar-foreground: var(--buma-text-light-dark);
+  --sidebar-border: var(--buma-stroke-light);
+  --panel: var(--buma-background-light); /* sunken panes: preview, file view, code blocks */
+  --ink: var(--buma-background-light); /* sunken cards; also the text on an inverted (foreground) chip */
+  --raised: color-mix(in srgb, var(--buma-background-light-dark) 16%, var(--buma-background-white)); /* hover, selected */
+
+  /* Brand: BUMA primary green */
+  --primary: var(--buma-background-success-500);
+  --primary-foreground: var(--buma-text-white);
+  --primary-hover: var(--buma-background-success-600);
+  --primary-text: var(--buma-text-success-600); /* accent text and links */
+  --primary-soft: var(--buma-background-success-100); /* selected / active fill */
+  --primary-border: color-mix(in srgb, var(--buma-stroke-success-500) 45%, transparent);
+  --brand-secondary: var(--buma-background-secondary-500); /* BUMA secondary orange */
+
+  /* Neutral roles */
+  --secondary: var(--raised);
+  --secondary-foreground: var(--buma-text-dark);
+  --muted: var(--raised);
+  --muted-foreground: var(--buma-text-light-dark);
+  --accent: var(--raised);
+  --accent-foreground: var(--buma-text-dark);
+  --buma-neutral-hint: #7e93a8; /* neutral/500 */
+  --text-2: var(--buma-text-light-dark);
+  /* Hints, placeholders and meta lines: dimmer than body text in dark mode and darker than before in
+     light mode, so they never read as the same as normal text. BUMA neutral/500 in both themes. */
+  --hint: var(--buma-neutral-hint);
+  --text-3: var(--hint);
+
+  /* Lines */
+  --border: var(--buma-stroke-light);
+  --input: var(--buma-stroke-button-secondary);
+  --hairline-strong: var(--buma-stroke-button-secondary);
+  --ring: var(--buma-stroke-success-500);
+
+  /* Status */
+  --destructive: var(--buma-background-error-500);
+  --error: var(--buma-text-error-500);
+  --error-soft: var(--buma-background-error-100);
+  --success: var(--buma-text-success-500);
+  --success-soft: var(--buma-background-success-100);
+  --warning: var(--buma-text-warning-600);
+  --warning-soft: var(--buma-background-warning-100);
+  --info: var(--buma-text-info-500);
+  --info-soft: var(--buma-background-info-100);
+  --secondary-soft: var(--buma-background-secondary-100);
+
+  --scrollbar: color-mix(in srgb, var(--buma-background-light-dark) 40%, transparent);
+  --radius: 0.5rem;
+  color-scheme: light;
+}
+
+/* BUMA's dark "100" status fills are near-white (primary/50 etc.), too bright for a dark surface, so the
+   soft fills there are a tint of the 500 tone instead. */
+.dark {
+  --primary-soft: color-mix(in srgb, var(--buma-background-success-500) 16%, transparent);
+  --error-soft: color-mix(in srgb, var(--buma-background-error-500) 16%, transparent);
+  --success-soft: color-mix(in srgb, var(--buma-background-success-500) 16%, transparent);
+  --warning-soft: color-mix(in srgb, var(--buma-background-warning-500) 16%, transparent);
+  --info-soft: color-mix(in srgb, var(--buma-background-info-500) 16%, transparent);
+  --secondary-soft: color-mix(in srgb, var(--buma-background-secondary-500) 16%, transparent);
+  --warning: var(--buma-text-warning-500);
+
+  /* Dark surfaces follow Claude Desktop's warm near-black instead of BUMA's blue-grey (#323B43): main
+     #262624, sidebar #1F1E1D, cards and inputs #30302E, lines in a 15% / 25% warm white. Set on the BUMA
+     variables, so BUMA components (buttons, chips, badges) and the app layer follow together. Text and
+     brand colors stay BUMA's. */
+  --buma-background-white: #262624;
+  --buma-background-light: #1f1e1d;
+  --buma-background-neutral-200: #30302e;
+  --buma-background-neutral-300: #3d3d3a;
+  --buma-background-dark: #faf9f5;
+  --buma-stroke-light: rgb(222 220 209 / 0.15);
+  --buma-stroke-button-secondary: rgb(222 220 209 / 0.25);
+  --buma-icon-white: #1f1e1d;
+  --buma-text-white: #1f1e1d;
+  --card: #30302e;
+  --popover: #30302e;
+  --raised: #3a3a37;
+  color-scheme: dark;
+}
+
+@theme inline {
+  /* BUMA spacing: gap-buma-xs, p-buma-md, px-buma-sm, m-buma-lg … (prefixed so max-w-md and the like keep Tailwind's own sizes). */
+  --spacing-buma-none: var(--buma-spacing-none);
+  --spacing-buma-2xs: var(--buma-spacing-2xs);
+  --spacing-buma-xs: var(--buma-spacing-xs);
+  --spacing-buma-sm: var(--buma-spacing-sm);
+  --spacing-buma-md: var(--buma-spacing-md);
+  --spacing-buma-lg: var(--buma-spacing-lg);
+  --spacing-buma-xl: var(--buma-spacing-xl);
+  --spacing-buma-2xl: var(--buma-spacing-2xl);
+  --spacing-buma-3xl: var(--buma-spacing-3xl);
+  --spacing-buma-4xl: var(--buma-spacing-4xl);
+  --spacing-buma-5xl: var(--buma-spacing-5xl);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-text: var(--primary-text);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-border: var(--primary-border);
+  --color-brand-secondary: var(--brand-secondary);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-error: var(--error);
+  --color-error-soft: var(--error-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-brand-secondary-soft: var(--secondary-soft);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-panel: var(--panel);
+  --color-ink: var(--ink);
+  --color-raised: var(--raised);
+  --color-hairline: var(--hairline-strong);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-hint: var(--hint);
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --font-sans: 'Poppins', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html, body, #root { height: 100%; }
+  body { @apply bg-background text-foreground font-sans antialiased; margin: 0; }
+}
+
+/* Working indicators: transform and opacity only. */
+@keyframes buma-indeterminate {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+
+@keyframes buma-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* A segment 35% of the track wide; 0 to 300% of its own width crosses the whole track. */
+.buma-indeterminate {
+  width: 35%;
+  animation: buma-indeterminate 1.4s linear infinite;
+}
+
+.buma-pulse {
+  animation: buma-pulse 1.2s ease-in-out infinite;
+}
+
+/* The welcome screen's floating Flutter / Vue / Figma marks. */
+@keyframes buma-float {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-10px) rotate(2deg); }
+}
+
+.buma-float {
+  animation: buma-float 4.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .buma-indeterminate,
+  .buma-pulse,
+  .buma-float {
+    animation: none;
+  }
+}
+
+/* Every scrollbar: thin, a quiet thumb on no track. The standard properties are what current WebKit
+   (macOS) and WebView2 (Windows) draw from; the ::-webkit-scrollbar rules only reach older webviews that
+   don't know them, since a browser that knows the standard ones ignores the rest. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: var(--scrollbar);
+}
+
+/* A scrollbar that only shows while the pointer is over the list (the sidebar's Recent). */
+.scrollbar-on-hover {
+  scrollbar-width: none;
+}
+.scrollbar-on-hover:hover,
+.scrollbar-on-hover:focus-within {
+  scrollbar-width: thin;
+}
+
+/* Scrolls like normal, shows no scrollbar (the chat's turn rail replaces it). */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* The workspace's code view: the app's mono font, line numbers in the gutter, Shiki's own background
+   off so the panel's shows through. Lines keep their spacing; long ones scroll sideways. */
+.code-view,
+.code-view pre {
+  margin: 0;
+  padding: 10px 0;
+  background: transparent !important;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  tab-size: 2;
+}
+.code-view pre {
+  padding: 0;
+  outline: none;
+}
+.code-view code {
+  counter-reset: line;
+  display: block;
+  min-width: max-content;
+}
+.code-view .line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 3.25em;
+  margin-right: 1.25em;
+  padding-right: 0.5em;
+  text-align: right;
+  color: var(--text-3);
+  user-select: none;
+}
+
+/* BUMA Loading (shared/ui/buma/Loading.tsx): tint the Lottie SVG with the loader's colors, like the
+   Vue BLoading, and the label's moving dots. */
+.b-loader__animation svg [fill]:not([fill='none']),
+.b-loader__animation svg *[style*='fill:'] {
+  fill: var(--b-loader-fill) !important;
+}
+.b-loader__animation svg [stroke]:not([stroke='none']),
+.b-loader__animation svg *[style*='stroke:'] {
+  stroke: var(--b-loader-stroke) !important;
+}
+.b-loader__dots::after {
+  content: '';
+  animation: b-loader-dots 2s infinite;
+}
+@keyframes b-loader-dots {
+  0% { content: ''; }
+  30% { content: '.'; }
+  60% { content: '..'; }
+  90% { content: '...'; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .b-loader__dots::after { animation: none; content: '...'; }
+}

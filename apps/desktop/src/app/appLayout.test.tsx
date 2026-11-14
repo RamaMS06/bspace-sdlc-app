@@ -1,0 +1,217 @@
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
+import type { Settings } from '@bspace-sdlc-app/shared';
+
+vi.mock('@/shared/lib/ipc', () => ({
+  getSettings: vi.fn(),
+  updateSettings: vi.fn(),
+  systemLocale: vi.fn(),
+  listProjects: vi.fn().mockResolvedValue([]),
+  listRecentChats: vi.fn().mockResolvedValue([]),
+  listArchivedChats: vi.fn().mockResolvedValue([]),
+  setThreadArchived: vi.fn().mockResolvedValue(undefined),
+  purgeArchive: vi.fn().mockResolvedValue({ chats: 0, cards: 0 }),
+  setJobsArchived: vi.fn().mockResolvedValue(undefined),
+  getAgentUsage: vi.fn().mockResolvedValue([]),
+  getChat: vi.fn().mockResolvedValue(null),
+  listMessages: vi.fn().mockResolvedValue([]),
+}));
+vi.mock('@/shared/lib/events', () => ({
+  onQuestion: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(), onPermission: vi.fn() }));
+
+import { getSettings } from '@/shared/lib/ipc';
+import App from '@/app/App';
+import { useApp } from '@/shared/state/app';
+import { SIDEBAR, layoutKey, useLayout } from '@/shared/state/layout';
+import { useUsage } from '@/features/usage/state/usage';
+
+const settings: Settings = {
+  workingFolder: '/tmp/Buma',
+  defaultAgent: 'claude',
+  onboarded: true,
+  apiUrl: 'https://bspace.buma.internal/api',
+  installId: '',
+  shareInstallStats: true,
+  autoMode: false,
+  lastPingAt: null,
+  uiLanguage: 'en',
+  backgroundMode: false,
+  openAtLogin: false,
+  agentModels: {},
+};
+
+async function renderApp() {
+  vi.mocked(getSettings).mockResolvedValue(settings);
+  render(<App />);
+  const handle = await screen.findByRole('separator', { name: 'Resize sidebar' });
+  return { handle, panel: document.getElementById('app-sidebar')! };
+}
+
+function drag(handle: HTMLElement, from: number, to: number) {
+  handle.setPointerCapture = () => {};
+  fireEvent.pointerDown(handle, { clientX: from, pointerId: 1, button: 0 });
+  fireEvent.pointerMove(handle, { clientX: to, pointerId: 1, buttons: 1 });
+  fireEvent.pointerUp(handle, { clientX: to, pointerId: 1 });
+}
+
+describe('App sidebar resizing', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    window.innerWidth = 1440;
+    useLayout.getState().hydrate();
+    useApp.setState({ route: { name: 'welcome' }, settings: null });
+  });
+
+  it('starts at the default width with the handle on its right edge', async () => {
+    const { handle, panel } = await renderApp();
+    expect(panel.style.width).toBe(`${SIDEBAR.default}px`);
+    expect(handle).toHaveAttribute('aria-valuenow', String(SIDEBAR.default));
+    expect(handle).toHaveAttribute('aria-valuemax', String(SIDEBAR.max));
+    expect(handle).toHaveAttribute('aria-controls', 'app-sidebar');
+  });
+
+  it('drags wider within its max, and saves the width', async () => {
+    const { handle, panel } = await renderApp();
+    drag(handle, 232, 300);
+    expect(panel.style.width).toBe('300px');
+    drag(handle, 300, 900);
+    expect(panel.style.width).toBe(`${SIDEBAR.max}px`);
+    expect(JSON.parse(localStorage.getItem(layoutKey())!)).toMatchObject({ sidebar: SIDEBAR.max, collapsed: false });
+  });
+
+  it('snaps to the icon rail below 140 px and comes back when dragged out', async () => {
+    const { handle, panel } = await renderApp();
+    drag(handle, 232, 180);
+    expect(panel.style.width).toBe(`${SIDEBAR.min}px`);
+    drag(handle, 200, 120);
+    expect(panel.style.width).toBe(`${SIDEBAR.rail}px`);
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    expect(nav).toHaveAttribute('data-collapsed', 'true');
+    // the rail: icons with names, no recent list, no wordmark
+    expect(within(nav).getByRole('link', { name: 'Workflow' })).toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: 'New' })).toBeInTheDocument();
+    expect(within(nav).queryByText('Recent')).toBeNull();
+    // usage lives in the status bar, not the rail
+    expect(within(nav).queryByRole('button', { name: 'Claude Code usage' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Claude Code usage' })).toBeInTheDocument();
+    // out again
+    drag(handle, 64, 260);
+    expect(panel.style.width).toBe('260px');
+    expect(nav).not.toHaveAttribute('data-collapsed');
+  });
+
+  it('the rail keeps the needs-you count in the link name and tooltip', async () => {
+    useApp.setState({ needsYouCount: 2 });
+    const { panel } = await renderApp();
+    act(() => useLayout.getState().setCollapsed(true));
+    expect(panel.style.width).toBe(`${SIDEBAR.rail}px`);
+    expect(screen.getByRole('link', { name: 'Workflow (2)' })).toBeInTheDocument();
+    useApp.setState({ needsYouCount: 0 });
+  });
+
+  it('⌘\\ on a Mac and Ctrl+\\ elsewhere toggle the collapse', async () => {
+    const ua = vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0)');
+    const { panel } = await renderApp();
+    act(() => void fireEvent.keyDown(window, { key: '\\', metaKey: true }));
+    expect(panel.style.width).toBe(`${SIDEBAR.rail}px`);
+    act(() => void fireEvent.keyDown(window, { key: '\\', ctrlKey: true }));
+    expect(panel.style.width).toBe(`${SIDEBAR.rail}px`); // Ctrl on a Mac: not ours
+    ua.mockReturnValue('Mozilla/5.0 (X11; Linux x86_64)');
+    act(() => void fireEvent.keyDown(window, { key: '\\', ctrlKey: true }));
+    expect(panel.style.width).toBe(`${SIDEBAR.default}px`);
+    act(() => void fireEvent.keyDown(window, { key: '\\', metaKey: true }));
+    expect(panel.style.width).toBe(`${SIDEBAR.default}px`);
+    ua.mockRestore();
+  });
+
+  it('the shortcut leaves typing, key repeat and open dialogs alone', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (X11; Linux x86_64)');
+    const { panel } = await renderApp();
+    const width = panel.style.width;
+    const field = document.createElement('textarea');
+    const input = document.createElement('input');
+    const editable = document.createElement('div');
+    editable.setAttribute('contenteditable', 'true');
+    document.body.append(field, input, editable);
+    for (const target of [field, input, editable]) {
+      act(() => void fireEvent.keyDown(target, { key: '\\', ctrlKey: true }));
+      expect(panel.style.width).toBe(width);
+    }
+    act(() => void fireEvent.keyDown(window, { key: '\\', ctrlKey: true, repeat: true }));
+    expect(panel.style.width).toBe(width);
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    document.body.append(dialog);
+    act(() => void fireEvent.keyDown(window, { key: '\\', ctrlKey: true }));
+    expect(panel.style.width).toBe(width);
+    dialog.remove();
+    act(() => void fireEvent.keyDown(window, { key: '\\', ctrlKey: true }));
+    expect(panel.style.width).toBe(`${SIDEBAR.rail}px`);
+    field.remove();
+    input.remove();
+    editable.remove();
+    vi.restoreAllMocks();
+  });
+
+  it('Enter on the handle toggles, double-click resets', async () => {
+    const { handle, panel } = await renderApp();
+    handle.focus();
+    await userEvent.keyboard('{Enter}');
+    expect(panel.style.width).toBe(`${SIDEBAR.rail}px`);
+    await userEvent.keyboard('{Enter}');
+    expect(panel.style.width).toBe(`${SIDEBAR.default}px`);
+    drag(handle, 232, 330);
+    fireEvent.doubleClick(handle);
+    expect(panel.style.width).toBe(`${SIDEBAR.default}px`);
+  });
+
+  it('restores the saved width and collapse', async () => {
+    localStorage.setItem(layoutKey(), JSON.stringify({ sidebar: 290, collapsed: true, preview: 400 }));
+    useLayout.getState().hydrate();
+    const { handle, panel } = await renderApp();
+    expect(panel.style.width).toBe(`${SIDEBAR.rail}px`);
+    handle.focus();
+    await userEvent.keyboard('{Enter}');
+    expect(panel.style.width).toBe('290px');
+  });
+
+  it('on a project chat, leaves room for the preview at its min too', async () => {
+    window.innerWidth = 1200;
+    useLayout.getState().hydrate();
+    const { handle } = await renderApp();
+    act(() => useApp.getState().navigate({ name: 'chat', chatId: 'c1' }));
+    // 1200 − 420 chat − 300 preview min − 200 file sidebar min
+    expect(handle).toHaveAttribute('aria-valuemax', '280');
+    act(() => useLayout.getState().toggleFiles());
+    // Files closed: 1200 − 420 − 300 (capped at the sidebar max)
+    expect(handle).toHaveAttribute('aria-valuemax', '360');
+  });
+
+  it('keeps the chat 420 px wide when the window is just wide enough for the sidebar', async () => {
+    window.innerWidth = 770;
+    useLayout.getState().hydrate();
+    const { handle, panel } = await renderApp();
+    drag(handle, 232, 600);
+    expect(panel.style.width).toBe(`${770 - 420}px`);
+    expect(handle).toHaveAttribute('aria-valuemax', String(770 - 420));
+  });
+
+  it('opens the sidebar as a drawer over the screen in a narrow window, like Claude Desktop', async () => {
+    window.innerWidth = 500;
+    useLayout.getState().hydrate();
+    vi.mocked(getSettings).mockResolvedValue(settings);
+    render(<App />);
+    const toggle = await screen.findByRole('button', { name: 'Show sidebar' });
+    expect(screen.queryByTestId('sidebar-drawer')).toBeNull();
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    expect(screen.getByTestId('sidebar-drawer')).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Hide sidebar' }).at(-1)!);
+    });
+    expect(screen.queryByTestId('sidebar-drawer')).toBeNull();
+  });
+});

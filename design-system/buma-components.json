@@ -1,0 +1,24 @@
+{
+  "components": {
+    "button": {
+      "pulled": "2026-11-13",
+      "registry": "local"
+    },
+    "button-group": {
+      "pulled": "2026-11-13",
+      "registry": "local"
+    },
+    "button-link": {
+      "pulled": "2026-11-13",
+      "registry": "local"
+    },
+    "badge": {
+      "pulled": "2026-11-13",
+      "registry": "local"
+    },
+    "chips": {
+      "pulled": "2026-11-13",
+      "registry": "local"
+    }
+  }
+}

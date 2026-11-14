@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>flutter-match-component — bspace-sdlc-skills</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/doc.css">
+<script src="assets/doc.js" defer></script>
+</head>
+<body data-page="flutter-match-component"><div class="wrap">
+<div class="topbar"><a class="brand" href="index.html">bspace <span>sdlc</span> skills</a><span class="note">v1.0.7</span><div class="langswitch" aria-label="Language"><button type="button" data-lang="id" aria-pressed="true">ID</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div></div>
+<nav class="pages">
+<a href="index.html">Overview</a><span class="navgroup">Router</span><a href="using-bspace-sdlc.html">using-bspace-sdlc</a>
+  <span class="navgroup">Dokumen</span><a href="blueprint-ftsd.html">blueprint-ftsd</a>
+  <span class="navgroup">Wireframe</span><a href="wireframe-lofi.html">wireframe-lofi</a>
+  <span class="navgroup">Design</span><a href="figma-generate-screen.html">figma-generate-screen</a>
+<span class="navgroup">Flutter</span><a href="flutter-slice-screen.html">flutter-slice-screen</a><a href="flutter-match-component.html" aria-current="page">flutter-match-component</a><a href="flutter-resolve-assets.html">flutter-resolve-assets</a><a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a><a href="flutter-run-verify.html">flutter-run-verify</a>
+<span class="navgroup">Vue</span><a href="vue-slice-screen.html">vue-slice-screen</a><a href="vue-resolve-assets.html">vue-resolve-assets</a><span class="navgroup">Eksekusi</span><a href="subagent-driven-development.html">subagent-driven-development</a>
+</nav>
+<h1><em>flutter</em>-match-component</h1>
+<p class="lede">Mencocokkan node Figma ke komponen Flutter BUMA Design System yang tepat, termasuk constructor lengkap, variant, state, props, token, dan instance child. Dipakai mandiri atau sebagai langkah resolusi komponen di <a href="flutter-slice-screen.html">flutter-slice-screen</a>.</p>
+<div class="layer"><div class="layer-head"><span class="tag">Route contract</span><span class="note">CALLED BY SLICE · DIRECT REPAIR</span></div><div class="layer-body"><div class="tablewrap"><table class="compact"><tr><th>Bagian</th><th>As-is</th></tr><tr><td>Trigger</td><td><code>flutter-slice-screen</code> menemukan component/instance; atau user menyebut mismatch class, wrapper, props, variant, sizing, atau style.</td></tr><tr><td>Prasyarat</td><td>Figma node/context, <code>pubspec.yaml</code>, <code>.dart_tool/package_config.json</code> dengan DS resolved.</td></tr><tr><td>Memanggil</td><td>Tidak memanggil skill lain; membaca Code Connect, metadata/API package, usage repo, dan <code>gotchas.md</code>.</td></tr><tr><td>Output</td><td>Identity, constructor, explicit props, token decisions, snippet raw, atau <code>BLOCKED</code>/<code>NEEDS_CONTEXT</code>.</td></tr><tr><td>Next</td><td>Kembali ke widget/call site caller; slice lanjut ke asset/fidelity. Match yang ditolak wajib punya dependency terverifikasi.</td></tr></table></div></div></div>
+<div class="layer"><div class="layer-head"><span class="tag">Input dan output</span><span class="note">Code Connect · package checkout · Figma node</span></div><div class="layer-body"><ul>
+<li><b>Input:</b> node Figma, package root dengan <code>pubspec.yaml</code>, dan target screen.</li>
+<li>Resolusi package selalu dari <code>.dart_tool/package_config.json</code>, entry <code>buma_design_system</code>, lalu <code>rootUri</code>. Re-resolve jika lockfile berubah.</li>
+<li>Di dalam slice, tulis satu baris keputusan di <code>plan.md</code> <code>## Notes</code>; simpan snippet Code Connect verbatim di <code>work/raw/</code>. Standalone melaporkan keputusan inline.</li>
+<li>Import hanya public barrel: <code>package:buma_design_system/buma_design_system.dart</code>; normalisasi contoh <code>src/</code> dari Code Connect.</li>
+</ul></div></div>
+<h2>Alur resolusi</h2>
+<pre>
+Figma node
+   │ get_design_context
+   ▼
+Component/&lt;Name&gt;? ── ya ─► cari Inner compound id I&lt;outer&gt;;&lt;inner&gt;
+   │                         │
+   │ tidak                    ├─ Flutter mapping → identitas + constructor
+   ▼                         └─ kosong/wrong → cari library Inner → ulang
+Code Connect Flutter?
+   │ ya ─► pakai snippet penuh
+   │ tidak
+   ▼
+component.meta.yaml / public API
+   │ tidak ada/ambigu
+   ▼
+existing project usage (fallback)
+   │ tidak ada match
+   ▼
+screen-local widget + gap tercatat
+</pre>
+<h2>Langkah</h2>
+<div class="step"><h3><span class="n">1</span>Ambil konteks, bukan tebakan</h3><p>Panggil <code>get_design_context</code> pada node terlebih dahulu. Response sparse berarti panggil ulang pada semua child yang terlihat dalam satu batch paralel; prompt koneksi Code Connect bukan data dan tidak boleh memicu mapping baru. Jangan memanggil <code>get_code_connect_suggestions</code>, <code>send_code_connect_mappings</code>, atau <code>add_code_connect_map</code>.</p></div>
+<div class="step"><h3><span class="n">2</span>Wrapper <code>Component/</code> wajib turun ke Inner</h3><ol><li>Ambil compound id Inner dari <code>get_metadata</code>: <code>I&lt;outerId&gt;;&lt;innerId&gt;</code>.</li><li>Panggil <code>get_design_context</code> pada compound id. <code>get_code_connect_map</code> tidak menerima compound id.</li><li>Jika kosong atau bukan Flutter, cari file library Inner lalu panggil mapping/context dengan plain Inner id.</li><li>Terima hanya hasil berlabel Flutter. Simpan catatan: <code>Inner I&lt;outer&gt;;&lt;inner&gt; &lt;name&gt; → &lt;Flutter class&gt; ✓ Flutter (inner)</code>.</li><li>Terapkan nilai instance wrapper ke Inner. Default master tidak boleh menimpa variant instance.</li></ol><p>Inner belum ter-resolve berarti <code>BLOCKED</code>/<code>NEEDS_CONTEXT</code>; jangan turun ke rung lain.</p></div>
+<div class="step"><h3><span class="n">3</span>Escalation ladder</h3><ol><li><b>Code Connect:</b> baca contoh lengkap dan komentar load-bearing; ganti semua data contoh dengan nilai node aktual.</li><li><b>Metadata/API:</b> baca <code>component.meta.yaml</code>, atau folder public component pada checkout resolved. Catat sebagai inferred.</li><li><b>Existing usage:</b> hanya compatibility fallback.</li><li><b>Local:</b> <code>presentation/widgets/&lt;screen&gt;_&lt;widget&gt;.dart</code>; catat hasil Code Connect dan gap. Jangan membuat komponen di package DS.</li></ol><p>Berhenti pada match pertama. Jangan memakai checkout DS yang lebih baru daripada package target.</p></div>
+<div class="step"><h3><span class="n">4</span>Rekonsiliasi tiga evidence</h3><pre>Inner mapping / metadata = identitas + constructor
+placed Figma instance       = label, content, variant, state, value
+variables + geometry        = token, visual, posisi, ukuran</pre><p>Ketahui setiap label, value, selected index, icon, state, axis, fill/hug, spacing, radius, stroke, shadow. Nilai wajib yang tidak diketahui = <code>BLOCKED</code>/<code>NEEDS_CONTEXT</code>, bukan literal contoh atau default DS.</p></div>
+<div class="step"><h3><span class="n">5</span>Constructor lengkap dan gotcha</h3><p>Code Connect props adalah subset. Baca constructor penuh dari <code>component.meta.yaml</code> atau source, lalu baca <code>references/gotchas.md</code>. Flag prop sizing, overflow, alignment, effect: <code>isHugging</code>, <code>fillWidth</code>, <code>isScrollable</code>, <code>wrap</code>, <code>expand</code>, <code>stretch</code>, <code>tabAlignment</code>, <code>crossAxisAlignment</code>, <code>hasShadow</code>, <code>hasBorder</code>, <code>hasElevation</code>. Setiap nilai non-default punya bukti Figma.</p><p>Placeholder seperti <code>Option 1</code>, <code>Label</code>, <code>Tab</code>, <code>Home</code> dianggap unresolved kecuali Figma memang menampilkannya.</p></div>
+<div class="step"><h3><span class="n">6</span>Floating dan placement</h3><p><code>Scaffold.floatingActionButton</code> hanya jika semua fakta terpenuhi: node sibling root di luar scrollable subtree; bounds overlap atau tepat di atas fixed chrome; stacking terbukti; node memiliki shadow/elevation sendiri. Location mengikuti anchor. Satu fakta hilang → inline composition normal.</p></div>
+<div class="step"><h3><span class="n">7</span>Per-instance dan per-child</h3><ul><li>Setiap instance mengulang resolusi props dari node sendiri; jangan reuse antar instance.</li><li>Turun ke nested child instance sampai level terakhir. Parent mapping tidak mencakup badge, icon, label, atau action.</li><li>Identitas exact dari Inner, bukan kemiripan: <code>UITabSwitch</code> dan <code>UISegmentedSwitch</code> tetap berbeda.</li><li>Style node dan descendant diselesaikan dari <code>tokens.md</code>; komponen tanpa prop yang dibutuhkan = gap.</li><li>Tidak ada raw Material button atau <code>Colors.*</code> jika DS menyediakan padanan.</li></ul></div>
+<h2>Aturan penolakan match</h2>
+<div class="warn"><span class="tag">Bukti wajib</span><p>Match rung 1–2 hanya boleh dibuang dengan dependency nyata yang terverifikasi, bukan karena posisi umum atau asumsi interface. Contoh dependency: parameter hanya tersedia dari ancestor, atau <code>DefaultTabController.of(context)</code> melempar tanpa ancestor. Catat <code>⚠ DS match discarded:</code> dengan nama komponen dan requirement yang gagal.</p></div>
+<h2>Catatan cepat</h2><div class="tablewrap"><table class="compact"><tr><th>Masalah</th><th>Tindakan</th></tr><tr><td>Response sparse</td><td>Fetch semua child visible; recurse bila perlu.</td></tr><tr><td>Wrapper <code>Component/</code></td><td>Inner authoritative; unresolved = stop.</td></tr><tr><td>Prop tidak terlihat di snippet</td><td>Baca constructor penuh + <code>gotchas.md</code>.</td></tr><tr><td>Contoh berisi label/value sama</td><td>Re-read instance; contoh mungkin copied boilerplate.</td></tr><tr><td>Tidak ada DS match</td><td>Widget lokal screen, gap tercatat, bukan komponen DS baru.</td></tr></table></div>
+<footer>Sumber: <code>skills/flutter-match-component/SKILL.md</code>, <code>references/gotchas.md</code>, serta <code>flutter-slice-screen/references/tokens.md</code>.</footer>
+</div></body></html>

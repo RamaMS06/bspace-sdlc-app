@@ -1,0 +1,27 @@
+.b-btn-group {
+  display: inline-flex;
+  gap: 0.5rem;
+
+  &--joined {
+    gap: 0;
+
+    .b-btn {
+      &:not(:first-child) {
+        margin-left: -1px;
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+      }
+
+      &:not(:last-child) {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+      }
+    }
+  }
+
+  &--equal-width {
+    .b-btn {
+      flex: 1;
+    }
+  }
+}

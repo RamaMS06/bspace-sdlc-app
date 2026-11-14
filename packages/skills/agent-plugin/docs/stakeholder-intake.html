@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>stakeholder-intake — bspace-sdlc-skills</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/doc.css">
+<script src="assets/doc.js" defer></script>
+</head>
+<body data-page="stakeholder-intake">
+<div class="wrap">
+<div class="topbar"><a class="brand" href="index.html">bspace <span>sdlc</span> skills</a><span class="note">v1.0.7</span><div class="langswitch" aria-label="Language"><button type="button" data-lang="id" aria-pressed="true">ID</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div></div>
+<nav class="pages">
+  <a href="index.html">Overview</a><span class="navgroup">Intake</span><a href="stakeholder-intake.html" aria-current="page">stakeholder-intake</a>
+  <span class="navgroup">Router</span><a href="using-bspace-sdlc.html">using-bspace-sdlc</a><span class="navgroup">Dokumen</span><a href="blueprint-ftsd.html">blueprint-ftsd</a>
+  <span class="navgroup">Wireframe</span><a href="wireframe-lofi.html">wireframe-lofi</a><span class="navgroup">Design</span><a href="figma-generate-screen.html">figma-generate-screen</a>
+  <span class="navgroup">Flutter</span><a href="flutter-slice-screen.html">flutter-slice-screen</a><a href="flutter-match-component.html">flutter-match-component</a><a href="flutter-resolve-assets.html">flutter-resolve-assets</a><a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a><a href="flutter-run-verify.html">flutter-run-verify</a>
+  <span class="navgroup">Vue</span><a href="vue-slice-screen.html">vue-slice-screen</a><a href="vue-resolve-assets.html">vue-resolve-assets</a><span class="navgroup">Eksekusi</span><a href="subagent-driven-development.html">subagent-driven-development</a>
+</nav>
+<h1><em>stakeholder</em>-intake</h1>
+<p class="lede">Normalisasi input stakeholder menjadi paket kecil yang dapat dilacak sebelum P0/P1. Input boleh brief, Excel, notulen, SOP, chat, atau link.</p>
+<div class="layer"><div class="layer-head"><span class="tag">Output contract</span><span class="note">START · BEFORE P0/P1</span></div><div class="layer-body"><pre>stakeholder-input/&lt;feature&gt;/
+├── intake.md
+├── manifest.yaml
+└── sources/        optional originals, unchanged</pre><p><code>intake.md</code> dibaca analyst. <code>manifest.yaml</code> menjaga source ID, status, owner, dan jejak arsip.</p></div></div>
+<h2>Rules</h2><div class="step"><h3><span class="n">1</span>Normalize only</h3><p>Catat klaim yang didukung source. Setiap klaim mencantumkan <code>SRC-xx</code>; konflik dan pertanyaan terbuka tetap dicatat.</p></div><div class="step"><h3><span class="n">2</span>Keep originals</h3><p>Source asli tidak diedit. Arsipkan di <code>sources/</code> bila tersedia; gunakan manifest untuk owner, tanggal, tipe, dan status.</p></div><div class="step"><h3><span class="n">3</span>Hand off</h3><p>Serahkan ke <code>blueprint-ftsd</code> P0 Discover atau P1 Brainstorm. Skill ini tidak membuat <code>intent.md</code>, Blueprint, Figma, API, atau kode.</p></div>
+<h2>Gate</h2><div class="gate"><pre>python3 &lt;plugin-root&gt;/skills/stakeholder-intake/scripts/check_intake.py .</pre><ul><li>File dan section wajib ada.</li><li>Status valid.</li><li>Semua <code>SRC-xx</code> yang dikutip ada di manifest.</li><li>Path source lokal ada bila diarsipkan.</li></ul></div>
+<footer>Sumber: <code>skills/stakeholder-intake/SKILL.md</code>, <code>assets/intake-template.md</code>, dan <code>assets/manifest-template.yaml</code>.</footer>
+</div>
+</body>
+</html>

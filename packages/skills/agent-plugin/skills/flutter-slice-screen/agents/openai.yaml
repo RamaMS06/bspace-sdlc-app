@@ -1,0 +1,4 @@
+interface:
+  display_name: "Slice Screen"
+  short_description: "Slice Figma screens into BUMA Flutter UI"
+  default_prompt: "Use $flutter-slice-screen to create a Flutter screen from a Figma design."

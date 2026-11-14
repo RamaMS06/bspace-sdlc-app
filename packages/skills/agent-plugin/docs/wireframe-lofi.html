@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>wireframe-lofi — bspace-sdlc-skills</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/doc.css">
+<script src="assets/doc.js" defer></script>
+</head>
+<body data-page="wireframe-lofi">
+<div class="wrap">
+<div class="topbar"><a class="brand" href="index.html">bspace <span>sdlc</span> skills</a><span class="note">v1.0.7</span><div class="langswitch" aria-label="Language"><button type="button" data-lang="id" aria-pressed="true">ID</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div></div>
+<nav class="pages">
+  <a href="index.html">Overview</a>
+  <span class="navgroup">Intake</span><a href="stakeholder-intake.html">stakeholder-intake</a>
+  <span class="navgroup">Router</span><a href="using-bspace-sdlc.html">using-bspace-sdlc</a>
+  <span class="navgroup">Dokumen</span><a href="blueprint-ftsd.html">blueprint-ftsd</a>
+  <span class="navgroup">Wireframe</span><a href="wireframe-lofi.html" aria-current="page">wireframe-lofi</a>
+  <span class="navgroup">Design</span><a href="figma-generate-screen.html">figma-generate-screen</a>
+  <span class="navgroup">Flutter</span><a href="flutter-slice-screen.html">flutter-slice-screen</a><a href="flutter-match-component.html">flutter-match-component</a><a href="flutter-resolve-assets.html">flutter-resolve-assets</a><a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a><a href="flutter-run-verify.html">flutter-run-verify</a>
+  <span class="navgroup">Vue</span><a href="vue-slice-screen.html">vue-slice-screen</a><a href="vue-resolve-assets.html">vue-resolve-assets</a>
+  <span class="navgroup">Eksekusi</span><a href="subagent-driven-development.html">subagent-driven-development</a>
+</nav>
+<h1><em>wireframe</em>-lofi</h1>
+<p class="lede">Gate wajib antara Blueprint Gate B dan hi-fi Figma. Menentukan struktur, field, state, CTA, flow, dan overlay tanpa visual polish.</p>
+<div class="layer"><div class="layer-head"><span class="tag">Output contract</span><span class="note">REQUIRED · BEFORE HI-FI</span></div><div class="layer-body"><pre>intent/&lt;ID&gt;-&lt;slug&gt;/
+├── wireframe.md
+└── wireframe-evidence/</pre><p>Frame grayscale disimpan di lokasi Figma yang dipilih designer/analyst. <code>wireframe.md</code> menjadi hand-off yang dibaca <code>figma-generate-screen</code>.</p></div></div>
+<h2>Input</h2><ul><li>Approved <code>sdlc/Blueprint.md</code> setelah Gate B.</li><li>Approved <code>intent/&lt;ID&gt;-&lt;slug&gt;/intent.md</code>.</li><li><code>sdlc/data.md</code>, target Figma file, page, dan placement.</li></ul>
+<h2>Aturan lo-fi</h2><div class="step"><h3><span class="n">1</span>Struktur, bukan polish</h3><p>Gunakan grayscale, placeholder netral, dan layout yang menunjukkan field, state, CTA, urutan, flow, serta overlay. Jangan gunakan brand color, final typography, production icon, foto, gradient, atau polish hi-fi.</p></div><div class="step"><h3><span class="n">2</span>Traceable</h3><p>Setiap screen/state memakai <code>SCR-xx</code>. Keputusan mencantumkan <code>US-</code>, <code>AC-</code>, <code>BR-</code>, atau <code>SRC-</code>. Teks direflow; tidak dipotong diam-diam.</p></div><div class="step"><h3><span class="n">3</span>Approval</h3><p>Presentasikan alur ke stakeholder. Tulis <code>Status: approved</code>, <code>Approved-by: &lt;name&gt; &lt;date&gt;</code>, dan metadata Figma hanya setelah persetujuan eksplisit.</p></div>
+<h2>Gate mekanis</h2><div class="gate"><pre>python3 &lt;plugin-root&gt;/skills/wireframe-lofi/scripts/check_wireframe.py .</pre><ul><li><code>wireframe.md</code> dan evidence ada.</li><li>Status valid; status approved memiliki approver dan tanggal manusia.</li><li>Figma file, page, placement, section wajib ada.</li><li>Minimal satu <code>SCR-xx</code> dan satu traceability ID.</li></ul></div>
+<h2>Hand-off</h2><div class="tablewrap"><table><tr><th>Owner</th><th>Output</th><th>Next</th></tr><tr><td>Analyst / UX</td><td><code>wireframe.md</code> + evidence + grayscale Figma frames</td><td><code>figma-generate-screen</code> SDLC mode</td></tr></table></div>
+<footer>Sumber: <code>skills/wireframe-lofi/SKILL.md</code> dan <code>assets/wireframe-template.md</code>.</footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>vue-slice-screen — bspace-sdlc-skills</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/doc.css">
+<script src="assets/doc.js" defer></script>
+</head>
+<body data-page="vue-slice-screen"><div class="wrap">
+<div class="topbar"><a class="brand" href="index.html">bspace <span>sdlc</span> skills</a><span class="note">v1.0.7</span><div class="langswitch" aria-label="Language"><button type="button" data-lang="id" aria-pressed="true">ID</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div></div>
+<nav class="pages"><a href="index.html">Overview</a><span class="navgroup">Router</span><a href="using-bspace-sdlc.html">using-bspace-sdlc</a><span class="navgroup">Dokumen</span><a href="blueprint-ftsd.html">blueprint-ftsd</a><span class="navgroup">Flutter</span><a href="flutter-slice-screen.html">flutter-slice-screen</a><a href="flutter-match-component.html">flutter-match-component</a><a href="flutter-resolve-assets.html">flutter-resolve-assets</a><a href="flutter-verify-fidelity.html">flutter-verify-fidelity</a><a href="flutter-run-verify.html">flutter-run-verify</a><span class="navgroup">Vue</span><a href="vue-slice-screen.html" aria-current="page">vue-slice-screen</a><a href="vue-resolve-assets.html">vue-resolve-assets</a><span class="navgroup">Eksekusi</span><a href="subagent-driven-development.html">subagent-driven-development</a></nav>
+  <span class="navgroup">Wireframe</span><a href="wireframe-lofi.html">wireframe-lofi</a>
+  <span class="navgroup">Design</span><a href="figma-generate-screen.html">figma-generate-screen</a>
+<h1><em>vue</em>-slice-screen</h1>
+<p class="lede">Mengubah frame/node Figma yang approved menjadi screen Vue runnable, presentation-only, dengan BUMA Design System. Flow aktif hanya untuk app standalone; shell atau remote Module Federation berhenti untuk keputusan developer.</p>
+<div class="layer"><div class="layer-head"><span class="tag">Route contract</span><span class="note">START · DIRECT · CALLED BY ROUTER</span></div><div class="layer-body"><div class="tablewrap"><table class="compact"><tr><th>Bagian</th><th>As-is</th></tr><tr><td>Trigger</td><td>Direct: node Figma + target Vue standalone. E2E: router sudah menyelesaikan intent/design. Multi-frame: orchestrator memilih skill ini per frame.</td></tr><tr><td>Prasyarat</td><td>URL node, screen name, feature directory, routing mode; Vue scaffold dan BUMA packages dibuat/dicek di awal flow.</td></tr><tr><td>Memanggil</td><td><a href="vue-resolve-assets.html">vue-resolve-assets</a> untuk non-icon assets; <a href="subagent-driven-development.html">SDD</a> untuk multi-frame/heavy; tidak memanggil Flutter skills.</td></tr><tr><td>Output</td><td><code>plan.md</code>, Coverage/CM/AS decisions, human approval verbatim, section <code>.vue</code>, <code>spec.md</code>.</td></tr><tr><td>Next</td><td><code>validate-slice.sh</code> + dev-server visual check + lint pass → finalize spec/route. Federation detected → stop.</td></tr></table></div></div></div>
+<div class="layer"><div class="layer-head"><span class="tag">Input wajib</span><span class="note">Figma node · screen · target · routing</span></div><div class="layer-body"><ul><li>URL frame/node Figma.</li><li>Nama screen.</li><li>Exact feature directory.</li><li>Routing mode: <code>none</code>, <code>suggest</code>, atau <code>auto</code>; default <code>suggest</code>.</li><li>Jangan menanyakan store, API, atau business logic; semuanya di luar boundary.</li></ul></div></div>
+<h2>Alur as-is</h2><pre>
+scaffold standalone → BUMA packages + integration
+          │
+          ▼
+Figma MCP → get_metadata → single / multi / ambiguous
+          │ single
+          ▼
+inventory lengkap → complexity class → screenshot
+          │
+          ▼
+plan.md (Inventory + Files) sebelum resolution
+          │
+          ▼
+per section: Code Connect → variables → context → component/asset
+          │
+          ▼
+validate-slice.sh → HUMAN GATE (step 15)
+          │ approved
+          ▼
+generate .vue → routing → fresh metadata + dev-server visual verify
+          │
+          ▼
+lint/format → finalize spec.md
+</pre>
+<h2>Langkah</h2>
+<div class="step"><h3><span class="n">1</span>Check scaffold</h3><p>Temukan nearest <code>package.json</code>. Standalone harus punya Vue, app entry, bundler, usable <code>src/</code>, dan router sendiri. Jika ada <code>federationConfig.ts</code>, <code>remotes</code>, atau <code>exposes</code>, flow aktif berhenti; jangan memperbaiki shell/remote. Jika scaffold absent/incomplete, gunakan <code>references/scaffold-standalone.md</code> untuk setup self-contained tanpa federation.</p></div>
+<div class="step"><h3><span class="n">2</span>BUMA package dan integrasi</h3><ul><li>Resolve UI-kit aktual dan <code>@buma-dev/styles</code> di disk; jangan campur major v1/v2.</li><li>Install hanya package yang hilang memakai package manager repo. Jangan menambah auth, layout, state, API, chart, atau federation dependency.</li><li>Stylesheet public dan plugin UI kit di-import sekali di <code>main.ts</code>; komponen memakai global <code>B&lt;Name&gt;</code>, tanpa deep imports.</li><li>SCSS token di-wire sekali lewat bundler <code>additionalData</code>, bukan import tiap screen. Catat check 1, 3, 5 di <code>plan.md</code>.</li></ul></div>
+<div class="step"><h3><span class="n">3</span>Safety sebelum Figma</h3><p>Pastikan file target tidak konflik. Jangan overwrite/restructure file existing tanpa otorisasi. Pastikan Figma MCP tersedia; jangan install MCP atau ubah editor-global config diam-diam.</p></div>
+<div class="step"><h3><span class="n">4</span>Branch node dan complexity</h3><p>Panggil <code>get_metadata</code> sebelum Figma call lain. Single <code>FRAME</code>/<code>COMPONENT</code>/<code>INSTANCE</code> lanjut. PAGE/CANVAS/SECTION dengan beberapa independent FRAME → baca orchestration, satu frame worker per screen, fresh context. Heavy single frame boleh memakai SDD; gate tetap sama. Ambiguous → tanya developer sekali dengan candidate frames. Enumerate setiap layer, group, vector, text, nested frame, pada seluruh depth; re-fetch component/instance berisi lebih dari leaf sederhana. Catat complexity <code>light</code>/<code>medium</code>/<code>heavy</code> sebelum <code>get_screenshot</code>/<code>get_design_context</code>; satu heavy call pada satu waktu.</p></div>
+<div class="step"><h3><span class="n">5</span>Inventory dan <code>plan.md</code></h3><p>Group direct children sesuai sibling order; satu section per child. Baca <code>references/output-contract.md</code>, reuse atau alokasikan <code>specs/&lt;ID&gt;-&lt;screen-name&gt;/</code>. Tulis <code>plan.md</code> sekarang, sebelum resolution, dengan:</p><ul><li>Environment checks.</li><li>Inventory lengkap dan tidak difilter.</li><li>Coverage, Component, Asset, Routing, Progress kosong.</li><li>Files to create: thin screen, Content, dan satu <code>&lt;ScreenName&gt;&lt;SectionName&gt;.vue</code> per direct-child section.</li></ul></div>
+<div class="step"><h3><span class="n">6</span>Resolve section per section</h3><ol><li>Panggil <code>get_code_connect_map</code> per node dulu. Jika ada mapping repo, pakai langsung.</li><li>Panggil <code>get_variable_defs</code>; resolve color/spacing/radius/typography dari variable sebelum numeric fallback.</li><li>Tanpa mapping, panggil <code>get_design_context</code> section-level; cocokkan global <code>B&lt;Name&gt;</code> atau screen-local. Baca <code>component.meta.yaml</code> sebelum source component.</li><li>Placeholder text seperti <code>Label</code>, <code>Title</code>, <code>Lorem ipsum</code>, empty → re-fetch leaf text node. Kalau tetap placeholder, tulis gap; jangan ship copy itu.</li><li>Visible text wajib punya Color dan Typography row; non-text menulis <code>n/a</code>, bukan cell kosong.</li><li>Setiap node inventory punya Coverage row: <code>CM-XX</code>, <code>AS-XX</code>, native-layout, grouped, atau gap beralasan. Tulis langsung ke plan sebelum section berikutnya.</li></ol></div>
+<div class="step"><h3><span class="n">7</span>Assets dan unsupported visuals</h3><p>Image/illustration non-icon memakai <a href="vue-resolve-assets.html">vue-resolve-assets</a>. Icon kecil masuk Code Connect/UI kit/repo convention; jangan font icon tebakan. Chart, map, animation tanpa UI-kit equivalent atau existing project usage menjadi gap; jangan menambah dependency unilateral.</p></div>
+<div class="step"><h3><span class="n">8</span>Mechanical check pertama</h3><p>Setelah semua section ter-resolve, pastikan Coverage punya tepat satu row per Inventory entry. Jalankan:</p><pre>&lt;skill-dir&gt;/scripts/validate-slice.sh &lt;plan.md&gt; &lt;vue-dir&gt; [repo-root]</pre><p>Pada step 14 .vue belum ada, jadi directory-missing adalah expected; semua finding plan tetap harus diperbaiki. Jangan menulis .vue sebelum check ini.</p></div>
+<div class="step"><h3><span class="n">9</span>Human gate — tidak boleh dijawab sendiri</h3><div class="gate"><span class="tag">Step 15</span><p>Stop. Minta konfirmasi developer eksplisit dengan structured question tool. Ringkas state, components, assets, routing, dan setiap <code>CM-XX</code> yang menjadi screen-local karena tidak ada UI-kit match. Jangan menulis .vue sebelum approved. Simpan jawaban developer <b>verbatim</b> di checklist plan.</p></div></div>
+<div class="step"><h3><span class="n">10</span>Generate</h3><p>Generate tepat file yang tercantum di Files to create. Setiap direct-child section wajib file sendiri; <code>&lt;ScreenName&gt;Content.vue</code> hanya compose section. Presentation-only: state loading/empty/content/error hanya jika Figma atau user meminta. Check Progress live.</p></div>
+<div class="step"><h3><span class="n">11</span>Routing</h3><p>Untuk mode selain <code>none</code>, baca <code>references/routing.md</code>, implementasikan sesuai mode, dan check item routing di plan. Jangan menyentuh route file shared pada worker orchestration; orchestrator satu-satunya writer.</p></div>
+<div class="step"><h3><span class="n">12</span>Fresh verify</h3><p>Re-call <code>get_metadata</code> fresh, cocokkan seluruh entry dengan Coverage. Cek text verbatim, props/variant, flex direction, spacing/radius token dari row plan, lalu jalankan validator lagi. Negative margin gagal kecuali Coverage membuktikan overlap Figma. Placeholder copy gagal kecuali developer mengonfirmasi string nyata. Setiap <code>&lt;img&gt;</code> wajib <code>alt</code>; icon-only control wajib accessible name.</p><p>Jalankan dev server dan visual compare dengan <code>get_screenshot</code> pada viewport nyata. Simpan screenshot atau outcome di Progress. Jika screenshot gagal, retry; fallback numeric cross-check fresh metadata harus dicatat eksplisit.</p></div>
+<div class="step"><h3><span class="n">13</span>Lint dan finalize</h3><p>Jalankan repo lint/format hanya pada changed files. Finalize <code>specs/&lt;ID&gt;-&lt;screen-name&gt;/spec.md</code> dari output aktual: AC, CM, AS, routing, dan validation outcome.</p></div>
+<h2>Struktur output</h2><pre>specs/&lt;ID&gt;-&lt;screen-name&gt;/
+├── spec.md
+└── plan.md
+    ├── Environment checks
+    ├── Inventory
+    ├── Coverage
+    ├── Components
+    ├── Assets
+    ├── Routing
+    ├── Files to create
+    └── Progress
+
+src/assets/&lt;category&gt;/
+&lt;Screen&gt;.vue · &lt;Screen&gt;Content.vue · &lt;Screen&gt;&lt;Section&gt;.vue</pre>
+<h2>Heavy-call policy</h2><div class="tablewrap"><table class="compact"><tr><th>Class</th><th>Aturan</th></tr><tr><td>light</td><td>Frame kecil; call normal, tetap inventory lengkap.</td></tr><tr><td>medium</td><td>Section menjadi heavy-call boundary; satu heavy call aktif.</td></tr><tr><td>heavy</td><td>Gunakan SDD bila perlu; bounded retry, circuit breaker, numeric fallback eksplisit.</td></tr><tr><td>multi-frame</td><td>Orchestrator; worker fresh per frame; shared files hanya orchestrator.</td></tr></table></div>
+<div class="boundaries"><span class="tag">Batasan</span><ul><li>Tidak membuat store, business composable, API/service, route guard/middleware.</li><li>Preview data hanya local <code>const</code> di content component; tidak invent API data.</li><li>Prefer global BUMA <code>B&lt;Name&gt;</code>; jangan membuat component di package UI kit.</li><li>Standalone only pada flow aktif; federation config = stop dan minta keputusan.</li><li>Jangan menambah dependency chart/map/animation.</li><li>Di luar feature hanya route file yang explicitly diizinkan oleh routing mode.</li><li>Pixel-perfect tidak boleh diklaim tanpa rendered/visual verification.</li></ul></div>
+<footer>Sumber: <code>skills/vue-slice-screen/SKILL.md</code>, <code>references/{design-system,figma-heavy-calls,output-contract,routing}.md</code>, <code>scripts/validate-slice.sh</code>.</footer>
+</div></body></html>
