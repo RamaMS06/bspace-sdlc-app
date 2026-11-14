@@ -184,7 +184,7 @@ export const en = {
     },
     requirements: {
       title: 'Check your setup',
-      intro: 'The BSpace SDLC skills need a few tools, and your agent needs the Figma MCP server. If something is missing, your agent sets it up. Buma shows you every command your agent asks to run, and nothing it asks about runs until you allow it. Installs always ask, even if you turn on Auto mode for chats.',
+      intro: 'The BSpace SDLC skills need a few tools. Figma MCP is only needed for design work, so you can skip it now and add it later. If something is missing, your agent sets it up. Buma shows you every command your agent asks to run, and nothing it asks about runs until you allow it. Installs always ask, even if you turn on Auto mode for chats.',
       installsThrough: 'Installs run through',
       detected: 'Detected',
       checkAgain: 'Check again',

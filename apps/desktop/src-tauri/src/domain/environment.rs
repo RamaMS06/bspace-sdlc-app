@@ -185,7 +185,7 @@ pub fn check_tools(exec: &dyn Exec, mcp_files: &[PathBuf]) -> Vec<ToolStatus> {
     let figma_mcp = ToolStatus {
         id: ToolId::FigmaMcp,
         name: "Figma MCP".into(),
-        required: true,
+        required: false,
         found: figma_mcp_ok,
         ok: figma_mcp_ok,
         version: None,
@@ -329,7 +329,7 @@ mod tests {
         assert!(py.ok && py.required);
         assert_eq!(py.version.as_deref(), Some("3.12.4"));
         let mcp = tool(&t, ToolId::FigmaMcp);
-        assert!(!mcp.ok && mcp.required);
+        assert!(!mcp.ok && !mcp.required);
         assert!(!tool(&t, ToolId::Flutter).required && !tool(&t, ToolId::Flutter).found);
         assert!(!tool(&t, ToolId::Word).required);
     }

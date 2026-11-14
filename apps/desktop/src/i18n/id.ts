@@ -186,7 +186,7 @@ export const id: Translations = {
     },
     requirements: {
       title: 'Cek kesiapanmu',
-      intro: 'Skill BSpace SDLC butuh beberapa tool, dan agenmu butuh server Figma MCP. Kalau ada yang kurang, agenmu yang memasangnya. Buma menampilkan setiap perintah yang diminta agenmu, dan tidak ada yang berjalan sebelum kamu izinkan. Pemasangan selalu minta izin, meskipun mode Otomatis untuk chat menyala.',
+      intro: 'Skill BSpace SDLC butuh beberapa tool. Figma MCP hanya dibutuhkan untuk pekerjaan desain, jadi boleh dilewati dulu dan dipasang nanti. Kalau ada yang kurang, agenmu yang memasangnya. Buma menampilkan setiap perintah yang diminta agenmu, dan tidak ada yang berjalan sebelum kamu izinkan. Pemasangan selalu minta izin, meskipun mode Otomatis untuk chat menyala.',
       installsThrough: 'Dipasang lewat',
       detected: 'Terdeteksi',
       checkAgain: 'Cek lagi',
