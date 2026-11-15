@@ -14,7 +14,7 @@ import { RadioGroup, RadioGroupItem } from '@/shared/ui/primitives/radio-group';
 import { Switch } from '@/shared/ui/primitives/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/primitives/tabs';
 import { AGENT_INSTALL_URL, AGENT_NAMES } from '@/shared/lib/agents';
-import { apiClear, apiUrlOverride, detectAgents, getSettings, getSystemInfo, pickFolder, updateSettings } from '@/shared/lib/ipc';
+import { apiClear, apiUrlOverride, detectAgents, getSettings, getSystemInfo, openNotificationSettings, pickFolder, updateSettings } from '@/shared/lib/ipc';
 
 /** What Rust says when background mode can't make its tray (and turned it back off). */
 const TRAY_UNAVAILABLE = 'tray-unavailable';
@@ -464,7 +464,13 @@ export function Settings() {
                     {testLine}
                   </span>
                 )}
+                {testLine && <span className="text-xs text-text-3">{t('settings.testHelp')}</span>}
               </div>
+              {testLine && (
+                <Button variant="secondary" className="h-8 px-3 text-[13px]" onClick={() => void openNotificationSettings().catch(() => {})}>
+                  {t('settings.openNotificationSettings')}
+                </Button>
+              )}
               <Button variant="secondary" className="h-8 px-3 text-[13px]" onClick={() => void testNotification()}>
                 {t('settings.testNotification')}
               </Button>

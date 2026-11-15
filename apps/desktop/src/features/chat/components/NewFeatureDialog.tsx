@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/shared/ui/Button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/primitives/dialog';
 import { Input } from '@/shared/ui/primitives/input';
-import { runStage } from '@/features/chat/lib/featureChat';
+import { routeAgent, runStage } from '@/features/chat/lib/featureChat';
 import { createFeature } from '@/features/sdlc';
 import { useApp } from '@/shared/state/app';
 
@@ -28,7 +28,7 @@ export function NewFeatureDialog({ open, onOpenChange }: { open: boolean; onOpen
       const project = await createFeature(title);
       onOpenChange(false);
       setName('');
-      await runStage(project, 0, settings.defaultAgent, t('workflow.startAsk', { title }));
+      await runStage(project, 0, routeAgent(settings.defaultAgent), t('workflow.startAsk', { title }));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

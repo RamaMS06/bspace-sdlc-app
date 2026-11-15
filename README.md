@@ -13,7 +13,7 @@ pnpm install
 pnpm dev:desktop
 ```
 
-Requires Node 22+, pnpm 11 and Rust. See [docs/development.md](docs/development.md) for the full setup and where data lives.
+Requires Node 22+, pnpm 11 and Rust. Node 20 does not work: pnpm 11 won't start on it, and jsdom and undici in the tests need Node 22. If the terminal is on another Node (`node -v`), run `./dev.sh` instead of `pnpm dev:desktop`: it switches to the version in `.nvmrc` first (`./dev.sh --check` shows what it would use). To make every new terminal use it, run `nvm alias default 22` once. See [docs/development.md](docs/development.md) for the full setup and where data lives.
 
 ## Layout
 

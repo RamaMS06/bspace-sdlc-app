@@ -31,8 +31,6 @@ import { folderTitle, useFolders } from '@/features/chat/state/folders';
 import { pickFolder } from '@/shared/lib/ipc';
 import { track } from '@/shared/lib/analytics';
 
-export const QUICK_CHIPS = ['faster', 'bigger', 'colors', 'music', 'short'] as const;
-
 const TOKEN = /(^|\s)@(\S*)$/;
 const NONE: MessagePart[] = [];
 
@@ -345,7 +343,8 @@ export function Composer({
   projects?: Project[];
   mention?: MentionRef | null;
   onMention?(m: MentionRef | null): void;
-  quickChips?: boolean;
+  /** Quick replies above the field: keys of `composer.chips`; each one sends its text. */
+  quickChips?: readonly string[];
   /** Project chat only: the title shown in "This chat sees ...". */
   sees?: string;
   placeholder?: string;
@@ -591,17 +590,17 @@ export function Composer({
   return (
     <TooltipProvider delayDuration={300}>
     <div className="flex flex-col gap-3">
-      {quickChips && (
+      {quickChips && quickChips.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {QUICK_CHIPS.map((q) => (
+          {quickChips.map((q) => (
             <button
               key={q}
               type="button"
               disabled={locked}
-              onClick={() => void onSend([{ type: 'text', text: t(`composer.chips.${q}`) }])}
+              onClick={() => void onSend([{ type: 'text', text: t(`composer.chips.${q}` as 'composer.chips.next') }])}
               className="h-8 cursor-pointer rounded-full border border-hairline bg-transparent px-3 text-[13px] text-text-2 transition-colors hover:bg-raised hover:text-foreground disabled:cursor-default disabled:opacity-50"
             >
-              {t(`composer.chips.${q}`)}
+              {t(`composer.chips.${q}` as 'composer.chips.next')}
             </button>
           ))}
         </div>

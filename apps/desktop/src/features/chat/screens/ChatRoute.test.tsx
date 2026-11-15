@@ -427,6 +427,38 @@ describe('ChatProject', () => {
     await waitFor(() => expect(ipc.agentStart).toHaveBeenCalledWith('c1', 'gemini'));
   });
 
+  it("a new session follows the combo's first agent, even when the chat was created on another one in it", async () => {
+    const user = userEvent.setup();
+    useFailover.setState({
+      combos: [{ id: 'default', name: 'Default', steps: [{ agent: 'cursor', model: null }, { agent: 'codex', model: null }, { agent: 'claude', model: null }] }],
+      defaultCombo: 'default',
+      cooldown: {},
+      agentRest: {},
+    });
+    vi.mocked(ipc.getChat).mockResolvedValue({ ...chat('c1', 'p1'), agentId: 'codex' });
+    vi.mocked(ipc.updateChatAgent).mockResolvedValue({ ...chat('c1', 'p1'), agentId: 'cursor' });
+    render(<ChatProject chatId="c1" />);
+    await screen.findByText('Kenapa rupiah melemah?', { selector: 'header span' });
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'go');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentStart).toHaveBeenCalledWith('c1', 'cursor'));
+    expect(ipc.updateChatAgent).toHaveBeenCalledWith('c1', 'cursor');
+  });
+
+  it("a feature chat offers quick replies for the SDLC stage it is on, and one sends its text", async () => {
+    const user = userEvent.setup();
+    render(<ChatProject chatId="c1" />);
+    await screen.findByText('Kenapa rupiah melemah?', { selector: 'header span' });
+    // On Ideate by default: the SDLC replies, none of the old video ones.
+    expect(await screen.findByRole('button', { name: "What's next?" })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Summarize the intake' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Faster pace' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add music' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: "What's next?" }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1])).toContain("What's next?");
+  });
+
   it('prefixes the Buma skills on the first prompt of a non-Claude session only', async () => {
     const user = userEvent.setup();
     vi.mocked(ipc.getChat).mockResolvedValue({ ...chat('c1', 'p1'), agentId: 'gemini' });

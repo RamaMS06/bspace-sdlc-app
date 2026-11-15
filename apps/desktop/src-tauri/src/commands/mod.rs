@@ -8,6 +8,7 @@ pub(crate) mod api_engine;
 pub(crate) mod auth;
 pub(crate) mod chats;
 pub(crate) mod claude_account;
+pub(crate) mod device;
 pub(crate) mod devops;
 pub(crate) mod files;
 pub(crate) mod jobs;

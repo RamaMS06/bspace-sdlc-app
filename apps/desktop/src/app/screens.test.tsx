@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo, AgentUpdate, Job, PermissionRequest, Settings } from '@bspace-sdlc-app/shared';
 
 vi.mock('@/shared/lib/ipc', () => ({
+  openNotificationSettings: vi.fn().mockResolvedValue(undefined),
   apiUrlOverride: vi.fn().mockResolvedValue(null),
   listArchivedChats: vi.fn().mockResolvedValue([]),
   setThreadArchived: vi.fn().mockResolvedValue(undefined),
@@ -239,6 +240,18 @@ describe('Settings', () => {
     expect(await screen.findByText(/Notifications can't show/)).toBeInTheDocument();
     await userEvent.click(btn);
     expect(await screen.findByText("Couldn't send it: no toast")).toBeInTheDocument();
+  });
+
+  it('after a test it says how to allow notifications and opens the system page for it', async () => {
+    vi.mocked(sendTestNotification).mockResolvedValueOnce(true);
+    openSettingsTab('general');
+    render(<SettingsScreen />);
+    // Not offered before a test.
+    expect(screen.queryByRole('button', { name: 'Open notification settings' })).toBeNull();
+    await userEvent.click(await screen.findByRole('button', { name: 'Send a test notification' }));
+    expect(await screen.findByText(/macOS lists it as Terminal/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Open notification settings' }));
+    expect(ipc.openNotificationSettings).toHaveBeenCalledTimes(1);
   });
 
   it('the test notification button is in Indonesian too', async () => {

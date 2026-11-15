@@ -3,7 +3,7 @@
 use super::{app_data_dir, err, CmdResult};
 use crate::domain::agents::session::plugin_dir;
 use crate::domain::plugins::{self, PluginInfo, Staged};
-use crate::domain::{admin, devops};
+use crate::domain::{admin, devops, plugin_sync};
 use crate::infra::token_store::ApiKeys;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, State};
@@ -24,6 +24,13 @@ fn bundled_plugin(app: &AppHandle) -> Option<PathBuf> {
 
 fn listed(app: &AppHandle, root: &Path) -> Vec<PluginInfo> {
     plugins::list(root, bundled_plugin(app).as_deref())
+}
+
+/// Where the bundled SDLC plugin is on disk. Agents that can't load it as a plugin (Codex and others) read
+/// its skills from there when the entry skill sends them to one.
+#[tauri::command]
+pub(crate) fn plugin_root(app: AppHandle) -> Option<String> {
+    bundled_plugin(&app).map(|p| p.to_string_lossy().into_owned())
 }
 
 /// The bundled plugin and every installed one, with what is on.
@@ -83,5 +90,23 @@ pub(crate) async fn plugin_set_enabled(app: AppHandle, keys: State<'_, ApiKeys>,
     admin_only(&keys).await?;
     let root = plugins_root(&app)?;
     plugins::set_enabled(&root, &name, enabled)?;
+    Ok(listed(&app, &root))
+}
+
+/// Whether `main` of the plugin's repo has a version ahead of the one in use. Anyone signed in can ask.
+#[tauri::command]
+pub(crate) async fn plugin_sync_check(app: AppHandle, keys: State<'_, ApiKeys>) -> CmdResult<plugin_sync::SyncStatus> {
+    let (profile, auth) = devops::authorization(&keys).await?;
+    let current = plugin_sync::in_use(&plugins_root(&app)?, bundled_plugin(&app).as_deref());
+    plugin_sync::check(&plugin_sync::Source::company(&profile.org), &auth, current).await
+}
+
+/// Installs `main`'s version of the SDLC plugin when it is ahead of the one in use. The source is fixed
+/// (the company repo), so this is open to everyone signed in, unlike installing an arbitrary plugin.
+#[tauri::command]
+pub(crate) async fn plugin_sync_apply(app: AppHandle, keys: State<'_, ApiKeys>) -> CmdResult<Vec<PluginInfo>> {
+    let (profile, auth) = devops::authorization(&keys).await?;
+    let root = plugins_root(&app)?;
+    plugin_sync::apply(&plugin_sync::Source::company(&profile.org), &auth, &root, bundled_plugin(&app).as_deref()).await?;
     Ok(listed(&app, &root))
 }

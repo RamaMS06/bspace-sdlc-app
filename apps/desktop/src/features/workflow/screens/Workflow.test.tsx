@@ -26,6 +26,7 @@ import * as share from '@/features/workflow/lib/share';
 import { stagesFrom } from '@/features/sdlc/lib/sdlcState';
 import { Workflow } from '@/features/workflow/screens/Workflow';
 import { useApp } from '@/shared/state/app';
+import { useFailover } from '@/features/agents';
 
 const none = { intent: null, intake: false, blueprintGate: null, blueprint: false, wireframe: null, design: null, spec: false, plan: null, close: false };
 
@@ -112,6 +113,34 @@ describe('Workflow screen', () => {
     vi.mocked(ipc.listProjects).mockResolvedValue([project('p1', 'Attendance'), project('p2', 'Payroll')]);
     act(() => useApp.getState().bumpProjects());
     expect(await screen.findByRole('button', { name: /Payroll/ })).toBeInTheDocument();
+  });
+
+  it("each stage's documents open beside the stages, and close again", async () => {
+    vi.mocked(ipc.listProjects).mockResolvedValue([project('p1', 'Attendance')]);
+    render(<Workflow />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Blueprint and FTSD' }));
+    const docs = await screen.findByRole('region', { name: 'Blueprint documents' });
+    expect(await within(docs).findByText("This stage hasn't made any documents yet.")).toBeInTheDocument();
+    await userEvent.click(within(docs).getByRole('button', { name: 'Close documents' }));
+    expect(screen.queryByRole('region', { name: 'Blueprint documents' })).toBeNull();
+  });
+
+  it("a stage starts on the combo's first agent, not the saved default agent", async () => {
+    // The default agent is Codex (stale); the combo says Cursor, then Codex, then Claude.
+    useApp.setState({ settings: { ...DEFAULT_SETTINGS, workingFolder: '/w', defaultAgent: 'codex' } });
+    const { combos, defaultCombo } = useFailover.getState();
+    useFailover.setState({
+      combos: combos.map((c) => (c.id === defaultCombo ? { ...c, steps: [{ agent: 'cursor', model: null }, { agent: 'codex', model: null }, { agent: 'claude', model: null }] } : c)),
+      cooldown: {},
+      agentRest: {},
+    });
+    vi.mocked(ipc.listProjects).mockResolvedValue([project('p1', 'Attendance')]);
+    vi.mocked(ipc.listChats).mockResolvedValue([]);
+    vi.mocked(ipc.createChat).mockResolvedValue({ id: 'c1', projectId: 'p1', agentId: 'cursor', title: 'Attendance' } as never);
+    render(<Workflow />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Run Ideate' }));
+    await waitFor(() => expect(ipc.createChat).toHaveBeenCalled());
+    expect(vi.mocked(ipc.createChat).mock.calls[0]![1]).toBe('cursor');
   });
 
   it('creating a feature makes its project and chat', async () => {

@@ -7,8 +7,9 @@ import { InviteDialog } from '@/features/workflow/components/InviteDialog';
 import { BumaBadge } from '@/shared/ui/buma/Badge';
 import { BumaLoading } from '@/shared/ui/buma/Loading';
 import { Button } from '@/shared/ui/Button';
-import { NewFeatureDialog, featureChat, runStage, refreshJobs, useJobs } from '@/features/chat';
-import { SDLC_STAGES } from '@/features/sdlc';
+import { NewFeatureDialog, featureChat, routeAgent, runStage, refreshJobs, useJobs } from '@/features/chat';
+import { SDLC_STAGES, STAGE_VIEWS, StageDocs } from '@/features/sdlc';
+import { MaterialIcon } from '@/shared/ui/MaterialIcon';
 import { StatusIcon } from '@/shared/ui/StatusIcon';
 import { listProjects, openProjectFolder } from '@/shared/lib/ipc';
 import { readFeatureState, type FeatureState } from '@/features/sdlc/lib/sdlcState';
@@ -52,7 +53,7 @@ export function Workflow() {
         if (!alive) return;
         const sorted = [...p].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
         setProjects(sorted);
-        setSelected((s) => (s && sorted.some((x) => x.id === s) ? s : (sorted[0]?.id ?? null)));
+        setSelected((s) => (s && sorted.some((x) => x.id === s) ? s : sorted[0]?.id ?? null));
         for (const x of sorted) void readFeatureState(x.id).then((st) => alive && setStates((m) => ({ ...m, [x.id]: st })));
       })
       .catch(() => alive && setProjects((l) => l ?? []));
@@ -147,11 +148,23 @@ export function Workflow() {
   );
 }
 
-function FeatureDetail({ project, state, job, agent }: { project: Project; state?: FeatureState; job?: Job; agent: NonNullable<ReturnType<typeof useApp.getState>['settings']>['defaultAgent'] }) {
+function FeatureDetail({
+  project,
+  state,
+  job,
+  agent,
+}: {
+  project: Project;
+  state?: FeatureState;
+  job?: Job;
+  agent: NonNullable<ReturnType<typeof useApp.getState>['settings']>['defaultAgent'];
+}) {
   const { t } = useTranslation();
   const navigate = useApp((s) => s.navigate);
   const [busy, setBusy] = useState<number | null>(null);
   const [inviting, setInviting] = useState(false);
+  /** The stage whose documents are open beside the stages. */
+  const [docStage, setDocStage] = useState<number | null>(null);
   const done = state ? state.stages.filter((s) => s === 'done').length : 0;
   const percent = Math.round((done / SDLC_STAGES.length) * 100);
 
@@ -159,117 +172,150 @@ function FeatureDetail({ project, state, job, agent }: { project: Project; state
     setBusy(i);
     try {
       const approve = state?.current === i && state.awaitingApproval;
-      await runStage(project, i, agent, t(approve ? 'workflow.approveAsk' : 'workflow.runAsk', { stage: t(`pipeline.stages.${stageKey(i)}`) }));
+      await runStage(
+        project,
+        i,
+        routeAgent(agent),
+        t(approve ? 'workflow.approveAsk' : 'workflow.runAsk', {
+          stage: t(`pipeline.stages.${stageKey(i)}`),
+        }),
+      );
     } finally {
       setBusy(null);
     }
   };
-  const openChat = async () => navigate({ name: 'chat', chatId: await featureChat(project, agent) });
+  const openChat = async () => navigate({ name: 'chat', chatId: await featureChat(project, routeAgent(agent)) });
 
   return (
-    <section aria-label={project.title} className="flex min-w-0 flex-1 flex-col gap-5 overflow-y-auto p-6">
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="mr-auto flex min-w-0 flex-col gap-1">
-          <h2 className="m-0 truncate text-xl font-semibold">{project.title}</h2>
-          <span className="truncate font-mono text-xs text-text-3" title={project.folder}>
-            {state?.intentDir ?? project.folder}
-          </span>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">
+      <section aria-label={project.title} className="flex min-w-0 flex-1 flex-col gap-5 overflow-y-auto p-6">
+        <div className="flex flex-wrap items-start gap-3">
+          <div className="mr-auto flex min-w-0 flex-col gap-1">
+            <h2 className="m-0 truncate text-xl font-semibold">{project.title}</h2>
+            <span className="truncate font-mono text-xs text-text-3" title={project.folder}>
+              {state?.intentDir ?? project.folder}
+            </span>
+          </div>
+          <Button variant="secondary" className="gap-1.5" onClick={() => void openProjectFolder(project.id).catch(() => {})}>
+            <FolderOpen size={14} aria-hidden="true" />
+            {t('workflow.openFolder')}
+          </Button>
+          <Button variant="secondary" className="gap-1.5" onClick={() => void openChat()}>
+            <MessageCircle size={14} aria-hidden="true" />
+            {t('workflow.openChat')}
+          </Button>
+          <Button variant="secondary" className="gap-1.5" onClick={() => setInviting(true)}>
+            <UserPlus size={14} aria-hidden="true" />
+            {t('invite.open')}
+          </Button>
+          <InviteDialog project={project} open={inviting} onOpenChange={setInviting} />
         </div>
-        <Button variant="secondary" className="gap-1.5" onClick={() => void openProjectFolder(project.id).catch(() => {})}>
-          <FolderOpen size={14} aria-hidden="true" />
-          {t('workflow.openFolder')}
-        </Button>
-        <Button variant="secondary" className="gap-1.5" onClick={() => void openChat()}>
-          <MessageCircle size={14} aria-hidden="true" />
-          {t('workflow.openChat')}
-        </Button>
-        <Button variant="secondary" className="gap-1.5" onClick={() => setInviting(true)}>
-          <UserPlus size={14} aria-hidden="true" />
-          {t('invite.open')}
-        </Button>
-        <InviteDialog project={project} open={inviting} onOpenChange={setInviting} />
-      </div>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between text-xs text-text-2">
-          <span>{t('workflow.progress', { done, total: SDLC_STAGES.length })}</span>
-          <span className="font-mono tabular-nums">{percent}%</span>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between text-xs text-text-2">
+            <span>{t('workflow.progress', { done, total: SDLC_STAGES.length })}</span>
+            <span className="font-mono tabular-nums">{percent}%</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-raised">
+            <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${percent}%` }} />
+          </div>
         </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-raised">
-          <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${percent}%` }} />
-        </div>
-      </div>
 
-      {job && (
-        <div role="status" className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
-          <StatusIcon kind={job.status === 'working' ? 'working' : job.status === 'done' ? 'success' : job.status === 'failed' ? 'error' : 'agent'} size={18} />
-          <span className="mr-auto text-[13px]">
-            {t(`workflow.agent.${job.status === 'failed' ? 'needs-you' : job.status}`)}
-            <span className="text-text-3"> · {ago(job.updatedAt)}</span>
-          </span>
-          {needsYou(job) && (
-            <Button small onClick={() => void openChat()}>
-              {t('workflow.answer')}
-            </Button>
-          )}
-        </div>
-      )}
+        {job && (
+          <div role="status" className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
+            <StatusIcon
+              kind={job.status === 'working' ? 'working' : job.status === 'done' ? 'success' : job.status === 'failed' ? 'error' : 'agent'}
+              size={18}
+            />
+            <span className="mr-auto text-[13px]">
+              {t(`workflow.agent.${job.status === 'failed' ? 'needs-you' : job.status}`)}
+              <span className="text-text-3"> · {ago(job.updatedAt)}</span>
+            </span>
+            {needsYou(job) && (
+              <Button small onClick={() => void openChat()}>
+                {t('workflow.answer')}
+              </Button>
+            )}
+          </div>
+        )}
 
-      <AgentOffice projectId={project.id} />
+        <AgentOffice projectId={project.id} />
 
-      <ol aria-label={t('pipeline.aria')} className="relative m-0 flex list-none flex-col gap-1 p-0">
-        {SDLC_STAGES.map(({ icon: Icon, detail, gate, skill }, i) => {
-          const s = state?.stages[i] ?? 'todo';
-          const current = state?.current === i;
-          const label = t(`pipeline.stages.${stageKey(i)}`);
-          return (
-            <li
-              key={skill + i}
-              aria-current={current ? 'step' : undefined}
-              data-testid={`stage-${stageKey(i)}`}
-              className={cn('flex items-center gap-3 rounded-lg border px-4 py-3', current ? 'border-primary-border bg-primary-soft' : 'border-border bg-card')}
-            >
-              <span
+        <ol aria-label={t('pipeline.aria')} className="relative m-0 flex list-none flex-col gap-1 p-0">
+          {SDLC_STAGES.map(({ icon: Icon, detail, gate, skill }, i) => {
+            const s = state?.stages[i] ?? 'todo';
+            const current = state?.current === i;
+            const label = t(`pipeline.stages.${stageKey(i)}`);
+            return (
+              <li
+                key={skill + i}
+                aria-current={current ? 'step' : undefined}
+                data-testid={`stage-${stageKey(i)}`}
                 className={cn(
-                  'flex size-8 shrink-0 items-center justify-center rounded-full border',
-                  s === 'done' && 'border-transparent bg-primary text-primary-foreground',
-                  s !== 'done' && current && 'border-primary bg-card text-primary-text',
-                  s !== 'done' && !current && 'border-border bg-card text-text-3',
+                  'flex items-center gap-3 rounded-lg border px-4 py-3',
+                  current ? 'border-primary-border bg-primary-soft' : 'border-border bg-card',
                 )}
               >
-                {s === 'done' ? <Check size={15} strokeWidth={2.5} aria-hidden="true" /> : <Icon size={15} strokeWidth={1.75} aria-hidden="true" />}
-              </span>
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="flex items-center gap-2 text-sm font-semibold">
-                  {label}
-                  {s === 'done' && <BumaBadge variant="success" label={t('workflow.state.done')} />}
-                  {s === 'started' && <BumaBadge variant="waiting" label={t('workflow.state.started')} />}
+                <span
+                  className={cn(
+                    'flex size-8 shrink-0 items-center justify-center rounded-full border',
+                    s === 'done' && 'border-transparent bg-primary text-primary-foreground',
+                    s !== 'done' && current && 'border-primary bg-card text-primary-text',
+                    s !== 'done' && !current && 'border-border bg-card text-text-3',
+                  )}
+                >
+                  {s === 'done' ? <Check size={15} strokeWidth={2.5} aria-hidden="true" /> : <Icon size={15} strokeWidth={1.75} aria-hidden="true" />}
                 </span>
-                <span className="truncate text-xs text-text-3">
-                  {detail} · <span className="font-mono">{skill}</span> · {gate}
-                </span>
-              </div>
-              <Button
-                small
-                variant={current ? 'primary' : 'secondary'}
-                disabled={busy !== null || job?.status === 'working'}
-                aria-label={t('workflow.runStage', { stage: label })}
-                onClick={() => void run(i)}
-              >
-                {busy === i
-                  ? t('workflow.starting')
-                  : current
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="flex items-center gap-2 text-sm font-semibold">
+                    {label}
+                    {s === 'done' && <BumaBadge variant="success" label={t('workflow.state.done')} />}
+                    {s === 'started' && <BumaBadge variant="waiting" label={t('workflow.state.started')} />}
+                  </span>
+                  <span className="truncate text-xs text-text-3">
+                    {detail} · <span className="font-mono">{skill}</span> · {gate}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  aria-label={t(`docs.views.${STAGE_VIEWS[i]!.key}`)}
+                  aria-pressed={docStage === i}
+                  title={t(`docs.views.${STAGE_VIEWS[i]!.key}`)}
+                  onClick={() => setDocStage(docStage === i ? null : i)}
+                  className={cn(
+                    'flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md border bg-transparent hover:bg-raised',
+                    docStage === i ? 'border-primary-border text-primary-text' : 'border-border text-text-2',
+                  )}
+                >
+                  <MaterialIcon name={STAGE_VIEWS[i]!.icon} size={18} />
+                </button>
+                <Button
+                  small
+                  variant={current ? 'primary' : 'secondary'}
+                  disabled={busy !== null || job?.status === 'working'}
+                  aria-label={t('workflow.runStage', { stage: label })}
+                  onClick={() => void run(i)}
+                >
+                  {busy === i
+                    ? t('workflow.starting')
+                    : current
                     ? state?.awaitingApproval
                       ? t('workflow.review')
                       : t('workflow.continue')
                     : s === 'done'
-                      ? t('workflow.redo')
-                      : t('workflow.run')}
-              </Button>
-            </li>
-          );
-        })}
-      </ol>
-    </section>
+                    ? t('workflow.redo')
+                    : t('workflow.run')}
+                </Button>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
+      {docStage !== null && (
+        <aside className="flex h-[70vh] min-h-0 shrink-0 border-t border-border lg:h-auto lg:w-[46%] lg:border-t-0 lg:border-l">
+          <StageDocs projectId={project.id} stage={docStage} onClose={() => setDocStage(null)} />
+        </aside>
+      )}
+    </div>
   );
 }

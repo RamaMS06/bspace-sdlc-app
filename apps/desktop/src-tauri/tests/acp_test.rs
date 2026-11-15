@@ -554,7 +554,7 @@ async fn each_turn_appends_its_usage_to_the_usage_log() {
     manager.start_with("c1", &fake_agent(), &ws.cwd, sink.clone(), options).await.expect("agent starts");
     manager.prompt("c1", vec![PromptPart::Text("usage".into())]).await.unwrap();
     sink.wait_finished().await;
-    // A turn that reports nothing writes nothing.
+    // A turn that reports nothing is still logged, with no numbers: the Agents screen shows that it ran.
     sink.updates.lock().unwrap().clear();
     manager.prompt("c1", vec![PromptPart::Text("hello".into())]).await.unwrap();
     sink.wait_finished().await;
@@ -563,7 +563,9 @@ async fn each_turn_appends_its_usage_to_the_usage_log() {
         .lines()
         .map(|l| serde_json::from_str(l).unwrap())
         .collect();
-    assert_eq!(lines.len(), 1);
+    assert_eq!(lines.len(), 2);
+    assert!(lines[1].get("usage").is_none() && lines[1].get("used").is_none());
+    assert_eq!(lines[1]["agent"], "claude");
     let line = &lines[0];
     assert_eq!(line["chat"], "c1");
     assert_eq!(line["kind"], "project");

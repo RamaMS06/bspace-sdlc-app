@@ -35,3 +35,19 @@ pub(crate) async fn read_project_file(state: State<'_, AppState>, project_id: St
     let root = project_folder(&state.db, &project_id)?;
     tauri::async_runtime::spawn_blocking(move || files::read(&root, &path)).await.map_err(err)?
 }
+
+/// A Word document in the project (a Blueprint, an FTSD) as Markdown, to read it in the app.
+#[tauri::command]
+pub(crate) async fn read_project_docx(state: State<'_, AppState>, project_id: String, path: String) -> CmdResult<String> {
+    let root = project_folder(&state.db, &project_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let full = files::resolve(&root, &path)?;
+        let size = std::fs::metadata(&full).map_err(err)?.len();
+        if size > crate::domain::docx::MAX_BYTES {
+            return Err("This document is too big to show here. Open it in Word.".to_string());
+        }
+        crate::domain::docx::to_markdown(&std::fs::read(&full).map_err(err)?)
+    })
+    .await
+    .map_err(err)?
+}

@@ -6,3 +6,4 @@ export { BumaButtonGroup, type BumaButtonGroupProps, type BumaButtonGroupItem } 
 export { BumaBadge, type BumaBadgeProps, type BumaBadgeVariant } from './Badge';
 export { BumaChips, type BumaChipsProps, type BumaChipsVariant } from './Chips';
 export { BumaLoading, type BumaLoadingProps, type BumaLoadingVariant } from './Loading';
+export { BumaTabs, type BumaTabsProps, type BumaTabItem } from './Tabs';

@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import type { Project } from '@bspace-sdlc-app/shared';
 import { Button } from '@/shared/ui/Button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/ui/primitives/dialog';
 import { Input } from '@/shared/ui/primitives/input';
+import { Select } from '@/shared/ui/primitives/select';
 import {
   shareInvite,
   shareProjects,
@@ -17,21 +18,6 @@ import {
 } from '@/features/workflow/lib/share';
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
-const FIELD =
-  'h-9 w-full cursor-pointer appearance-none rounded-md border border-input bg-transparent pr-8 pl-3 text-sm text-text-1 shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 [&>option]:bg-card [&>option]:text-text-1';
-
-/** A dropdown that looks like the text fields (the browser's own one is glossy white). */
-function Select({ className, children, ...props }: React.ComponentProps<'select'>) {
-  return (
-    <span className={`relative block ${className ?? ''}`}>
-      <select className={FIELD} {...props}>
-        {children}
-      </select>
-      <ChevronDown size={14} aria-hidden="true" className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-text-3" />
-    </span>
-  );
-}
-
 /**
  * Invite people to one feature. The feature's folder (and so its workflow progress) is shared as its own
  * Azure DevOps repo; a viewer can read it, a contributor can also push. Azure DevOps enforces the access.

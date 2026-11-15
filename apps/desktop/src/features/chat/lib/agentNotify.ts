@@ -1,11 +1,10 @@
-import { invoke } from '@tauri-apps/api/core';
-import { isPermissionGranted } from '@tauri-apps/plugin-notification';
 import { i18n } from '@/i18n';
 import { listRecentChats } from '@/shared/lib/ipc';
+import { systemNotify } from '@/shared/lib/systemNotify';
 import { useApp } from '@/shared/state/app';
 
 /** What happened in a chat that is worth a system notification. */
-export type AgentEvent = 'done' | 'asks' | 'permission';
+export type AgentEvent = 'done' | 'asks' | 'permission' | 'failed';
 
 /** The user is looking at this chat right now: the window has focus and the chat is open. */
 function watching(chatId: string): boolean {
@@ -31,13 +30,6 @@ async function chatName(chatId: string): Promise<string | null> {
  */
 export async function notifyAgent(chatId: string, event: AgentEvent): Promise<void> {
   if (watching(chatId)) return;
-  try {
-    if (!(await isPermissionGranted())) return;
-    const name = (await chatName(chatId)) ?? i18n.t('agentNotify.aChat');
-    const title = i18n.t(`agentNotify.${event}.title`);
-    const body = i18n.t(`agentNotify.${event}.body`, { name });
-    await invoke('plugin:notification|notify', { options: { title, body } });
-  } catch {
-    /* a missed notification is not worth an error */
-  }
+  const name = (await chatName(chatId)) ?? i18n.t('agentNotify.aChat');
+  await systemNotify(i18n.t(`agentNotify.${event}.title`), i18n.t(`agentNotify.${event}.body`, { name }));
 }

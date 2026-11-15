@@ -322,8 +322,9 @@ pub fn pick_auth_method(methods: &[Value], want: &str) -> Option<String> {
         .and_then(id)
 }
 
-/// One usage log line, or None when the agent reported nothing. `usage` is the prompt result's
-/// (tokens of this turn); `last` is the agent's latest `usage_update` (context size, cost).
+/// One usage log line for a finished turn. An agent that reports no usage (Cursor and others) still
+/// gets its turn logged, with no tokens, so the Agents screen shows that it ran. `usage` is the prompt
+/// result's (tokens of this turn); `last` is the agent's latest `usage_update` (context size, cost).
 pub fn usage_line(
     log: &UsageLog,
     chat_id: &str,
@@ -333,9 +334,6 @@ pub fn usage_line(
     last: Option<&Value>,
     at: &str,
 ) -> Option<Value> {
-    if usage.is_none() && last.is_none() {
-        return None;
-    }
     let mut line = json!({
         "at": at,
         "chat": chat_id,
@@ -1695,6 +1693,24 @@ impl AcpManager {
         for id in ids {
             let _ = self.stop(&id).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod usage_log_tests {
+    use super::*;
+
+    #[test]
+    fn a_turn_of_an_agent_that_reports_no_usage_is_still_logged() {
+        let log = UsageLog { path: PathBuf::from("/x"), agent: "cursor".into(), kind: "project".into() };
+        let line = usage_line(&log, "c1", Some("auto"), "end_turn", None, None, "2026-11-15T07:00:00Z").unwrap();
+        assert_eq!(line["agent"], "cursor");
+        assert_eq!(line["model"], "auto");
+        assert_eq!(line["stop"], "end_turn");
+        assert!(line.get("usage").is_none() && line.get("used").is_none());
+        // With usage it still carries the numbers.
+        let with = usage_line(&log, "c1", None, "end_turn", Some(&json!({"totalTokens": 5})), Some(&json!({"used": 9, "size": 100})), "t").unwrap();
+        assert_eq!((with["usage"]["totalTokens"].as_u64(), with["used"].as_u64()), (Some(5), Some(9)));
     }
 }
 

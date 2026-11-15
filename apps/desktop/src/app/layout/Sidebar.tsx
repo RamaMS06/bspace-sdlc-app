@@ -11,6 +11,7 @@ import { recentChats, useChat, useJobs, useFolders } from '@/features/chat';
 import { useApp, type Route } from '@/shared/state/app';
 import { cn } from '@/shared/lib/utils';
 import { useDevops } from '@/features/devops';
+import { usePluginSync, usePluginUpdateWatch } from '@/features/skills';
 import { ChevronDown, ChevronRight, Folder } from 'lucide-react';
 
 /** Recent shows this many; See all lists every chat. */
@@ -54,6 +55,7 @@ function NavItem({
   onClick,
   count,
   badge,
+  dot = false,
   rail = false,
 }: {
   active: boolean;
@@ -63,6 +65,8 @@ function NavItem({
   count?: number;
   /** A word after the label (Soon); not on the rail. */
   badge?: string;
+  /** Something new here: a small dot after the label (and on the rail's icon). */
+  dot?: boolean;
   rail?: boolean;
 }) {
   // The rail shows the count as a dot: its number goes in the name and the tooltip.
@@ -92,6 +96,7 @@ function NavItem({
         {!rail && badge && (
           <span className="ml-auto rounded-full border border-hairline px-1.5 py-px text-[10px] font-medium text-text-3">{badge}</span>
         )}
+        {dot && <span data-testid={`nav-dot`} aria-hidden="true" className={cn('size-1.5 rounded-full bg-primary', rail ? 'absolute right-1.5 top-1.5' : 'ml-auto')} />}
         {count !== undefined &&
           (rail ? (
             <span aria-hidden="true" className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" />
@@ -107,6 +112,9 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
   const { t } = useTranslation();
   const navigate = useApp((s) => s.navigate);
   const needsYou = useApp((s) => s.needsYouCount);
+  // A newer SDLC plugin on main: the Skills item gets a dot until it is updated.
+  usePluginUpdateWatch();
+  const pluginUpdate = usePluginSync((s) => !!s.status?.newer);
   const version = useApp((s) => s.projectsVersion);
   const openChatId = useApp((s) => (s.route.name === 'chat' ? s.route.chatId : null));
   const streaming = useChat((s) => s.streaming);
@@ -175,6 +183,7 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
               icon={n.icon}
               onClick={() => navigate(n.route)}
               count={n.key === 'workflow' && needsYou > 0 ? needsYou : undefined}
+              dot={n.key === 'skills' && pluginUpdate}
             />
           ))}
         </div>

@@ -12,7 +12,7 @@ import { useFailover } from '@/features/agents/state/failover';
 import { UsageTab } from '@/features/usage';
 import { BumaLoading } from '@/shared/ui/buma/Loading';
 import { Switch } from '@/shared/ui/primitives/switch';
-import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/primitives/tabs';
+import { BumaTabs } from '@/shared/ui/buma/Tabs';
 import { detectAgents, updateSettings } from '@/shared/lib/ipc';
 import { MULTI_ACCOUNT, useAccounts } from '@/features/agents/state/accounts';
 import { AGENT_NAMES } from '@/shared/lib/agents';
@@ -91,19 +91,16 @@ export function Agents() {
         <span className="text-sm text-text-2">{t('agentsScreen.subtitle')}</span>
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => pick(v as AgentsTab)}>
-        <TabsList variant="line" aria-label={t('agentsScreen.tabsAria')} className="h-10 w-full justify-start border-b border-border p-0">
-          <TabsTrigger value="usage" className="h-10 flex-none px-3 text-sm">
-            {t('settings.sections.usage')}
-          </TabsTrigger>
-          <TabsTrigger value="provider" className="h-10 flex-none px-3 text-sm">
-            {t('settings.sections.agents')}
-          </TabsTrigger>
-          <TabsTrigger value="combo" className="h-10 flex-none px-3 text-sm">
-            {t('combos.tab')}
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <BumaTabs
+        value={tab}
+        onValueChange={(v) => pick(v as AgentsTab)}
+        aria-label={t('agentsScreen.tabsAria')}
+        items={[
+          { value: 'usage', label: t('settings.sections.usage') },
+          { value: 'provider', label: t('settings.sections.agents') },
+          { value: 'combo', label: t('combos.tab') },
+        ]}
+      />
 
       {error && (
         <p role="alert" className="m-0 text-[13px] text-error">

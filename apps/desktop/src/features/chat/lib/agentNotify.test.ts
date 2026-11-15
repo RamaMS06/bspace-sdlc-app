@@ -31,6 +31,11 @@ describe('agent notifications', () => {
     expect(sent().map((o) => o.title)).toEqual(['Your agent needs you', 'Your agent asks to run a command']);
   });
 
+  it('says when the agent hit a problem', async () => {
+    await notifyAgent('c1', 'failed');
+    expect(sent()).toEqual([{ title: 'Your agent hit a problem', body: 'Lampu lalu lintas pertama: open the chat to see what happened.' }]);
+  });
+
   it('stays quiet while the user looks at that chat, and not for another chat', async () => {
     useApp.setState({ route: { name: 'chat', chatId: 'c1' } });
     await notifyAgent('c1', 'done');

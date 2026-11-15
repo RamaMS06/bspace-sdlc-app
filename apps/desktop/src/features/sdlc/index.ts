@@ -4,3 +4,6 @@ export { SDLC_STAGES, SdlcWorkflow } from './components/SdlcWorkflow';
 export { StepBar } from './components/StepBar';
 export { createFeature, sdlcStart } from './lib/featureFlow';
 export { useFeatureState, STEP_OF_STAGE } from './lib/sdlcState';
+export { StageDocs } from './components/StageDocs';
+export { STAGE_VIEWS } from './lib/stageViews';
+export { stageChips } from './lib/stageChips';

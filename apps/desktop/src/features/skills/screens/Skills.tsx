@@ -4,7 +4,7 @@ import { FileUp, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
 import { SkillImportDialog } from '@/features/skills/components/SkillImportDialog';
 import { type UserSkill } from '@bspace-sdlc-app/skills';
 import { PluginsTab } from '@/features/skills/components/PluginsTab';
-import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/primitives/tabs';
+import { BumaTabs } from '@/shared/ui/buma/Tabs';
 import { Button } from '@/shared/ui/Button';
 import { Markdown } from '@/shared/ui/Markdown';
 import { StatusIcon } from '@/shared/ui/StatusIcon';
@@ -231,16 +231,15 @@ export function Skills() {
         )}
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as 'plugins' | 'skills')}>
-        <TabsList variant="line" aria-label={t('skills.tabsAria')} className="h-10 w-full justify-start border-b border-border p-0">
-          <TabsTrigger value="plugins" className="h-10 flex-none px-3 text-sm">
-            {t('plugins.title')}
-          </TabsTrigger>
-          <TabsTrigger value="skills" className="h-10 flex-none px-3 text-sm">
-            {t('skills.tabSkills')}
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <BumaTabs
+        value={tab}
+        onValueChange={(v) => setTab(v as 'plugins' | 'skills')}
+        aria-label={t('skills.tabsAria')}
+        items={[
+          { value: 'plugins', label: t('plugins.title') },
+          { value: 'skills', label: t('skills.tabSkills') },
+        ]}
+      />
 
       {tab === 'plugins' && <PluginsTab />}
 

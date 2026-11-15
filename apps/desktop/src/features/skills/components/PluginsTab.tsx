@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { ChevronDown, ChevronRight, FileArchive, FolderOpen, Link, Package, Plus, TriangleAlert, Star } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileArchive, FolderOpen, Link, Package, Plus, RefreshCw, TriangleAlert, Star, Upload } from 'lucide-react';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { BumaBadge } from '@/shared/ui/buma/Badge';
 import { ENTRY_SKILL } from '@/features/skills/components/SlashMenu';
 import { Button } from '@/shared/ui/Button';
@@ -19,9 +20,12 @@ import {
   pluginStageGithub,
   pluginStageZip,
   pluginsList,
+  updatePlans,
   type PluginInfo,
+  type UpdatePlan,
   type StagedPlugins,
 } from '@/features/skills/lib/plugins';
+import { usePluginSync } from '@/features/skills/state/pluginSync';
 import { cn } from '@/shared/lib/utils';
 import { useIsAdmin } from '@/features/devops';
 
@@ -114,22 +118,40 @@ function PluginCard({
 }
 
 /** What an install found: its skills and the hook commands it would run, before anything is used. */
-function InstallDialog({ staged, busy, onCancel, onInstall }: { staged: StagedPlugins | null; busy: boolean; onCancel(): void; onInstall(): void }) {
+function InstallDialog({ staged, plans, busy, onCancel, onInstall }: { staged: StagedPlugins | null; plans: UpdatePlan[]; busy: boolean; onCancel(): void; onInstall(): void }) {
   const { t } = useTranslation();
+  // A plugin that is already in use may only be replaced by a higher version (a bump).
+  const refused = plans.filter((p) => !p.newer);
+  const updating = plans.length > 0;
   return (
     <Dialog open={!!staged} onOpenChange={(o) => !o && !busy && onCancel()}>
       <DialogContent className="sm:max-w-[620px]">
         <DialogHeader>
-          <DialogTitle>{t('plugins.installTitle', { count: staged?.plugins.length ?? 0 })}</DialogTitle>
+          <DialogTitle>{updating ? t('plugins.updateTitle', { name: plans[0]!.name }) : t('plugins.installTitle', { count: staged?.plugins.length ?? 0 })}</DialogTitle>
           <DialogDescription>{t('plugins.installBody')}</DialogDescription>
         </DialogHeader>
         <div className="flex max-h-[55vh] flex-col gap-3 overflow-y-auto">
-          {staged?.plugins.map((p) => (
+          {staged?.plugins.map((p) => {
+            const plan = plans.find((x) => x.name === p.name);
+            return (
             <section key={p.name} aria-label={p.name} className="flex flex-col gap-2 rounded-lg border border-border p-3">
               <span className="flex items-center gap-2">
                 <span className="font-mono text-[14px] font-medium">{p.name}</span>
-                {p.version && <span className="font-mono text-[11px] text-text-3">v{p.version}</span>}
+                {plan ? (
+                  <span data-testid="version-change" className="font-mono text-[12px] text-text-2">
+                    {t('plugins.fromTo', { from: plan.from ?? '–', to: plan.to ?? '–' })}
+                  </span>
+                ) : (
+                  p.version && <span className="font-mono text-[11px] text-text-3">v{p.version}</span>
+                )}
               </span>
+              {plan && !plan.newer && (
+                <p role="alert" className="m-0 rounded-md border border-error/40 px-2 py-1.5 text-[12px] text-error">
+                  {t('plugins.notNewer', { to: plan.to ?? '–', from: plan.from ?? '–' })}
+                </p>
+              )}
+              {plan?.added.length ? <span className="text-[12px] text-text-2">{t('plugins.addedSkills', { list: plan.added.join(', ') })}</span> : null}
+              {plan?.removed.length ? <span className="text-[12px] text-text-2">{t('plugins.removedSkills', { list: plan.removed.join(', ') })}</span> : null}
               <span className="text-[12px] text-text-2">{t('plugins.skillsCount', { count: p.skills.length })}: {p.skills.map((s) => s.id).join(', ')}</span>
               {p.hooks.length > 0 && (
                 <div role="note" className="flex flex-col gap-1 rounded-md bg-warning-soft p-2">
@@ -145,18 +167,118 @@ function InstallDialog({ staged, busy, onCancel, onInstall }: { staged: StagedPl
                 </div>
               )}
             </section>
-          ))}
+            );
+          })}
         </div>
         <DialogFooter>
           <Button variant="secondary" disabled={busy} onClick={onCancel}>
             {t('common.cancel')}
           </Button>
-          <Button disabled={busy} onClick={onInstall}>
-            {busy ? t('plugins.installing') : t('plugins.install')}
+          <Button disabled={busy || refused.length > 0} onClick={onInstall}>
+            {busy ? (updating ? t('plugins.updating') : t('plugins.installing')) : updating ? t('plugins.updateNow') : t('plugins.install')}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * The SDLC plugin against `main` of its repo: a notice when `main` is ahead (anyone can update with one
+ * click), else a quiet line saying it is in step, with a button to ask again.
+ */
+function SyncNotice({ onUpdated }: { onUpdated(list: PluginInfo[]): void }) {
+  const { t } = useTranslation();
+  const { status, checking, applying, error, updatedTo, checkedAt } = usePluginSync();
+  if (!status && !error) return null;
+  // One button: it asks main again and installs what is ahead of the version in use.
+  const sync = () => void usePluginSync.getState().apply().then((list) => list && onUpdated(list));
+  return (
+    <div
+      data-testid="plugin-sync"
+      className={cn('flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3', status?.newer ? 'border-primary-border bg-primary-soft' : 'border-border bg-card')}
+    >
+      <div className="mr-auto flex min-w-0 flex-col gap-0.5">
+        {status?.newer ? (
+          <>
+            <span className="text-[13px] font-medium">{t('plugins.sync.available', { latest: status.latest ?? '–', current: status.current ?? '–' })}</span>
+            <span className="text-xs text-text-2">{t('plugins.sync.newChats')}</span>
+          </>
+        ) : updatedTo ? (
+          <span role="status" className="text-[13px]">
+            {t('plugins.sync.done', { version: updatedTo })}
+          </span>
+        ) : status ? (
+          <span className="text-[13px] text-text-2">{t('plugins.sync.upToDate', { version: status.current ?? status.latest ?? '–' })}</span>
+        ) : null}
+        {error && (
+          <span role="alert" className="text-xs text-error">
+            {t('plugins.sync.failed', { message: error })}
+          </span>
+        )}
+        {checkedAt && !status?.newer && <span className="text-xs text-text-3">{t('plugins.sync.checked', { time: new Date(checkedAt).toLocaleTimeString() })}</span>}
+      </div>
+      <Button variant={status?.newer ? 'primary' : 'secondary'} small={!status?.newer} disabled={checking || applying} onClick={sync} className="gap-1.5">
+        <RefreshCw size={13} aria-hidden="true" className={applying || checking ? 'animate-spin' : undefined} />
+        {applying ? t('plugins.sync.syncing') : t('plugins.sync.button')}
+      </Button>
+    </div>
+  );
+}
+
+/** A folder or a .zip dropped on the box installs like Add plugin does; the first thing dropped is used. */
+function DropZone({ disabled, onDrop }: { disabled: boolean; onDrop(path: string): void }) {
+  const { t } = useTranslation();
+  const box = useRef<HTMLDivElement>(null);
+  const [over, setOver] = useState(false);
+  const cb = useRef({ disabled, onDrop });
+  cb.current = { disabled, onDrop };
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let gone = false;
+    const inside = (pos: { x: number; y: number }) => {
+      const r = box.current?.getBoundingClientRect();
+      if (!r) return false;
+      const x = pos.x / window.devicePixelRatio;
+      const y = pos.y / window.devicePixelRatio;
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    };
+    try {
+      getCurrentWebview()
+        .onDragDropEvent((e) => {
+          const p = e.payload;
+          if (p.type === 'leave') setOver(false);
+          else if (p.type === 'drop') {
+            const hit = inside(p.position) && !cb.current.disabled;
+            setOver(false);
+            if (hit && p.paths[0]) cb.current.onDrop(p.paths[0]);
+          } else setOver(inside(p.position) && !cb.current.disabled);
+        })
+        .then((fn) => (gone ? fn() : (off = fn)))
+        .catch(() => {});
+    } catch {
+      /* not running inside Tauri */
+    }
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }, []);
+  return (
+    <div
+      ref={box}
+      data-testid="plugin-drop"
+      data-over={over || undefined}
+      className={cn(
+        'flex flex-col items-center gap-1 rounded-xl border border-dashed px-4 py-5 text-center transition-colors',
+        over ? 'border-primary bg-primary-soft' : 'border-border bg-transparent',
+        disabled && 'opacity-50',
+      )}
+    >
+      <Upload size={18} strokeWidth={1.5} aria-hidden="true" className={over ? 'text-primary-text' : 'text-text-3'} />
+      <span className="text-[13px] font-medium text-text-1">{over ? t('plugins.dropNow') : t('plugins.drop')}</span>
+      <span className="text-xs text-text-3">{t('plugins.dropHint')}</span>
+    </div>
   );
 }
 
@@ -184,6 +306,8 @@ export function PluginsTab() {
       });
   }, []);
   useEffect(load, [load]);
+  // Opening the tab asks main again, so the notice is fresh.
+  useEffect(() => void usePluginSync.getState().check(), []);
 
   const run = async (task: () => Promise<StagedPlugins | PluginInfo[] | void>) => {
     setError(null);
@@ -209,6 +333,9 @@ export function PluginsTab() {
       const path = await openDialog({ multiple: false, directory: false, filters: [{ name: 'Zip', extensions: ['zip'] }] });
       return typeof path === 'string' ? pluginStageZip(path) : undefined;
     });
+  /** A path dropped on the box: a .zip is a zip, anything else is read as a folder. */
+  const fromDrop = (path: string) =>
+    void run(() => (/\.zip$/i.test(path) ? pluginStageZip(path) : pluginStageFolder(path)));
   const fromGithub = (e: FormEvent) => {
     e.preventDefault();
     const url = github?.trim();
@@ -257,6 +384,10 @@ export function PluginsTab() {
         </p>
       )}
 
+      <SyncNotice onUpdated={setPlugins} />
+
+      {admin && <DropZone disabled={busy || staged !== null} onDrop={fromDrop} />}
+
       {admin && github !== null && (
         <form onSubmit={fromGithub} className="flex gap-2 rounded-xl border border-border bg-card p-3">
           <Input
@@ -296,6 +427,7 @@ export function PluginsTab() {
 
       <InstallDialog
         staged={staged}
+        plans={staged && plugins ? updatePlans(staged.plugins, plugins) : []}
         busy={busy}
         onCancel={() => {
           if (staged) void pluginDiscard(staged.id).catch(() => {});

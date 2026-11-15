@@ -1,8 +1,17 @@
 import type { AgentId, MessagePart, Project } from '@bspace-sdlc-app/shared';
 import { SDLC_STAGES } from '@/features/sdlc';
+import { routeStart } from '@/features/agents';
 import { createChat, listChats } from '@/shared/lib/ipc';
 import { useApp } from '@/shared/state/app';
 import { useChat } from '@/features/chat/state/chat';
+
+/**
+ * The agent a feature's work starts on: the first step of the combo that is not resting (Agents › Combo),
+ * like a new chat. The saved default agent only stands in when there is no route.
+ */
+export function routeAgent(fallback: AgentId): AgentId {
+  return routeStart()?.agent ?? fallback;
+}
 
 /** The feature's chat: its newest one, or a new one. */
 export async function featureChat(project: Project, agent: AgentId): Promise<string> {

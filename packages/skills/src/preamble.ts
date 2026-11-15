@@ -41,14 +41,37 @@ export function sessionFacts(facts?: SessionFacts | null): string {
     .join('\n');
 }
 
+/** `description:` from a SKILL.md's frontmatter, on one line. */
+function descriptionOf(text: string): string {
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(noBom(text))?.[1] ?? '';
+  const m = /^description:\s*(?:>-?|\|-?)?\s*\r?\n?((?:[ \t]+.*\r?\n?)+|.*)/m.exec(fm);
+  const raw = (m?.[1] ?? '').trim().replace(/^["']|["']$/g, '');
+  return raw.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Where the plugin's other skills are, for an agent that can't load the plugin: the entry skill sends
+ * the agent to skills by name, and each is a folder on disk it can read (with its own scripts and templates).
+ */
+export function pluginSkillsText(root: string): string {
+  const list = Object.entries(PLUGIN_SKILLS)
+    .filter(([id]) => id !== 'using-bspace-sdlc')
+    .map(([id, text]) => `- ${id}: ${descriptionOf(text).slice(0, 220)}`);
+  return [
+    `The skills this one sends you to are files on this computer, in ${root}/skills/<skill>/SKILL.md. When a step says to use a skill, read that SKILL.md first and follow it. Paths inside a skill (scripts/, assets/, references/) are relative to its own folder, and "<plugin-root>" means ${root}.`,
+    list.join('\n'),
+  ].join('\n\n');
+}
+
 /**
  * The SDLC entry skill (using-bspace-sdlc) as plain text, for agents that cannot load the Claude Code
  * plugin. Put it in front of the first prompt of a session.
  */
-export function buildSessionPreamble(language?: UiLanguage | null, facts?: SessionFacts | null): string {
+export function buildSessionPreamble(language?: UiLanguage | null, facts?: SessionFacts | null, pluginRoot?: string | null): string {
   return [
     'You are running inside BSpace SDLC. Below is the using-bspace-sdlc skill. Apply it only when the user types /using-bspace-sdlc, or when this chat is already a feature (its folder has an AGENTS.md brief). For anything else (a question, a quick task, a chat) answer normally: do not follow it, do not start or restart an SDLC workflow, and do not run any skill the user did not ask for.',
     stripFrontmatter(usingBspaceSdlc),
+    pluginRoot ? pluginSkillsText(pluginRoot) : '',
     languageHint(language),
     sessionFacts(facts),
     '---',

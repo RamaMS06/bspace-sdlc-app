@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 
@@ -15,7 +15,21 @@ vi.mock('@/shared/lib/ipc', () => ({
   discardGithubSkills: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
-vi.mock('@/features/skills/lib/plugins', () => ({
+/** The webview's drag-and-drop events: the test sends them through `dragDrop`. */
+let dragDrop: ((e: { payload: Record<string, unknown> }) => void) | null = null;
+vi.mock('@tauri-apps/api/webview', () => ({
+  getCurrentWebview: () => ({
+    onDragDropEvent: async (cb: (e: { payload: Record<string, unknown> }) => void) => {
+      dragDrop = cb;
+      return () => {
+        dragDrop = null;
+      };
+    },
+  }),
+}));
+vi.mock('@/features/skills/lib/plugins', async (orig) => ({
+  // The version rules are plain functions: the real ones run.
+  ...(await orig<typeof import('@/features/skills/lib/plugins')>()),
   pluginsList: vi.fn(),
   pluginStageFolder: vi.fn(),
   pluginStageZip: vi.fn(),
@@ -24,6 +38,8 @@ vi.mock('@/features/skills/lib/plugins', () => ({
   pluginDiscard: vi.fn().mockResolvedValue(undefined),
   pluginRemove: vi.fn(),
   pluginSetEnabled: vi.fn(),
+  pluginSyncCheck: vi.fn(),
+  pluginSyncApply: vi.fn(),
 }));
 
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -40,6 +56,7 @@ import {
 } from '@/shared/lib/ipc';
 import { Skills } from '@/features/skills/screens/Skills';
 import * as plugins from '@/features/skills/lib/plugins';
+import { usePluginSync } from '@/features/skills/state/pluginSync';
 import { useDevops } from '@/features/devops';
 
 const bundled = {
@@ -70,6 +87,9 @@ const profile = { org: 'buma', id: 'u', displayName: 'Rama', email: 'p-rama.msug
 const signedInAs = (admin: boolean) => useDevops.setState({ status: { signedIn: true, admin, profile: admin ? profile : { ...profile, email: 'someone@bukitmakmur.com' } } });
 
 beforeEach(() => {
+  usePluginSync.setState({ status: null, checking: false, applying: false, checkedAt: null, error: null, updatedTo: null });
+  vi.mocked(plugins.pluginSyncCheck).mockReset().mockResolvedValue({ current: '1.0.8', latest: '1.0.8', commit: 'abc', newer: false });
+  vi.mocked(plugins.pluginSyncApply).mockReset();
   signedInAs(true);
   vi.mocked(listSkills).mockReset().mockResolvedValue([hooks]);
   vi.mocked(plugins.pluginsList).mockReset().mockResolvedValue([bundled]);
@@ -103,16 +123,142 @@ describe('Skills screen', () => {
     await screen.findByTestId('plugin-bspace-sdlc-skills-bundled');
     await user.click(screen.getByRole('button', { name: 'Add plugin' }));
     await user.click(await screen.findByRole('menuitem', { name: 'From a folder' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Install this plugin?' });
-    expect(dialog).toHaveTextContent('v1.0.9');
+    // Same name as the plugin in use: it is an update, shown as old version to new.
+    const dialog = await screen.findByRole('dialog', { name: 'Update bspace-sdlc-skills?' });
+    expect(within(dialog).getByTestId('version-change')).toHaveTextContent('v1.0.8 → v1.0.9');
     expect(within(dialog).getByRole('note')).toHaveTextContent('python3 office_state.py');
     expect(plugins.pluginInstall).not.toHaveBeenCalled();
-    await user.click(within(dialog).getByRole('button', { name: 'Install' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Update' }));
     expect(plugins.pluginInstall).toHaveBeenCalledWith('s1');
     const updated = await screen.findByTestId('plugin-bspace-sdlc-skills-installed');
     expect(updated).toHaveTextContent('Update');
     expect(within(updated).getByRole('button', { name: 'Use bundled version' })).toBeInTheDocument();
     expect(screen.getByTestId('plugin-bspace-sdlc-skills-bundled')).toHaveTextContent('Replaced by the installed version');
+  });
+
+  it('a folder or a .zip dropped on the box starts the same install, and a non-admin has no box', async () => {
+    const update = { ...bundled, version: '1.0.9', source: 'installed' as const };
+    vi.mocked(plugins.pluginStageFolder).mockResolvedValue({ id: 's1', plugins: [update] });
+    vi.mocked(plugins.pluginStageZip).mockResolvedValue({ id: 's2', plugins: [update] });
+    render(<Skills />);
+    const box = await screen.findByTestId('plugin-drop');
+    expect(box).toHaveTextContent('Drop a plugin folder or .zip here');
+    box.getBoundingClientRect = () => ({ left: 0, top: 0, right: 400, bottom: 100, width: 400, height: 100, x: 0, y: 0, toJSON: () => ({}) });
+    await waitFor(() => expect(dragDrop).not.toBeNull());
+    // Over the box it lights up; away from it, it does not.
+    act(() => dragDrop!({ payload: { type: 'over', position: { x: 50, y: 50 } } }));
+    expect(box).toHaveAttribute('data-over');
+    expect(box).toHaveTextContent('Drop to add the plugin');
+    act(() => dragDrop!({ payload: { type: 'over', position: { x: 900, y: 900 } } }));
+    expect(box).not.toHaveAttribute('data-over');
+    // Dropped outside: nothing happens.
+    act(() => dragDrop!({ payload: { type: 'drop', position: { x: 900, y: 900 }, paths: ['/x/plugin'] } }));
+    expect(plugins.pluginStageFolder).not.toHaveBeenCalled();
+    // A folder.
+    act(() => dragDrop!({ payload: { type: 'drop', position: { x: 50, y: 50 }, paths: ['/Users/rama/bspace-fe-skills', '/other'] } }));
+    await waitFor(() => expect(plugins.pluginStageFolder).toHaveBeenCalledWith('/Users/rama/bspace-fe-skills'));
+    expect(await screen.findByRole('dialog', { name: 'Update bspace-sdlc-skills?' })).toBeInTheDocument();
+  });
+
+  describe('syncing the SDLC plugin with main', () => {
+    const ahead = { current: '1.0.8', latest: '1.0.9', commit: 'c9', newer: true };
+
+    it('tells when main is ahead; one click installs it, for anyone signed in', async () => {
+      signedInAs(false);
+      vi.mocked(plugins.pluginSyncCheck).mockResolvedValue(ahead);
+      const updated = { ...bundled, version: '1.0.9', source: 'installed' as const };
+      vi.mocked(plugins.pluginSyncApply).mockResolvedValue([{ ...bundled, replaced: true }, updated]);
+      render(<Skills />);
+      const notice = await screen.findByTestId('plugin-sync');
+      // After the install, main and the version in use agree.
+      vi.mocked(plugins.pluginSyncCheck).mockResolvedValue({ ...ahead, current: '1.0.9', newer: false });
+      expect(notice).toHaveTextContent('Version 1.0.9 of the SDLC plugin is ready (you have 1.0.8).');
+      await userEvent.click(within(notice).getByRole('button', { name: 'Sync' }));
+      expect(plugins.pluginSyncApply).toHaveBeenCalledTimes(1);
+      expect(await screen.findByRole('status')).toHaveTextContent('now on version 1.0.9');
+      // The list shows the new version without reloading.
+      expect(await screen.findByTestId('plugin-bspace-sdlc-skills-installed')).toHaveTextContent('v1.0.9');
+      expect(usePluginSync.getState().status?.newer).toBe(false);
+    });
+
+    it('in step with main it says so; Sync asks main again and installs what is ahead', async () => {
+      render(<Skills />);
+      const notice = await screen.findByTestId('plugin-sync');
+      expect(notice).toHaveTextContent('up to date with main (version 1.0.8)');
+      // Main moved on meanwhile: one press of Sync brings it in.
+      const updated = { ...bundled, version: '1.0.9', source: 'installed' as const };
+      vi.mocked(plugins.pluginSyncApply).mockResolvedValue([{ ...bundled, replaced: true }, updated]);
+      vi.mocked(plugins.pluginSyncCheck).mockResolvedValue({ current: '1.0.9', latest: '1.0.9', commit: 'c9', newer: false });
+      await userEvent.click(within(notice).getByRole('button', { name: 'Sync' }));
+      expect(await screen.findByRole('status')).toHaveTextContent('now on version 1.0.9');
+      expect(await screen.findByTestId('plugin-bspace-sdlc-skills-installed')).toHaveTextContent('v1.0.9');
+    });
+
+    it('Sync with nothing new changes nothing and says nothing was updated', async () => {
+      render(<Skills />);
+      await userEvent.click(within(await screen.findByTestId('plugin-sync')).getByRole('button', { name: 'Sync' }));
+      await waitFor(() => expect(plugins.pluginSyncApply).toHaveBeenCalledTimes(1));
+      expect(screen.queryByRole('status')).toBeNull();
+      expect(screen.getByTestId('plugin-sync')).toHaveTextContent('up to date with main');
+    });
+
+    it('a failed sync says why', async () => {
+      render(<Skills />);
+      await screen.findByTestId('plugin-sync');
+      vi.mocked(plugins.pluginSyncApply).mockRejectedValue("Azure DevOps didn't allow reading the plugin repo.");
+      await userEvent.click(screen.getByRole('button', { name: 'Sync' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't check for a plugin update: Azure DevOps didn't allow");
+    });
+
+    it('a background check that fails stays quiet', async () => {
+      vi.mocked(plugins.pluginSyncCheck).mockRejectedValue('offline');
+      render(<Skills />);
+      await screen.findByTestId('plugin-bspace-sdlc-skills-bundled');
+      expect(screen.queryByTestId('plugin-sync')).toBeNull();
+    });
+  });
+
+  describe('the SDLC plugin card', () => {
+    it('has no separate Update button: it follows main, through Sync', async () => {
+      render(<Skills />);
+      const card = await screen.findByTestId('plugin-bspace-sdlc-skills-bundled');
+      expect(within(card).queryByRole('button', { name: 'Update' })).toBeNull();
+      expect(within(screen.getByTestId('plugin-sync')).getByRole('button', { name: 'Sync' })).toBeInTheDocument();
+    });
+
+    it('a same-name plugin added by hand has to be a higher version: a bump', async () => {
+      const user = userEvent.setup();
+      const { pickFolder } = await import('@/shared/lib/ipc');
+      vi.mocked(pickFolder).mockResolvedValue('/x');
+      vi.mocked(plugins.pluginStageFolder).mockResolvedValue({ id: 's1', plugins: [{ ...bundled, version: '1.0.8', source: 'installed' as const }] });
+      render(<Skills />);
+      await screen.findByTestId('plugin-bspace-sdlc-skills-bundled');
+      await user.click(screen.getByRole('button', { name: 'Add plugin' }));
+      await user.click(await screen.findByRole('menuitem', { name: 'From a folder' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Update bspace-sdlc-skills?' });
+      expect(within(dialog).getByRole('alert')).toHaveTextContent('Version 1.0.8 is not higher than the 1.0.8 in use');
+      expect(within(dialog).getByRole('button', { name: 'Update' })).toBeDisabled();
+      // 1.0.10 is higher than 1.0.9 (numbers, not text).
+      expect(plugins.compareVersions('1.0.10', '1.0.9')).toBe(1);
+      expect(plugins.compareVersions('1.1.0-beta', '1.1.0')).toBe(-1);
+    });
+  });
+
+  it('a dropped .zip is read as a zip', async () => {
+    vi.mocked(plugins.pluginStageZip).mockResolvedValue({ id: 's2', plugins: [{ ...bundled, source: 'installed' as const }] });
+    render(<Skills />);
+    const box = await screen.findByTestId('plugin-drop');
+    box.getBoundingClientRect = () => ({ left: 0, top: 0, right: 400, bottom: 100, width: 400, height: 100, x: 0, y: 0, toJSON: () => ({}) });
+    await waitFor(() => expect(dragDrop).not.toBeNull());
+    act(() => dragDrop!({ payload: { type: 'drop', position: { x: 10, y: 10 }, paths: ['/Downloads/Plugin.ZIP'] } }));
+    await waitFor(() => expect(plugins.pluginStageZip).toHaveBeenCalledWith('/Downloads/Plugin.ZIP'));
+  });
+
+  it('a non-admin has no drop box', async () => {
+    signedInAs(false);
+    render(<Skills />);
+    await screen.findByTestId('plugins-admin-note');
+    expect(screen.queryByTestId('plugin-drop')).toBeNull();
   });
 
   it('cancelling an install drops what was staged', async () => {

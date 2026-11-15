@@ -57,3 +57,33 @@ pub(crate) async fn pick_folder(app: AppHandle) -> CmdResult<Option<String>> {
     .await
     .map_err(err)
 }
+
+/// The page of the system's own settings where notifications are allowed for apps, by operating system.
+/// The address is fixed here, so the webview can't ask to open anything else.
+pub(crate) fn notification_settings_url(os: &str) -> Option<&'static str> {
+    match os {
+        "macos" => Some("x-apple.systempreferences:com.apple.Notifications-Settings.extension"),
+        "windows" => Some("ms-settings:notifications"),
+        _ => None,
+    }
+}
+
+/// Opens the system's notification settings, where the user allows this app's notifications.
+#[tauri::command]
+pub(crate) fn open_notification_settings(app: AppHandle) -> CmdResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let url = notification_settings_url(std::env::consts::OS).ok_or("This system has no single notification settings page to open. Check your desktop's settings for BSpace SDLC.")?;
+    app.opener().open_url(url, None::<&str>).map_err(err)
+}
+
+#[cfg(test)]
+mod notification_settings_tests {
+    use super::notification_settings_url;
+
+    #[test]
+    fn macos_and_windows_have_a_settings_page_and_others_none() {
+        assert!(notification_settings_url("macos").unwrap().starts_with("x-apple.systempreferences:"));
+        assert_eq!(notification_settings_url("windows"), Some("ms-settings:notifications"));
+        assert_eq!(notification_settings_url("linux"), None);
+    }
+}

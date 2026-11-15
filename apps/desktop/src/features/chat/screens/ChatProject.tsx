@@ -12,7 +12,7 @@ import { FileTree } from '@/features/chat/components/workspace/FileTree';
 import { Workspace } from '@/features/chat/components/workspace/Workspace';
 import { ScrollToBottom } from '@/features/chat/components/ScrollToBottom';
 import { TurnRail } from '@/features/chat/components/TurnRail';
-import { StepBar, FeaturePipeline, STEP_OF_STAGE, useFeatureState } from '@/features/sdlc';
+import { StepBar, FeaturePipeline, STEP_OF_STAGE, stageChips, useFeatureState } from '@/features/sdlc';
 import { getChat, listProjects } from '@/shared/lib/ipc';
 import { projectSendOptions } from '@/features/chat/lib/openProject';
 import { useApp } from '@/shared/state/app';
@@ -30,7 +30,8 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
   const { t } = useTranslation();
   const defaultAgent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
   const [chat, setChat] = useState<Chat | null>(null);
-  const agent = chat?.agentId ?? defaultAgent;
+  // The store's row wins: it is updated when the chat moves to another agent (its combo, a failover).
+  const agent = useChat((s) => s.rows[chatId]?.agentId) ?? chat?.agentId ?? defaultAgent;
   const [project, setProject] = useState<Project | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const messages = useChat((s) => s.messages[chatId]) ?? NO_MESSAGES;
@@ -182,7 +183,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
               onStop={() => void useChat.getState().cancel(chatId)}
               agentId={agent}
               onAgentChange={(a) => void switchAgent(a)}
-              quickChips
+              quickChips={project ? stageChips(featureState?.current ?? 0) : undefined}
               sees={project?.title}
             />
           </div>

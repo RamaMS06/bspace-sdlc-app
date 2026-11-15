@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import type { RecentChat } from '@bspace-sdlc-app/shared';
@@ -12,6 +12,10 @@ vi.mock('@/shared/lib/ipc', () => ({
 }));
 
 import { listRecentChats } from '@/shared/lib/ipc';
+vi.mock('@/features/skills/lib/plugins', () => ({ pluginSyncCheck: vi.fn(), pluginSyncApply: vi.fn() }));
+
+import { pluginSyncCheck } from '@/features/skills/lib/plugins';
+import { usePluginSync } from '@/features/skills/state/pluginSync';
 import { Sidebar } from '@/app/layout/Sidebar';
 import { useApp } from '@/shared/state/app';
 
@@ -27,11 +31,23 @@ const mk = (id: string, title: string, projectTitle: string | null): RecentChat 
 
 describe('Sidebar', () => {
   beforeEach(() => {
+    vi.mocked(pluginSyncCheck).mockReset().mockRejectedValue('offline');
+    usePluginSync.setState({ status: null });
     vi.mocked(listRecentChats).mockResolvedValue([
       mk('a', 'chat a', 'Kenapa rupiah melemah?'),
       mk('b', 'Ide konten minggu ini', null),
       mk('c', 'chat c', 'Promo Kopi Senja'),
     ]);
+  });
+
+  it('gives Skills a dot while main has a newer SDLC plugin, and takes it away once updated', async () => {
+    usePluginSync.setState({ status: null, checking: false, applying: false, checkedAt: null, error: null, updatedTo: null });
+    vi.mocked(pluginSyncCheck).mockResolvedValue({ current: '1.0.8', latest: '1.0.9', commit: 'c', newer: true });
+    render(<Sidebar active="chat" />);
+    const skills = screen.getByRole('link', { name: /^Skills/ });
+    await waitFor(() => expect(within(skills).getByTestId('nav-dot')).toBeInTheDocument());
+    act(() => usePluginSync.setState({ status: { current: '1.0.9', latest: '1.0.9', commit: 'c', newer: false } }));
+    expect(within(skills).queryByTestId('nav-dot')).toBeNull();
   });
 
   it('marks the active item, shows New chat and recent chats', async () => {

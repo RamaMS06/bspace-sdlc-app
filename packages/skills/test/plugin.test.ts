@@ -77,3 +77,21 @@ describe('session preamble (agents that cannot load the plugin)', () => {
     expect(sessionFacts(null)).toBe('');
   });
 });
+
+describe("the plugin's other skills for agents that cannot load the plugin", () => {
+  it('names where each skill is on disk and what each is for', () => {
+    const p = buildSessionPreamble(null, null, '/Apps/BSpace/agent-plugin');
+    expect(p).toContain('/Apps/BSpace/agent-plugin/skills/<skill>/SKILL.md');
+    expect(p).toContain('"<plugin-root>" means /Apps/BSpace/agent-plugin');
+    for (const id of ['stakeholder-intake', 'wireframe-lofi', 'blueprint-ftsd', 'figma-generate-screen', 'flutter-slice-screen', 'vue-slice-screen']) {
+      expect(p).toMatch(new RegExp(`- ${id}: \\S`));
+    }
+    // The entry skill is already in the text; it isn't listed twice.
+    expect(p).not.toMatch(/- using-bspace-sdlc:/);
+  });
+
+  it('without a known folder the preamble is what it was', () => {
+    expect(buildSessionPreamble()).not.toContain('SKILL.md');
+    expect(buildSessionPreamble(null, null, null)).toBe(buildSessionPreamble());
+  });
+});

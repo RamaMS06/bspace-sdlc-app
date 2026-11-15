@@ -4,6 +4,7 @@ import { FOREGROUND_RULE, buildSessionPreamble, languageHint, sessionFacts, user
 import type { AgentId, AgentQuestion, AgentUpdate, Chat, ChatMessage, JobStatus, MessagePart, PermissionRequest, QuestionResponse } from '@bspace-sdlc-app/shared';
 import {
   addMessage,
+  pluginRoot,
   agentCancel,
   agentFailoverRecord,
   setAgentModel,
@@ -30,7 +31,7 @@ import { advanceProject, isWorkTool, resetProjectStatus } from '@/features/chat/
 import { localClock } from '@/shared/lib/time';
 import { useApp } from '@/shared/state/app';
 import { refreshJobs } from '@/features/chat/state/jobs';
-import { failoverReason, stepKey, useFailover, type Step, DEFAULT_ACCOUNT, MULTI_ACCOUNT, useAccounts, setChatAgentLookup, applyStep, stepFor } from '@/features/agents';
+import { failoverReason, stepKey, useFailover, type Step, DEFAULT_ACCOUNT, MULTI_ACCOUNT, useAccounts, setChatAgentLookup, applyStep, stepFor, routeStart } from '@/features/agents';
 
 
 /** A project chat's turns show up on the Workflow board as this build job. */
@@ -143,6 +144,18 @@ export const EMPTY_DRAFT: Draft = { text: '' };
 export const NEW_CHAT_DRAFT = 'new';
 
 const isLocal = (m: ChatMessage) => m.id.startsWith('local-');
+
+/** Where the SDLC plugin's skills are on disk, for agents that read them from there; null when unknown. */
+async function bundledPluginRoot(): Promise<string | null> {
+  try {
+    return await pluginRoot();
+  } catch {
+    return null;
+  }
+}
+
+/** How long a failed turn waits before it is notified: a failover may start it again. */
+const FAILED_NOTE_DELAY_MS = 6000;
 
 /** The agent chat that has no chat row: the setup installs. */
 export const isScratchChat = (chatId: string) => chatId === 'setup';
@@ -463,6 +476,10 @@ export const useChat = create<ChatState>((set, get) => {
     append(chatId, sys);
     void persist(chatId, sys);
     void failover(chatId, u.message);
+    // Tell the user the turn failed, unless a failover picks it up again in the meantime.
+    setTimeout(() => {
+      if (!get().streaming[chatId]) void notifyAgent(chatId, 'failed');
+    }, FAILED_NOTE_DELAY_MS);
   };
 
   /**
@@ -693,13 +710,23 @@ export const useChat = create<ChatState>((set, get) => {
         lastPrompt.set(chatId, { parts: opts?.promptParts ? [...attached, ...opts.promptParts] : visible, opts: opts?.promptParts ? { ...opts, promptParts: undefined } : opts });
       }
       try {
-        const agent = opts?.agentId ?? chatAgent.get(chatId) ?? useApp.getState().settings?.defaultAgent ?? 'claude';
+        // A running session keeps its agent; a new one takes what the caller says (see the route below).
+        let agent = (get().started[chatId] ? chatAgent.get(chatId) : undefined) ?? opts?.agentId ?? chatAgent.get(chatId) ?? useApp.getState().settings?.defaultAgent ?? 'claude';
         chatAgent.set(chatId, agent);
         if (opts?.job) chatJobs.set(chatId, opts.job);
         writeJob(chatId, 'working');
         let fresh = false;
         let noPlugin = false;
         if (!get().started[chatId]) {
+          // A new session starts where the chat's combo says (what its picker shows), not on whichever agent
+          // the chat was created with: the first step that is not resting. A chat with history moves with a recap.
+          // An agent outside the combo (picked by hand) stays as it is.
+          const pick = useFailover.getState().pickOf(chatId);
+          const top = isInternalChat(chatId) ? null : routeStart(pick);
+          if (top && top.agent !== agent && useFailover.getState().steps(pick).some((st) => st.agent === agent)) {
+            await get().switchAgent(chatId, top.agent);
+            agent = top.agent;
+          }
           // The session starts on the agent's step of the route (its account and model), skipping resting ones.
           const step = stepFor(agent, useFailover.getState().pickOf(chatId));
           if (step) await applyStep(step).catch(() => {});
@@ -726,7 +753,7 @@ export const useChat = create<ChatState>((set, get) => {
           // The agent's clock, and the id of the feature a project chat is about.
           const projectId = opts?.job?.projectId ?? chatJobs.get(chatId)?.projectId;
           const facts = { ...localClock(), ...(projectId ? { projectId } : {}) };
-          if (agent !== 'claude' || noPlugin) lead.push({ type: 'text', text: buildSessionPreamble(uiLang, facts) });
+          if (agent !== 'claude' || noPlugin) lead.push({ type: 'text', text: buildSessionPreamble(uiLang, facts, await bundledPluginRoot()) });
           // The foreground rule too: long work (installs, test runs) must not be backgrounded and lost.
           else lead.push({ type: 'text', text: [languageHint(uiLang), sessionFacts(facts), FOREGROUND_RULE].filter(Boolean).join('\n\n') });
           // Claude loads the user's own skills as a plugin; other agents get a list of them.
@@ -805,6 +832,7 @@ export const useChat = create<ChatState>((set, get) => {
     async switchAgent(chatId, agent) {
       const earlier = get().messages[chatId] ?? [];
       const row = await updateChatAgent(chatId, agent);
+      if (row) set((s) => ({ rows: { ...s.rows, [chatId]: row } }));
       await get().stop(chatId);
       chatAgent.set(chatId, agent);
       pendingRecap.set(chatId, { text: buildRecap(earlier), switched: true });

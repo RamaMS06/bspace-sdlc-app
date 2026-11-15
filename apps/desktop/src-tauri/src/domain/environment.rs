@@ -132,6 +132,9 @@ pub fn figma_mcp_configured(files: &[PathBuf]) -> bool {
 }
 
 /// The tools the BSpace SDLC skills need. `mcp_files` are the default agent's MCP config files.
+/// The oldest Node major version the app accepts.
+pub const MIN_NODE: u32 = 22;
+
 pub fn check_tools(exec: &dyn Exec, mcp_files: &[PathBuf]) -> Vec<ToolStatus> {
     let version_of = |bin: &str, arg: &str| -> Option<String> {
         exec.which(bin)?;
@@ -151,9 +154,10 @@ pub fn check_tools(exec: &dyn Exec, mcp_files: &[PathBuf]) -> Vec<ToolStatus> {
         required: true,
         found: node_found,
         version: node_version,
-        // buma-cli declares node >= 20; Claude Code and the ACP adapters need 18 or newer.
-        ok: node_major.is_some_and(|m| m >= 20),
-        detail: "Runs the agent adapters and buma-cli · needs 20 or newer".into(),
+        // Node 22 is the oldest LTS that still gets security fixes (20 ended in April 2026), and what the
+        // project's own tools (pnpm 11, the test runner) need.
+        ok: node_major.is_some_and(|m| m >= MIN_NODE),
+        detail: format!("Runs the agent adapters and buma-cli · needs {MIN_NODE} or newer"),
     };
 
     let git_version = version_of("git", "--version");
@@ -302,16 +306,18 @@ mod tests {
 
     #[test]
     fn old_node_is_not_ok() {
-        let ex = FakeExec::default().with("node", "v18.19.0");
+        // 20 has reached its end of life: it is too old too.
+        let ex = FakeExec::default().with("node", "v20.20.2");
         let t = check_tools(&ex, &[]);
         let n = tool(&t, ToolId::Node);
         assert!(n.found && !n.ok && n.required);
-        assert_eq!(n.version.as_deref(), Some("18.19.0"));
+        assert_eq!(n.version.as_deref(), Some("20.20.2"));
+        assert!(n.detail.contains("22"));
     }
 
     #[test]
     fn new_node_is_ok() {
-        let ex = FakeExec::default().with("node", "v20.20.2");
+        let ex = FakeExec::default().with("node", "v22.12.0");
         let t = check_tools(&ex, &[]);
         assert!(tool(&t, ToolId::Node).ok);
     }

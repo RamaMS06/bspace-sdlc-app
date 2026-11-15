@@ -156,7 +156,7 @@ describe('Requirements', () => {
       missingFigma.map((t) => (t.id === 'node' ? tool('node', 'Node.js', true, false) : t)),
     );
     render(<Requirements />);
-    expect(await screen.findByText('Install Node.js 20 or newer, then press Check again')).toBeInTheDocument();
+    expect(await screen.findByText('Install Node.js 22 or newer, then press Check again')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Continue/ })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Install Node.js' }));
     expect(openUrl).toHaveBeenCalledWith('https://nodejs.org/en/download');
@@ -169,7 +169,7 @@ describe('Requirements', () => {
       missingFigma.map((t) => (t.id === 'node' ? { ...tool('node', 'Node.js', true, false), found: true, version: '18.19.0' } : t)),
     );
     render(<Requirements />);
-    expect(await screen.findByText('Found Node.js 18.19.0 · Buma needs 20 or newer. Update it, then press Check again')).toBeInTheDocument();
+    expect(await screen.findByText('Found Node.js 18.19.0 · Buma needs 22 or newer (older versions no longer get security fixes). Update it, then press Check again')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Update Node.js' }));
     expect(openUrl).toHaveBeenCalledWith('https://nodejs.org/en/download');
   });

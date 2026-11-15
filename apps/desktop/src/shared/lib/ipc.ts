@@ -46,6 +46,8 @@ export interface EngineProgress {
   done: number;
   total: number | null;
 }
+/** Opens the system's notification settings (macOS and Windows). */
+export const openNotificationSettings = () => invoke<void>('open_notification_settings');
 export const getSystemInfo = () => invoke<SystemInfo>('get_system_info');
 export const detectAgents = () => invoke<AgentInfo[]>('detect_agents');
 /** The tools the SDLC skills need; Figma MCP is checked in `agent`'s MCP config. */
@@ -152,8 +154,13 @@ export const projectFiles = (projectId: string, dir = '') => invoke<ProjectFile[
 /** Files whose name contains `query`; dependency and dot folders are not searched. */
 export const findProjectFiles = (projectId: string, query: string) => invoke<ProjectFile[]>('find_project_files', { projectId, query });
 export const readProjectFile = (projectId: string, path: string) => invoke<ProjectFileContent>('read_project_file', { projectId, path });
+/** A Word document in the project (Blueprint, FTSD) as Markdown. */
+export const readProjectDocx = (projectId: string, path: string) => invoke<string>('read_project_docx', { projectId, path });
 /** Opens a project's folder in the file manager. */
 export const openProjectFolder = (projectId: string) => invoke<void>('open_project_folder', { projectId });
+
+/** Where the bundled SDLC plugin is on disk (null when the app shipped without it). */
+export const pluginRoot = () => invoke<string | null>('plugin_root');
 
 // ---- agent models ----
 

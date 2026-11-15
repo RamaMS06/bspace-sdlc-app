@@ -1,7 +1,8 @@
+import * as React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { BumaBadge, BumaButton, BumaButtonGroup, BumaButtonLink, BumaChips } from '@/shared/ui/buma';
+import { BumaBadge, BumaButton, BumaButtonGroup, BumaButtonLink, BumaChips, BumaTabs } from '@/shared/ui/buma';
 import '@/i18n';
 
 describe('BUMA components (React ports of the Vue design system)', () => {
@@ -82,5 +83,66 @@ describe('BUMA Loading', () => {
     expect(screen.getByRole('status', { name: 'Loading' })).toBeInTheDocument();
     expect(screen.queryByTestId('loadingLabel')).toBeNull();
     expect(screen.getByTestId('loading').style.width).toBe('14px');
+  });
+});
+
+describe('BumaTabs', () => {
+  const items = [
+    { value: 'a', label: 'Plugins' },
+    { value: 'b', label: 'Skills', error: true },
+    { value: 'c', label: 'Off', disabled: true },
+  ];
+  const Harness = ({ onChange = () => {} }: { onChange?(v: string): void }) => {
+    const [v, setV] = React.useState('a');
+    return <BumaTabs items={items} value={v} aria-label="Sections" onValueChange={(n) => (setV(n), onChange(n))} />;
+  };
+
+  it('is a tab list with one selected tab and its underline', () => {
+    render(<Harness />);
+    expect(screen.getByRole('tablist', { name: 'Sections' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Plugins' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Skills' })).toHaveAttribute('aria-selected', 'false');
+    // One underline, on the selected tab, 2px with rounded top corners.
+    const bars = screen.getAllByTestId('buma-tab-indicator');
+    expect(bars).toHaveLength(1);
+    expect(bars[0]!.className).toContain('h-0.5');
+    expect(bars[0]!.className).toContain('rounded-t-[4px]');
+    expect(screen.getByRole('tab', { name: 'Plugins' }).contains(bars[0]!)).toBe(true);
+  });
+
+  it('switches on a click and by the arrow keys, and skips a disabled tab', async () => {
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: 'Skills' }));
+    expect(onChange).toHaveBeenLastCalledWith('b');
+    expect(screen.getByRole('tab', { name: 'Skills' })).toHaveAttribute('aria-selected', 'true');
+    await user.keyboard('{ArrowLeft}');
+    expect(onChange).toHaveBeenLastCalledWith('a');
+    await user.click(screen.getByRole('tab', { name: 'Off' }));
+    expect(onChange).not.toHaveBeenCalledWith('c');
+  });
+
+  it('has no box or ring around a tab, selected or focused', async () => {
+    render(<Harness />);
+    await userEvent.setup().keyboard('{Tab}');
+    for (const tab of screen.getAllByRole('tab')) {
+      expect(tab.className).not.toMatch(/ring-|outline-(?!none)|(^|\s)border(\s|$)/);
+      expect(tab.className).toContain('border-0');
+      expect(tab.className).toContain('outline-none');
+    }
+  });
+
+  it('keeps a tab the same width in both weights, and an error tab turns danger when selected', async () => {
+    render(<Harness />);
+    const tab = screen.getByRole('tab', { name: 'Plugins' });
+    // The semibold form is reserved under the label as a pseudo-element: the page's text has the label once.
+    const label = tab.querySelector('[data-label]') as HTMLElement;
+    expect(label).toHaveAttribute('data-label', 'Plugins');
+    expect(label.className).toContain('after:font-semibold');
+    expect(tab.textContent).toBe('Plugins');
+    await userEvent.setup().click(screen.getByRole('tab', { name: 'Skills' }));
+    expect(screen.getByRole('tab', { name: 'Skills' }).className).toContain('--buma-text-error-500');
+    expect(screen.getByTestId('buma-tab-indicator').className).toContain('--buma-background-error-500');
   });
 });
